@@ -1,0 +1,124 @@
+import 'server-only'
+
+/**
+ * Datenbank-Migrationen. Jede Migration wird genau einmal ausgeführt
+ * (gesteuert über PRAGMA user_version). Niemals bestehende Einträge ändern –
+ * nur neue anhängen.
+ */
+export const migrations: string[] = [
+  /* 1: Grundschema */ `
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    mfa_enabled INTEGER NOT NULL DEFAULT 0,
+    mfa_secret TEXT,
+    mfa_pending_secret TEXT,
+    mfa_pending_created_at INTEGER,
+    mfa_last_step INTEGER NOT NULL DEFAULT 0,
+    mfa_required INTEGER NOT NULL DEFAULT 0,
+    failed_logins INTEGER NOT NULL DEFAULT 0,
+    mfa_failed INTEGER NOT NULL DEFAULT 0,
+    locked_until INTEGER,
+    last_login_at INTEGER,
+    password_changed_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL CHECK (stage IN ('mfa', 'full')),
+    mfa_attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip TEXT,
+    user_agent TEXT
+  );
+  CREATE INDEX sessions_user ON sessions(user_id);
+  CREATE INDEX sessions_expires ON sessions(expires_at);
+
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    user_id INTEGER,
+    username TEXT,
+    actor_id INTEGER,
+    actor_username TEXT,
+    ip TEXT,
+    details TEXT
+  );
+  CREATE INDEX audit_created ON audit_log(created_at);
+
+  CREATE TABLE folders (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES folders(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX folders_user ON folders(user_id);
+  CREATE INDEX folders_parent ON folders(parent_id);
+
+  CREATE TABLE notes (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    excerpt TEXT NOT NULL DEFAULT '',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX notes_user ON notes(user_id, deleted_at);
+  CREATE INDEX notes_folder ON notes(folder_id);
+
+  CREATE TABLE note_tags (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (note_id, tag)
+  );
+  CREATE INDEX note_tags_tag ON note_tags(tag);
+
+  CREATE TABLE note_links (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    PRIMARY KEY (note_id, target)
+  );
+  CREATE INDEX note_links_target ON note_links(target);
+
+  CREATE VIRTUAL TABLE notes_fts USING fts5(
+    note_id UNINDEXED,
+    user_id UNINDEXED,
+    title,
+    content,
+    tokenize = 'unicode61 remove_diacritics 2'
+  );
+
+  CREATE TABLE attachments (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX attachments_name ON attachments(user_id, filename COLLATE NOCASE);
+  `,
+]

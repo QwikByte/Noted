@@ -1,0 +1,29 @@
+# Abhängigkeiten
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Daten (SQLite, Anhänge, Schlüssel)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Umgebungsvariablen
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage/
+test-results/
+playwright-report/
+
+# System
+.DS_Store
+npm-debug.log*

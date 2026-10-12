@@ -1,0 +1,17 @@
+services:
+  noted:
+    build: .
+    image: noted:latest
+    container_name: noted
+    restart: unless-stopped
+    # Nur lokal erreichbar – davor gehört ein Reverse Proxy mit HTTPS (siehe README).
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - noted-data:/data
+
+volumes:
+  noted-data:
