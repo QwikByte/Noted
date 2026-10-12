@@ -249,6 +249,25 @@ describe('Anhänge', () => {
     expect(new Uint8Array(await range.res.arrayBuffer())).toEqual(png.slice(1, 4))
   })
 
+  it('übernimmt keine MIME-Typen des Browsers für unbekannte Endungen', async () => {
+    const form = new FormData()
+    form.append('file', new File(['alert(1)'], 'skript.js', { type: 'text/javascript' }))
+    const r = await call(attachments.POST, '/', { cookie: token, form })
+    expect(r.data.attachment.mime).toBe('application/octet-stream')
+  })
+
+  it('lehnt zu große Uploads ab, ohne sie komplett einzulesen', async () => {
+    process.env.MAX_UPLOAD_MB = '1'
+    try {
+      const form = new FormData()
+      form.append('file', new File([new Uint8Array(2 * 1024 * 1024)], 'gross.bin'))
+      const r = await call(attachments.POST, '/', { cookie: token, form })
+      expect(r.status).toBe(413)
+    } finally {
+      delete process.env.MAX_UPLOAD_MB
+    }
+  })
+
   it('liefert HTML-Dateien nur als Download aus', async () => {
     const form = new FormData()
     form.append('file', new File(['<script>alert(1)</script>'], 'boese.html', { type: 'text/html' }))
@@ -291,6 +310,21 @@ describe('Export und Import (Obsidian-Vault)', () => {
     expect(titles).toEqual(expect.arrayContaining(['Mathe', 'Notiz-mit-Doppelpunkt', 'Einzelne Datei']))
     const mathe = list.data.notes.find((n: { title: string }) => n.title === 'Mathe')
     expect(mathe.tags).toEqual(['import'])
+  })
+
+  it('überspringt zu große Einträge im ZIP, ohne sie zu entpacken', async () => {
+    process.env.MAX_UPLOAD_MB = '1'
+    try {
+      const vault = zipSync({ 'klein.md': strToU8('ok'), 'riesig.bin': new Uint8Array(3 * 1024 * 1024) })
+      const form = new FormData()
+      form.append('files', new File([vault], 'v.zip'))
+      const r = await call(importRoute.POST, '/', { cookie: token, form })
+      expect(r.status).toBe(200)
+      expect(r.data.notes).toBe(1)
+      expect(r.data.skipped).toEqual(['riesig.bin (zu groß)'])
+    } finally {
+      delete process.env.MAX_UPLOAD_MB
+    }
   })
 
   it('lehnt kaputte ZIP-Dateien ab', async () => {

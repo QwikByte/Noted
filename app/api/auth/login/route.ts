@@ -10,7 +10,7 @@ const schema = z.object({
 })
 
 export const POST = route('none', async ({ req, ip }) => {
-  const body = await parseJson(req, schema)
+  const body = await parseJson(req, schema, 16 * 1024)
   const result = await login(body.username, body.password, { ip, userAgent: req.headers.get('user-agent') })
 
   // Eine evtl. noch vorhandene alte Sitzung dieses Browsers verwerfen

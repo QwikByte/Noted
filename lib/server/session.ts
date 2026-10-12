@@ -94,6 +94,10 @@ export function deleteUserSessions(userId: number, exceptId?: string) {
     .run(userId, exceptId ?? '')
 }
 
+export function deleteMfaStageSessions(userId: number) {
+  getDb().prepare(`DELETE FROM sessions WHERE user_id = ? AND stage = 'mfa'`).run(userId)
+}
+
 export function incrementMfaAttempts(id: string): number {
   getDb().prepare('UPDATE sessions SET mfa_attempts = mfa_attempts + 1 WHERE id = ?').run(id)
   const row = getDb().prepare('SELECT mfa_attempts FROM sessions WHERE id = ?').get(id) as

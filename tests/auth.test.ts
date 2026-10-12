@@ -27,7 +27,7 @@ afterAll(() => env.cleanup())
 
 async function createUser(adminToken: string, body: Record<string, unknown>) {
   const r = await call(users.POST, '/api/admin/users', { cookie: adminToken, body })
-  expect(r.status).toBe(201)
+  expect(r.status, JSON.stringify(r.data)).toBe(201)
   return r.data as { user: { id: number; username: string }; password: string | null }
 }
 
@@ -81,6 +81,21 @@ describe('Anmeldung', () => {
       headers: { origin: 'http://localhost:3000' },
     })
     expect(sameOrigin.status).toBe(201)
+  })
+
+  it('lehnt Anfragen ab, wenn die Seite für ein anderes Konto geladen wurde', async () => {
+    const token = await loginAs('admin', ADMIN_PASSWORD)
+    const { getUserByUsername } = await import('@/lib/server/users')
+    const id = String(getUserByUsername('admin')!.id)
+    expect((await call(me.GET, '/', { cookie: token, headers: { 'x-noted-user': id } })).status).toBe(200)
+    const other = await call(me.GET, '/', { cookie: token, headers: { 'x-noted-user': '9999' } })
+    expect(other.status).toBe(401)
+    expect(other.data.error).toBe('user_mismatch')
+  })
+
+  it('lehnt übergroße Anmeldeanfragen ab', async () => {
+    const r = await call(login.POST, '/', { body: { username: 'admin', password: 'x'.repeat(100_000) } })
+    expect(r.status).toBe(413)
   })
 
   it('meldet ab und macht die Sitzung ungültig', async () => {
@@ -197,20 +212,52 @@ describe('Benutzerverwaltung', () => {
     expect(r.data.setup).toBe('password')
   })
 
-  it('sperrt Konten nach zu vielen Fehlversuchen und kann sie entsperren', async () => {
+  it('begrenzt Fehlversuche pro IP, ohne das Konto für alle zu sperren', async () => {
     const admin = await loginAs('admin', ADMIN_PASSWORD)
-    const created = await createUser(admin, { username: 'paul', password: 'Geheimes-Wort-555' })
+    await createUser(admin, { username: 'paul', password: 'Geheimes-Wort-555' })
     for (let i = 0; i < 10; i++) {
       await call(login.POST, '/api/auth/login', { body: { username: 'paul', password: 'falsch' } })
     }
-    clearAllRateLimits()
-    const locked = await call(login.POST, '/api/auth/login', { body: { username: 'paul', password: 'Geheimes-Wort-555' } })
+    const sameIp = await call(login.POST, '/api/auth/login', { body: { username: 'paul', password: 'Geheimes-Wort-555' } })
+    expect(sameIp.status).toBe(429)
+    const otherIp = await call(login.POST, '/api/auth/login', {
+      body: { username: 'paul', password: 'Geheimes-Wort-555' },
+      headers: { 'x-forwarded-for': '10.0.0.2' },
+    })
+    expect(otherIp.status).toBe(200)
+  })
+
+  it('sperrt Konten bei verteilten Angriffen und kann sie entsperren', async () => {
+    const admin = await loginAs('admin', ADMIN_PASSWORD)
+    for (let i = 0; i < 50; i++) {
+      await call(login.POST, '/api/auth/login', {
+        body: { username: 'paul', password: 'falsch' },
+        headers: { 'x-forwarded-for': `10.1.${i}.1` },
+      })
+    }
+    const locked = await call(login.POST, '/api/auth/login', {
+      body: { username: 'paul', password: 'Geheimes-Wort-555' },
+      headers: { 'x-forwarded-for': '10.9.9.9' },
+    })
     expect(locked.status).toBe(429)
     expect(locked.data.error).toBe('locked')
-    const id = String(created.user.id)
+    const list = await call(users.GET, '/api/admin/users', { cookie: admin })
+    const id = String(list.data.users.find((u: { username: string }) => u.username === 'paul').id)
     await call(user.PATCH, `/api/admin/users/${id}`, { method: 'PATCH', cookie: admin, params: { id }, body: { unlock: true } })
-    const ok = await call(login.POST, '/api/auth/login', { body: { username: 'paul', password: 'Geheimes-Wort-555' } })
+    const ok = await call(login.POST, '/api/auth/login', {
+      body: { username: 'paul', password: 'Geheimes-Wort-555' },
+      headers: { 'x-forwarded-for': '10.9.9.9' },
+    })
     expect(ok.status).toBe(200)
+  })
+
+  it('fasst IPv6-Adressen für Limits zum /64-Netz zusammen', async () => {
+    const { ipKey } = await import('@/lib/server/rate-limit')
+    expect(ipKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64')
+    expect(ipKey('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')).toBe('2001:db8:1:2::/64')
+    expect(ipKey('::1')).toBe('0:0:0:0::/64')
+    expect(ipKey('192.168.1.5')).toBe('192.168.1.5')
+    expect(ipKey(null)).toBe('unknown')
   })
 
   it('protokolliert sicherheitsrelevante Ereignisse', async () => {
@@ -353,7 +400,12 @@ describe('Zwei-Faktor-Anmeldung (TOTP)', () => {
     const adminBlocked = await call(users.GET, '/api/admin/users', { cookie: admin })
     expect(adminBlocked.status).toBe(403)
     expect(adminBlocked.data.setup).toBe('mfa')
-    await call(settings.PATCH, '/api/admin/settings', { method: 'PATCH', cookie: admin, body: { enforceMfa: false } })
+    // Der Admin kann die Einstellung erst nach eigener MFA-Einrichtung wieder ändern – für die
+    // folgenden Tests direkt zurücksetzen
+    const blockedPatch = await call(settings.PATCH, '/api/admin/settings', { method: 'PATCH', cookie: admin, body: { enforceMfa: false } })
+    expect(blockedPatch.status).toBe(403)
+    const { updateSettings } = await import('@/lib/server/settings')
+    updateSettings({ enforceMfa: false })
   })
 
   it('listet eigene Sitzungen auf und kann andere abmelden', async () => {
@@ -365,5 +417,28 @@ describe('Zwei-Faktor-Anmeldung (TOTP)', () => {
     await call(sessions.DELETE, '/api/account/sessions', { method: 'DELETE', cookie: a })
     expect((await call(me.GET, '/api/auth/me', { cookie: b })).status).toBe(401)
     expect((await call(me.GET, '/api/auth/me', { cookie: a })).status).toBe(200)
+  })
+})
+
+describe('Parallele Anfragen', () => {
+  it('zählt gleichzeitige falsche MFA-Codes vollständig und erlaubt nur eine offene MFA-Abfrage', async () => {
+    clearAllRateLimits()
+    const admin = await loginAs('admin', ADMIN_PASSWORD)
+    await createUser(admin, { username: 'rennen', password: 'Start-Kennwort-999' })
+    const t = await loginAs('rennen', 'Start-Kennwort-999')
+    await call(password.POST, '/', { cookie: t, body: { currentPassword: 'Start-Kennwort-999', newPassword: 'Neues-Kennwort-999' } })
+    const start = await call(mfaSetup.POST, '/', { cookie: t })
+    await call(mfaEnable.POST, '/', { cookie: t, body: { code: generateTotpCode(start.data.secret) } })
+
+    const first = await call(login.POST, '/', { body: { username: 'rennen', password: 'Neues-Kennwort-999' } })
+    const second = await call(login.POST, '/', { body: { username: 'rennen', password: 'Neues-Kennwort-999' } })
+    // Die erste MFA-Abfrage ist durch die zweite ungültig geworden
+    expect((await call(mfa.POST, '/', { cookie: first.token, body: { code: '000000' } })).status).toBe(401)
+
+    await Promise.all(
+      Array.from({ length: 4 }, () => call(mfa.POST, '/', { cookie: second.token, body: { code: '000000' } })),
+    )
+    const { getUserByUsername } = await import('@/lib/server/users')
+    expect(getUserByUsername('rennen')!.mfa_failed).toBe(4)
   })
 })

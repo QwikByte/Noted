@@ -102,10 +102,57 @@ export function checkCsrf(req: NextRequest): boolean {
   return true
 }
 
-export async function parseJson<S extends z.ZodType>(req: NextRequest, schema: S): Promise<z.infer<S>> {
-  let body: unknown
+/** Liest den Anfragekörper, bricht aber ab, sobald er größer als `limit` Bytes wird. */
+export async function readBody(req: NextRequest, limit: number): Promise<Uint8Array> {
+  const tooLarge = () =>
+    new ApiError(413, 'too_large', `Die Anfrage ist zu groß (max. ${Math.max(1, Math.round(limit / 1024 / 1024))} MB).`)
+  const declared = Number(req.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > limit) throw tooLarge()
+  if (!req.body) return new Uint8Array(0)
+  const reader = req.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel().catch(() => {})
+      throw tooLarge()
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(size)
+  let offset = 0
+  for (const c of chunks) {
+    out.set(c, offset)
+    offset += c.byteLength
+  }
+  return out
+}
+
+/** multipart/form-data mit Größenbegrenzung lesen. */
+export async function readForm(req: NextRequest, limit: number): Promise<FormData> {
+  const bytes = await readBody(req, limit)
   try {
-    body = await req.json()
+    return await new Response(bytes as BodyInit, {
+      headers: { 'content-type': req.headers.get('content-type') ?? '' },
+    }).formData()
+  } catch {
+    throw badRequest('Ungültiger Upload.')
+  }
+}
+
+/** JSON-Körper lesen (Standard: max. 5 MB, Notizen dürfen bis zu 2 Mio. Zeichen haben) und prüfen. */
+export async function parseJson<S extends z.ZodType>(
+  req: NextRequest,
+  schema: S,
+  limit = 5 * 1024 * 1024,
+): Promise<z.infer<S>> {
+  let body: unknown
+  const bytes = await readBody(req, limit)
+  try {
+    body = JSON.parse(new TextDecoder().decode(bytes))
   } catch {
     throw badRequest('Ungültige Anfrage (kein JSON).')
   }
@@ -152,6 +199,12 @@ export function route<P extends RouteParams>(
       const found = getSession(req.cookies.get(SESSION_COOKIE)?.value)
       if (!found) throw new ApiError(401, 'unauthorized', 'Bitte melde dich an.')
       const { session, user } = found
+
+      // Seite wurde für ein anderes Konto geladen (z. B. in einem anderen Tab umgemeldet)
+      const claimed = req.headers.get('x-noted-user')
+      if (claimed && claimed !== String(user.id)) {
+        throw new ApiError(401, 'user_mismatch', 'Du bist inzwischen mit einem anderen Konto angemeldet.')
+      }
 
       if (level === 'mfa') {
         if (session.stage !== 'mfa') throw new ApiError(400, 'no_mfa_pending', 'Keine MFA-Anmeldung ausstehend.')

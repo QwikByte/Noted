@@ -3,9 +3,10 @@ import { ApiError, badRequest } from './http'
 import { audit } from './audit'
 import { decrypt, encrypt } from './crypto'
 import { checkPasswordPolicy, hashPassword, verifyDummy, verifyPassword } from './password'
-import { rateLimit, resetRateLimit } from './rate-limit'
+import { ipKey, isRateLimited, rateLimit, resetRateLimit } from './rate-limit'
 import {
   createSession,
+  deleteMfaStageSessions,
   deleteSession,
   deleteUserSessions,
   incrementMfaAttempts,
@@ -16,8 +17,14 @@ import { generateTotpSecret, totpQrDataUrl, totpUri, verifyTotp } from './totp'
 import { getUserById, getUserByUsername, isMfaRequired, pendingSetup, updateUser, type UserRow } from './users'
 import { getConfig } from './config'
 
-export const LOCK_THRESHOLD = 10
+/** Fehlversuche (alle IPs zusammen), ab denen das Konto gesperrt wird */
+export const LOCK_THRESHOLD = 50
 export const LOCK_DURATION_MS = 15 * 60 * 1000
+/** Fehlversuche pro Benutzer und IP-Adresse innerhalb von 15 Minuten */
+export const USER_IP_LIMIT = 10
+/** Fehlversuche pro IP-Adresse (alle Benutzer) innerhalb von 15 Minuten */
+export const IP_FAILURE_LIMIT = 30
+const LOGIN_WINDOW_MS = 15 * 60_000
 /** Ab so vielen falschen MFA-Codes wird gesperrt – jede weitere Sperre dauert doppelt so lang (max. 24 h). */
 export const MFA_LOCK_THRESHOLD = 5
 const MFA_LOCK_MAX_MS = 24 * 60 * 60 * 1000
@@ -69,23 +76,39 @@ export type LoginResult =
   | { status: 'ok'; token: string; setup: 'password' | 'mfa' | null; user: UserRow }
 
 export async function login(username: string, password: string, meta: Meta): Promise<LoginResult> {
-  const name = username.trim().toLowerCase()
-  const ipLimit = rateLimit(`login-ip:${meta.ip ?? 'unknown'}`, 30, 15 * 60_000)
-  const userLimit = rateLimit(`login-user:${name}`, 15, 15 * 60_000)
-  if (!ipLimit.ok || !userLimit.ok) {
-    const wait = Math.max(ipLimit.ok ? 0 : ipLimit.retryAfterSec, userLimit.ok ? 0 : userLimit.retryAfterSec)
-    throw new ApiError(429, 'rate_limited', `Zu viele Anmeldeversuche. Bitte warte ${minutes(wait * 1000)} Minuten.`)
+  const name = username.trim().toLowerCase().slice(0, 64)
+  const ip = ipKey(meta.ip)
+  const userKey = `login-user:${name}:${ip}`
+  // Pro IP zählen nur Fehlversuche (viele Studierende teilen sich z. B. eine NAT-Adresse im Uni-WLAN)
+  const ipBucket = `login-ip:${ip}`
+  if (isRateLimited(ipBucket, IP_FAILURE_LIMIT)) {
+    throw new ApiError(429, 'rate_limited', 'Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte 15 Minuten.')
+  }
+  const fail = () => {
+    rateLimit(ipBucket, IP_FAILURE_LIMIT, LOGIN_WINDOW_MS)
+    rateLimit(userKey, USER_IP_LIMIT, LOGIN_WINDOW_MS)
+  }
+  // Fehlversuche pro Benutzer *und* IP: Ein Angreifer kann so das Konto nicht für alle anderen sperren
+  if (isRateLimited(userKey, USER_IP_LIMIT)) {
+    throw new ApiError(429, 'rate_limited', 'Zu viele Fehlversuche. Bitte warte 15 Minuten.')
   }
 
-  const user = getUserByUsername(name)
-  if (!user) {
+  const found = getUserByUsername(name)
+  if (!found) {
     await verifyDummy(password)
-    audit({ event: 'login_failed', username: name.slice(0, 64), ip: meta.ip, details: { reason: 'unknown_user' } })
+    fail()
+    audit({ event: 'login_failed', username: name, ip: meta.ip, details: { reason: 'unknown_user' } })
     throw new ApiError(401, 'invalid_credentials', 'Benutzername oder Passwort ist falsch.')
   }
-  checkLocked(user)
+  checkLocked(found)
 
-  if (!(await verifyPassword(user.password_hash, password))) {
+  const passwordOk = await verifyPassword(found.password_hash, password)
+  // Nach dem await neu lesen – parallele Anfragen sollen sich nicht gegenseitig überschreiben
+  const user = getUserById(found.id)
+  if (!user) throw new ApiError(401, 'invalid_credentials', 'Benutzername oder Passwort ist falsch.')
+  checkLocked(user)
+  if (!passwordOk) {
+    fail()
     registerFailure(user, meta.ip)
     throw new ApiError(401, 'invalid_credentials', 'Benutzername oder Passwort ist falsch.')
   }
@@ -94,10 +117,12 @@ export async function login(username: string, password: string, meta: Meta): Pro
     throw new ApiError(403, 'inactive', 'Dieses Konto ist deaktiviert. Wende dich an den Administrator.')
   }
 
-  updateUser(user.id, { failed_logins: 0, locked_until: null })
-  resetRateLimit(`login-user:${name}`)
+  updateUser(user.id, { failed_logins: 0 })
+  resetRateLimit(userKey)
 
   if (user.mfa_enabled) {
+    // Höchstens eine offene MFA-Abfrage pro Benutzer (sonst ließen sich Codes parallel durchprobieren)
+    deleteMfaStageSessions(user.id)
     const { token } = createSession(user.id, 'mfa', meta)
     return { status: 'mfa', token }
   }
@@ -109,10 +134,13 @@ export async function login(username: string, password: string, meta: Meta): Pro
 
 export async function completeMfaLogin(
   session: SessionRow,
-  user: UserRow,
+  staleUser: UserRow,
   code: string,
   meta: Meta,
 ): Promise<{ token: string; setup: 'password' | 'mfa' | null }> {
+  // Frisch lesen: Ab hier läuft alles synchron, parallele Anfragen zählen also korrekt mit
+  const user = getUserById(staleUser.id)
+  if (!user) throw new ApiError(401, 'unauthorized', 'Bitte melde dich an.')
   const attempts = incrementMfaAttempts(session.id)
   if (attempts > MAX_MFA_ATTEMPTS) {
     deleteSession(session.id)

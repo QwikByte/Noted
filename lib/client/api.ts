@@ -21,9 +21,20 @@ export class NetworkError extends Error {
 
 type Options = Omit<RequestInit, 'body'> & { body?: unknown; form?: FormData }
 
+let currentUserId: number | null = null
+
+/**
+ * Konto, für das diese Seite geladen wurde. Wird bei jeder Anfrage mitgeschickt – meldet sich in einem
+ * anderen Tab jemand anderes an, lehnt der Server ab, statt z. B. Entwürfe ins falsche Konto zu speichern.
+ */
+export function setApiUser(id: number) {
+  currentUserId = id
+}
+
 export async function api<T = unknown>(url: string, opts: Options = {}): Promise<T> {
   const headers = new Headers(opts.headers)
   headers.set('x-noted-request', '1')
+  if (currentUserId !== null) headers.set('x-noted-user', String(currentUserId))
   let body: BodyInit | undefined
   if (opts.form) body = opts.form
   else if (opts.body !== undefined) {
@@ -54,13 +65,29 @@ export async function api<T = unknown>(url: string, opts: Options = {}): Promise
   return data as T
 }
 
-/** Abgelaufene Sitzung → Login; ausstehende Kontoeinrichtung → Setup-Seite */
+let redirecting = false
+
+/** Abgelaufene Sitzung → Offline-Daten löschen und zum Login; ausstehende Kontoeinrichtung → Setup-Seite */
 function handleAuthError(err: ApiError) {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' || redirecting) return
   if (err.status === 401 && !location.pathname.startsWith('/login')) {
-    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+    redirecting = true
+    const target = `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+    void clearCachedData().finally(() => (location.href = target))
   } else if (err.code === 'setup_required' && !location.pathname.startsWith('/setup')) {
     location.href = '/setup'
+  }
+}
+
+/** Vom Service Worker zwischengespeicherte Notizen und App-Seite löschen. */
+export async function clearCachedData() {
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.filter((k) => k.startsWith('noted-data') || k.startsWith('noted-shell')).map((k) => caches.delete(k)))
+    }
+  } catch {
+    /* egal */
   }
 }
 

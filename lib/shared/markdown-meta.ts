@@ -19,12 +19,30 @@ export function splitFrontmatter(content: string): Frontmatter | null {
   return { raw: m[1], data, body: content.slice(m[0].length), lines: m[0].split('\n').length - 1 }
 }
 
-/** Code-Blöcke, Inline-Code und Kommentare entfernen (Zeilen bleiben erhalten). */
+const blank = (s: string) => s.replace(/[^\n]/g, ' ')
+const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
+
+/**
+ * Code-Blöcke, Inline-Code und Kommentare durch Leerzeichen ersetzen (Zeilen bleiben erhalten).
+ * Bewusst zeilenweise statt mit einer großen Regex – sonst droht quadratische Laufzeit.
+ */
 export function stripCode(text: string): string {
-  return text
-    .replace(/^(\s*)(```|~~~)[^\n]*\n[\s\S]*?(?:^\s*\2[^\n]*$|(?![\s\S]))/gm, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/%%[\s\S]*?%%/g, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/(`+)[^`\n][\s\S]*?\1/g, (code) => code.replace(/[^\n]/g, ' '))
+  const lines = text.split('\n')
+  let fence: string | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = FENCE_RE.exec(lines[i])
+    if (fence) {
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length) fence = null
+      lines[i] = blank(lines[i])
+    } else if (m) {
+      fence = m[1]
+      lines[i] = blank(lines[i])
+    }
+  }
+  return lines
+    .join('\n')
+    .replace(/%%[\s\S]*?%%/g, blank)
+    .replace(/(`+)[^`\n][\s\S]*?\1/g, blank)
 }
 
 const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
@@ -61,7 +79,8 @@ export function extractTags(content: string): string[] {
   return [...tags].sort()
 }
 
-const WIKILINK_RE = /(!?)\[\[([^\]\n]+?)\]\]/g
+// Innerhalb eines Links sind keine eckigen Klammern erlaubt (verhindert quadratische Laufzeit bei „[[[[…“)
+const WIKILINK_RE = /(!?)\[\[([^[\]\n]{1,1000})\]\]/g
 
 export type WikiLink = { embed: boolean; target: string; heading: string | null; alias: string | null }
 
@@ -115,10 +134,11 @@ export function extractLinks(content: string): string[] {
 /** Kurzer Textauszug für Listen (ohne Frontmatter und Markdown-Zeichen). */
 export function makeExcerpt(content: string, max = 160): string {
   const fm = splitFrontmatter(content)
-  const text = stripCode(fm ? fm.body : content)
-    .replace(/!\[\[[^\]]*\]\]/g, ' ')
-    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+  // Für einen Auszug genügt der Anfang – begrenzt zugleich die Rechenzeit
+  const text = stripCode((fm ? fm.body : content).slice(0, 4000))
+    .replace(/!\[\[[^[\]\n]*\]\]/g, ' ')
+    .replace(/\[\[([^[\]|\n]*\|)?([^[\]\n]*)\]\]/g, '$2')
+    .replace(/!?\[([^[\]\n]*)\]\([^()\n]*\)/g, '$1')
     .replace(/^\s{0,3}(#{1,6}\s+|>\s*(\[![^\]]*\][+-]?\s*)?|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/gm, '')
     .replace(/[*_~=`$]+/g, '')
     .replace(/\s+/g, ' ')

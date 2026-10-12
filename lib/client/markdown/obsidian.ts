@@ -44,10 +44,13 @@ function wikilinkRule(state: StateInline, silent: boolean): boolean {
   const embed = src.charCodeAt(pos) === 0x21 /* ! */
   if (embed) pos++
   if (src.charCodeAt(pos) !== 0x5b || src.charCodeAt(pos + 1) !== 0x5b) return false
-  const end = src.indexOf(']]', pos + 2)
-  if (end < 0) return false
-  const inner = src.slice(pos + 2, end)
-  if (!inner.trim() || inner.includes('\n') || inner.includes('[[')) return false
+  // Suche begrenzen (sonst quadratische Laufzeit bei sehr vielen „[[“)
+  const window = src.slice(pos + 2, Math.min(state.posMax, pos + 2 + 1000))
+  const rel = window.indexOf(']]')
+  if (rel < 0) return false
+  const end = pos + 2 + rel
+  const inner = window.slice(0, rel)
+  if (!inner.trim() || inner.includes('\n') || inner.includes('[')) return false
   if (!silent) {
     const token = state.push('wikilink', '', 0)
     token.meta = { embed, ...parseWikiTarget(inner) }

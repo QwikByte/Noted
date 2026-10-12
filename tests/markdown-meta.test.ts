@@ -99,3 +99,29 @@ describe('Hilfsfunktionen', () => {
     )
   })
 })
+
+describe('Weiterleitung nach dem Login', async () => {
+  const { safeRedirectPath } = await import('@/lib/shared/redirect')
+  it('erlaubt nur Pfade innerhalb der App', () => {
+    expect(safeRedirectPath('/?n=abc#x')).toBe('/?n=abc#x')
+    expect(safeRedirectPath('/settings')).toBe('/settings')
+    for (const evil of ['//evil.com', '/\\evil.com', '/\t/evil.com', '/\n/evil.com', 'https://evil.com', 'evil', '/%09/x']) {
+      const r = safeRedirectPath(evil)
+      expect(new URL(r, 'https://noted.example').origin).toBe('https://noted.example')
+    }
+    expect(safeRedirectPath(undefined)).toBe('/')
+    expect(safeRedirectPath(['/a', '/b'])).toBe('/a')
+  })
+})
+
+describe('Laufzeit bei böswilligen Eingaben', () => {
+  it('verarbeitet 2 MB große Notizen in linearer Zeit', () => {
+    for (const s of ['\n'.repeat(2_000_000), '[['.repeat(1_000_000), '[('.repeat(1_000_000), '```\n'.repeat(500_000)]) {
+      const t = Date.now()
+      extractTags(s)
+      extractLinks(s)
+      makeExcerpt(s)
+      expect(Date.now() - t).toBeLessThan(3000)
+    }
+  })
+})

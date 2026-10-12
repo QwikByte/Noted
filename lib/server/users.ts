@@ -169,6 +169,7 @@ export function countActiveAdmins(excludeId?: number): number {
 export function deleteUser(id: number) {
   const db = getDb()
   db.transaction(() => {
+    db.prepare('DELETE FROM notes_fts_map WHERE note_id IN (SELECT id FROM notes WHERE user_id = ?)').run(id)
     db.prepare('DELETE FROM notes_fts WHERE user_id = ?').run(id)
     db.prepare('DELETE FROM users WHERE id = ?').run(id)
   })()

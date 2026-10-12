@@ -44,10 +44,12 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Benutzer anlegen, bearbeiten, deaktivieren und löschen
   - Passwort und MFA zurücksetzen, Sitzungen beenden, gesperrte Konten entsperren
   - Sicherheitsprotokoll
-- Jeder sieht nur die eigenen Notizen, auch der Admin hat keinen Zugriff darauf.
+- Jeder sieht nur die eigenen Notizen; auch der Admin kann fremde Notizen in der Oberfläche nicht öffnen. Technisch könnte ein Admin Passwort und MFA eines Kontos zurücksetzen und sich damit anmelden. Das wird protokolliert, und der Betroffene merkt es, weil sein Passwort danach nicht mehr funktioniert.
 - Weitere Schutzmaßnahmen:
   - Argon2id für Passwörter, verschlüsselt gespeicherte MFA-Schlüssel und Replay-Schutz für TOTP-Codes
-  - Rate-Limits und Kontosperre nach 10 falschen Passwörtern; nach 5 falschen MFA-Codes eine Sperre, die mit jedem weiteren Fehlversuch länger wird (bis 24 h)
+  - Begrenzte Anmeldeversuche: nach 10 falschen Passwörtern wird die jeweilige IP-Adresse für dieses Konto 15 Minuten gesperrt (Fremde können dich so nicht aussperren), nach 50 Fehlversuchen insgesamt das ganze Konto
+  - Nach 5 falschen MFA-Codes eine Sperre, die mit jedem weiteren Fehlversuch länger wird (bis 24 h)
+  - Größenlimits für Anfragen, Uploads und ZIP-Importe
   - CSRF-Schutz, strikte Content-Security-Policy mit Nonce, HttpOnly-Cookies
   - Sitzungsübersicht mit Abmelden einzelner Geräte
 
@@ -87,7 +89,7 @@ Setze dann in `.env` die öffentliche Adresse:
 APP_URL=https://notizen.example.com
 ```
 
-Mit nginx oder Traefik geht es genauso. Wichtig ist, dass der Proxy `X-Forwarded-For` und `X-Forwarded-Proto` setzt (bei Caddy automatisch). Erhöhe außerdem dort das Upload-Limit, falls du große Dateien hochladen willst (nginx: `client_max_body_size 30m;`).
+Mit nginx oder Traefik geht es genauso. Wichtig ist, dass der Proxy `X-Forwarded-For` und `X-Forwarded-Proto` setzt (bei Caddy automatisch), denn die Begrenzung von Anmeldeversuchen arbeitet mit der IP-Adresse. Erhöhe bei nginx außerdem das Upload-Limit, falls du große Dateien hochladen willst (`client_max_body_size 30m;`). Betreibe die App nicht ohne Reverse Proxy direkt im Internet.
 
 ### Konfiguration
 

@@ -43,10 +43,19 @@ function offlineJson() {
   })
 }
 
+async function purgeUserData() {
+  await Promise.all([caches.delete(DATA_CACHE), caches.delete(SHELL_CACHE)])
+}
+
 async function networkFirst(request, cacheName, cacheKey) {
   const cache = await caches.open(cacheName)
   try {
     const response = await fetch(request)
+    // Sitzung abgelaufen oder widerrufen: nichts mehr offline vorhalten
+    if (response.status === 401) {
+      await purgeUserData()
+      return response
+    }
     if (response.ok && response.status === 200 && !response.redirected) {
       cache.put(cacheKey || request, response.clone())
     }

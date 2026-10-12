@@ -673,11 +673,14 @@ function SecurityTab() {
           <li>Keine Selbstregistrierung – Konten legt nur ein Administrator an.</li>
           <li>Passwörter werden mit Argon2id gehasht; MFA-Schlüssel sind verschlüsselt gespeichert.</li>
           <li>
-            Nach 10 falschen Passwörtern wird ein Konto für 15 Minuten gesperrt. Nach 5 falschen MFA-Codes wird jede weitere
-            Sperre doppelt so lang (bis 24 Stunden). Anmeldeversuche sind zusätzlich pro IP begrenzt.
+            Nach 10 falschen Passwörtern wird die jeweilige IP-Adresse für dieses Konto 15 Minuten gesperrt, nach 50 Fehlversuchen
+            insgesamt das ganze Konto. Nach 5 falschen MFA-Codes wird jede weitere Sperre doppelt so lang (bis 24 Stunden).
           </li>
           <li>Sitzungen laufen nach 30 Tagen Inaktivität ab und werden bei Passwortänderung auf anderen Geräten beendet.</li>
-          <li>Jeder Benutzer sieht ausschließlich seine eigenen Notizen – auch Administratoren haben keinen Zugriff darauf.</li>
+          <li>
+            Jeder Benutzer sieht ausschließlich seine eigenen Notizen; Administratoren können fremde Notizen nicht öffnen. Setzt
+            ein Admin Passwort oder MFA zurück, wird das protokolliert und fällt dem Benutzer bei der nächsten Anmeldung auf.
+          </li>
         </ul>
       </Section>
     </div>

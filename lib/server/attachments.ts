@@ -72,11 +72,10 @@ const EXT_BY_MIME: Record<string, string> = {
 /** Typen, die der Browser direkt anzeigen darf. Alles andere wird als Download ausgeliefert. */
 const INLINE_MIME = /^(image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)|application\/pdf|audio\/[\w.+-]+|video\/[\w.+-]+|text\/plain)$/
 
-export function guessMime(filename: string, provided?: string | null): string {
+/** MIME-Typ nur anhand bekannter Endungen – Angaben des Browsers werden nicht übernommen. */
+export function guessMime(filename: string): string {
   const ext = splitExtension(filename).ext.toLowerCase()
-  if (MIME_BY_EXT[ext]) return MIME_BY_EXT[ext]
-  if (provided && /^[\w.+-]+\/[\w.+-]+$/.test(provided)) return provided.toLowerCase()
-  return 'application/octet-stream'
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }
 
 function userDir(userId: number) {
@@ -126,7 +125,7 @@ export function saveAttachment(userId: number, input: { name: string; type?: str
 
   let filename = sanitizeFilename(input.name || 'Datei')
   if (!splitExtension(filename).ext && input.type && EXT_BY_MIME[input.type]) filename += EXT_BY_MIME[input.type]
-  const mime = guessMime(filename, input.type)
+  const mime = guessMime(filename)
 
   const db = getDb()
   const taken = (db.prepare('SELECT filename FROM attachments WHERE user_id = ?').all(userId) as { filename: string }[]).map(

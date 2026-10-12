@@ -180,21 +180,24 @@ export function deleteFolder(userId: number, id: string): { trashedNotes: number
 function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; content: string }) {
   db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(note.id)
   db.prepare('DELETE FROM note_links WHERE note_id = ?').run(note.id)
-  db.prepare('DELETE FROM notes_fts WHERE note_id = ?').run(note.id)
+  unindexNote(db, note.id)
   const insTag = db.prepare('INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)')
   for (const tag of extractTags(note.content)) insTag.run(note.id, tag)
   const insLink = db.prepare('INSERT OR IGNORE INTO note_links (note_id, target) VALUES (?, ?)')
   for (const target of extractLinks(note.content)) insLink.run(note.id, target)
-  db.prepare('INSERT INTO notes_fts (note_id, user_id, title, content) VALUES (?, ?, ?, ?)').run(
-    note.id,
-    note.user_id,
-    note.title,
-    note.content,
-  )
+  const info = db
+    .prepare('INSERT INTO notes_fts (note_id, user_id, title, content) VALUES (?, ?, ?, ?)')
+    .run(note.id, note.user_id, note.title, note.content)
+  db.prepare('INSERT OR REPLACE INTO notes_fts_map (note_id, fts_rowid) VALUES (?, ?)').run(note.id, info.lastInsertRowid)
 }
 
 function unindexNote(db: Database.Database, noteId: string) {
-  db.prepare('DELETE FROM notes_fts WHERE note_id = ?').run(noteId)
+  const row = db.prepare('SELECT fts_rowid FROM notes_fts_map WHERE note_id = ?').get(noteId) as
+    | { fts_rowid: number }
+    | undefined
+  if (!row) return
+  db.prepare('DELETE FROM notes_fts WHERE rowid = ?').run(row.fts_rowid)
+  db.prepare('DELETE FROM notes_fts_map WHERE note_id = ?').run(noteId)
 }
 
 function getNoteRow(userId: number, id: string, opts: { includeDeleted?: boolean } = {}): NoteRow {
@@ -367,7 +370,7 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
     .get(userId, noteId, key)
   if (other) return 0
 
-  const re = new RegExp(`(!?\\[\\[)((?:[^\\]|#\\n]*/)?)${escapeRegExp(oldTitle)}(\\.md)?(?=[\\]|#])`, 'gi')
+  const re = new RegExp(`(!?\\[\\[)((?:[^[\\]|#\\n]*/)?)${escapeRegExp(oldTitle)}(\\.md)?(?=[\\]|#])`, 'gi')
   let count = 0
   for (const src of sources) {
     const content = src.content.replace(re, (_m, open: string, prefix: string) => {

@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../ui/toast'
-import { NetworkError } from '@/lib/client/api'
+import { NetworkError, setApiUser } from '@/lib/client/api'
 import { sync } from '@/lib/client/sync'
 import { applyTheme, type Theme } from '@/lib/client/prefs'
 import type { PublicUser } from '@/lib/shared/types'
@@ -21,9 +21,9 @@ function registerServiceWorker() {
 }
 
 export function AppProviders({ user, children }: { user: PublicUser; children: React.ReactNode }) {
-  const [client] = useState(
-    () =>
-      new QueryClient({
+  const [client] = useState(() => {
+    setApiUser(user.id)
+    return new QueryClient({
         defaultOptions: {
           queries: {
             staleTime: 30_000,
@@ -33,8 +33,8 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
           },
           mutations: { networkMode: 'always' },
         },
-      }),
-  )
+      })
+  })
 
   useEffect(() => {
     sync.start(user.id)

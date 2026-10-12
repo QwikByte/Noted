@@ -3,7 +3,7 @@ import { strToU8, unzipSync, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
 import { getDb } from './db'
 import { getConfig } from './config'
 import { ApiError, badRequest } from './http'
-import { createFolder, createNote, folderPathMap, listFolders } from './notes'
+import { createFolder, createNote, folderPathMap, listFolders, MAX_NOTE_LENGTH } from './notes'
 import { listAttachments, readAttachmentData, saveAttachment } from './attachments'
 import { sanitizeFilename, sanitizeName } from '@/lib/shared/names'
 
@@ -135,12 +135,18 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
       let declared = 0
       let count = 0
       try {
+        // fflate reserviert für jeden Eintrag die angegebene Größe – daher vorher prüfen
         entries = unzipSync(data, {
           filter: (f) => {
             if (f.name.endsWith('/') || isHiddenPath(f.name)) return false
+            const max = NOTE_EXT.test(f.name) ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
+            if (f.originalSize > max) {
+              result.skipped.push(`${f.name} (zu groß)`)
+              return false
+            }
             count++
             declared += f.originalSize
-            if (count > 10_000 || declared > maxImportBytes * 4) {
+            if (count > 10_000 || declared > maxImportBytes * 2) {
               throw new ApiError(413, 'too_large', 'Das ZIP-Archiv enthält zu viele oder zu große Dateien.')
             }
             return true

@@ -121,4 +121,12 @@ export const migrations: string[] = [
   );
   CREATE UNIQUE INDEX attachments_name ON attachments(user_id, filename COLLATE NOCASE);
   `,
+
+  /* 2: Zuordnung Notiz → Zeile im Suchindex (Löschen per rowid statt Tabellenscan) */ `
+  CREATE TABLE notes_fts_map (
+    note_id TEXT PRIMARY KEY,
+    fts_rowid INTEGER NOT NULL UNIQUE
+  );
+  INSERT OR REPLACE INTO notes_fts_map (note_id, fts_rowid) SELECT note_id, rowid FROM notes_fts;
+  `,
 ]

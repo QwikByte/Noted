@@ -4,6 +4,7 @@ import { audit } from './audit'
 import { generatePassword } from './crypto'
 import { checkPasswordPolicy, hashPassword } from './password'
 import { deleteUserSessions } from './session'
+import { resetRateLimitPrefix } from './rate-limit'
 import {
   countActiveAdmins,
   createUser,
@@ -96,7 +97,10 @@ export function adminUpdateUser(
     ...(changes.mfaRequired !== undefined ? { mfa_required: patch.mfaRequired ? 1 : 0 } : {}),
     ...(patch.unlock ? { failed_logins: 0, mfa_failed: 0, locked_until: null } : {}),
   })
-  if (patch.unlock) changes.unlocked = true
+  if (patch.unlock) {
+    changes.unlocked = true
+    resetRateLimitPrefix(`login-user:${user.username.toLowerCase()}:`)
+  }
   if (changes.isActive === false) deleteUserSessions(user.id)
 
   if (Object.keys(changes).length > 0) {
