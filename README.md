@@ -119,6 +119,15 @@ Setze dann in `.env` die öffentliche Adresse:
 APP_URL=https://notizen.example.com
 ```
 
+Noted sendet selbst eine strikte Content-Security-Policy, `X-Frame-Options: DENY` und einen HSTS-Header (ein Jahr). Prüfe deinen Server nach dem Einrichten einmal von außen, z. B. mit [SSL Labs](https://www.ssllabs.com/ssltest/) oder [Mozilla Observatory](https://observatory.mozilla.org/). Hast du weitere Subdomains, die alle HTTPS können, kannst du HSTS am Reverse Proxy verschärfen (`includeSubDomains`), z. B. in Caddy:
+
+```caddyfile
+notizen.example.com {
+    header Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
 Mit nginx oder Traefik geht es genauso. Wichtig ist, dass der Proxy `X-Forwarded-For` und `X-Forwarded-Proto` setzt (bei Caddy automatisch), denn die Begrenzung von Anmeldeversuchen arbeitet mit der IP-Adresse. Erhöhe bei nginx außerdem das Upload-Limit, falls du große Dateien hochladen willst (`client_max_body_size 30m;`). Betreibe die App nicht ohne Reverse Proxy direkt im Internet.
 
 ### Konfiguration

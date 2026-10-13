@@ -21,7 +21,8 @@ test('Build-ID steckt in Seite, Service Worker und Versions-API', async ({ page 
     const src = document.querySelector<HTMLScriptElement>('script[src*="dpl="]')?.src
     return src ? new URL(src).searchParams.get('dpl') : null
   })
-  expect(dpl).toMatch(/^dev-[0-9a-f]{10}$/)
+  // Build-ID = Version + 10 Hex-Zeichen (bei getaggtem Build z. B. v1_0_2-…, sonst dev-…)
+  expect(dpl).toMatch(/^\S+-[0-9a-f]{10}$/)
   const [api, sw] = await page.evaluate(async () => [
     await fetch('/api/version').then((r) => r.json()),
     await fetch('/sw.js').then((r) => r.text()),
@@ -57,6 +58,18 @@ test('Neue Version wird erkannt und per „Neu laden“ übernommen', async ({ p
   // Jetzt passt die Version zum Server → kein Hinweis mehr (erste Prüfung nach 5 s)
   await page.waitForTimeout(7_000)
   await expect(banner).toBeHidden()
+})
+
+test('Sicherheits-Header sind auf jeder Antwort gesetzt', async ({ page }) => {
+  const res = (await page.goto('/login'))!
+  const h = res.headers()
+  expect(h['strict-transport-security']).toContain('max-age=31536000')
+  expect(h['x-frame-options']).toBe('DENY')
+  expect(h['x-content-type-options']).toBe('nosniff')
+  expect(h['content-security-policy']).toContain("object-src 'none'")
+  expect(h['content-security-policy']).toContain("frame-ancestors 'none'")
+  // kein Next.js-Verräter-Header
+  expect(h['x-powered-by']).toBeUndefined()
 })
 
 test('Administration → System zeigt Version und Update-Status', async ({ page }) => {

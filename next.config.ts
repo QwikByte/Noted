@@ -21,6 +21,11 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+  // HSTS: Browser sprechen die Domain künftig nur noch über HTTPS an (schützt vor SSL-Stripping beim ersten
+  // Aufruf in einem fremden Netz). Über HTTP ignorieren Browser den Header, daher gefahrlos auch beim lokalen
+  // Zugriff auf Port 3000. Ohne includeSubDomains – das ist sicher für Server mit weiteren Subdomains ohne
+  // HTTPS; verschärfen lässt es sich bei Bedarf am Reverse Proxy (siehe README, Abschnitt HTTPS).
+  { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
 ]
 
 const nextConfig: NextConfig = {
