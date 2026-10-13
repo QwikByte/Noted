@@ -4,7 +4,15 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# better-sqlite3 bringt fertige Binärdateien für Linux x64/arm64 mit. npm würde trotzdem node-gyp starten,
+# das ohne Python scheitert – daher ohne Installationsskripte. Nur wenn es für diese Plattform keine fertige
+# Binärdatei gibt, werden Build-Werkzeuge installiert und SQLite wird kompiliert.
+RUN npm ci --no-audit --no-fund --ignore-scripts \
+ && if ! node -e "new (require('better-sqlite3'))(':memory:').close()" 2> /dev/null; then \
+      apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+      && npm rebuild better-sqlite3 --foreground-scripts \
+      && node -e "new (require('better-sqlite3'))(':memory:').close()"; \
+    fi
 
 # ---- Build -------------------------------------------------------------------
 FROM node:22-bookworm-slim AS build

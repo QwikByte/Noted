@@ -21,6 +21,7 @@
 #   --repo URL       Git-Repository (Standard: https://github.com/QwikByte/Noted.git)
 #
 # Erneut ausführen ist gefahrlos: Eine bestehende Installation wird nur ergänzt bzw. aktualisiert.
+# Die komplette Ausgabe landet zusätzlich in /var/log/noted-install.log.
 
 main() {
   set -euo pipefail
@@ -32,6 +33,9 @@ main() {
   HTTPS='ask'
   FRESH=0
   ADMIN_PW=''
+  START_PW_PENDING=0
+  ADMIN_USER='admin'
+  LOG=/var/log/noted-install.log
   export GIT_TERMINAL_PROMPT=0
 
   while (($#)); do
@@ -47,6 +51,11 @@ main() {
     shift
   done
 
+  if [[ $(id -u) == 0 ]]; then
+    # Alles zusätzlich ins Protokoll schreiben (für die Fehlersuche)
+    printf '\n===== %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
+    exec > >(tee -a "$LOG") 2>&1
+  fi
   title 'Noted wird installiert'
   check_system
   install_packages
@@ -76,6 +85,7 @@ step() { printf '%s•%s %s\n' "$GREEN" "$RESET" "$*"; }
 note() { printf '%s! %s%s\n' "$YELLOW" "$*" "$RESET"; }
 die() {
   printf '\n%sFehler: %s%s\n' "$RED" "$*" "$RESET" >&2
+  [[ -n ${LOG:-} && -f $LOG ]] && printf 'Vollständiges Protokoll: %s\n' "$LOG" >&2
   exit 1
 }
 
@@ -112,6 +122,11 @@ check_system() {
   fi
   [[ -n $OS_CODENAME ]] || die 'Konnte die Version des Systems nicht erkennen (VERSION_CODENAME fehlt).'
   command -v systemctl > /dev/null || die 'systemd wird benötigt.'
+  # Next.js und die mitgelieferten Binärdateien gibt es nur für 64 Bit
+  case $(uname -m) in
+    x86_64 | amd64 | aarch64 | arm64) ;;
+    *) die "Nicht unterstützte Prozessor-Architektur: $(uname -m). Noted braucht ein 64-Bit-System (x86_64 oder arm64)." ;;
+  esac
   step "System: ${PRETTY_NAME:-$OS_ID} ($(uname -m))"
 }
 
@@ -238,7 +253,8 @@ EOF
 first_start() {
   title 'Bauen und starten (dauert beim ersten Mal einige Minuten)'
   if [[ -n $LATEST ]]; then
-    "$DIR/scripts/auto-update.sh" -v || die "Installation fehlgeschlagen – Protokoll: $DIR/.update/last-run.log"
+    # --retry: ein beim letzten Versuch fehlgeschlagenes Release nicht überspringen
+    "$DIR/scripts/auto-update.sh" -v --retry || die "Installation fehlgeschlagen – Protokoll: $DIR/.update/last-run.log"
   else
     (cd "$DIR" && docker compose up -d --build) || die 'Bauen fehlgeschlagen.'
   fi
@@ -250,10 +266,20 @@ first_start() {
   curl -fsS -o /dev/null http://127.0.0.1:3000/api/health || die "Noted antwortet nicht (cd $DIR && docker compose logs noted)."
   systemctl start noted-update.timer noted-update.path
   step 'Noted läuft auf 127.0.0.1:3000'
-  # Beim allerersten Start erzeugt Noted ein Admin-Passwort und schreibt es ins Log
-  if ((FRESH)); then
-    ADMIN_PW=$(cd "$DIR" && docker compose logs --no-color noted 2> /dev/null | sed -n 's/.*Passwort: *\([^ ]*\)$/\1/p' | tail -n 1 || true)
-  fi
+  read_start_password
+}
+
+# Beim allerersten Start erzeugt Noted ein Admin-Passwort und schreibt es ins Log. Anzeigen, solange es
+# noch gilt (Konto hat noch das Startpasswort) – auch wenn ein früherer Installationsversuch abgebrochen ist.
+read_start_password() {
+  local user list
+  user=$(sed -n 's/^ADMIN_USERNAME=//p' "$DIR/.env" | tail -n 1)
+  user=${user:-admin}
+  list=$(cd "$DIR" && docker compose exec -T noted node scripts/admin-cli.mjs list 2> /dev/null) || return 0
+  grep -qE "^$user +.*Startpasswort" <<< "$list" || return 0
+  START_PW_PENDING=1
+  ADMIN_USER=$user
+  ADMIN_PW=$(cd "$DIR" && docker compose logs --no-color noted 2> /dev/null | sed -n 's/.*Passwort: *\([^ ]*\)$/\1/p' | tail -n 1 || true)
 }
 
 ask_domain() {
@@ -320,9 +346,9 @@ summary() {
   title "${GREEN}Fertig!${RESET}${BOLD} Noted ist installiert"
   printf '\n  Adresse:        %s\n' "$url"
   if [[ -n $ADMIN_PW ]]; then
-    printf '  Benutzername:   admin\n  Passwort:       %s%s%s  (bei der ersten Anmeldung ändern)\n' "$BOLD" "$ADMIN_PW" "$RESET"
-  elif ((FRESH)); then
-    printf '  Anmeldung:      admin – Passwort: cd %s && docker compose logs noted\n' "$DIR"
+    printf '  Benutzername:   %s\n  Passwort:       %s%s%s  (bei der ersten Anmeldung ändern)\n' "$ADMIN_USER" "$BOLD" "$ADMIN_PW" "$RESET"
+  elif ((START_PW_PENDING)); then
+    printf '  Anmeldung:      %s – neues Startpasswort: cd %s && docker compose exec noted node scripts/admin-cli.mjs reset-password %s\n' "$ADMIN_USER" "$DIR" "$ADMIN_USER"
   else
     printf '  Anmeldung:      mit deinem bestehenden Admin-Konto\n'
   fi

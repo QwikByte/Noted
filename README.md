@@ -72,6 +72,8 @@ Ohne Rückfragen geht es mit Optionen, z. B. `… | sudo bash -s -- --domain not
 
 Für HTTPS muss die Domain bereits per DNS auf den Server zeigen und die Ports 80 und 443 müssen erreichbar sein.
 
+Voraussetzungen: 64-Bit-System (x86_64 oder arm64, z. B. Raspberry Pi 4/5 mit 64-Bit-OS) und mindestens 1 GB Arbeitsspeicher – das Bauen braucht rund 800 MB, bei nur 1 GB ist etwas Swap empfehlenswert. Geht etwas schief, steht die komplette Ausgabe in `/var/log/noted-install.log`; der Installer lässt sich danach einfach erneut starten.
+
 ## Manuelle Installation mit Docker
 
 Voraussetzungen: ein Server mit Docker und Docker Compose v2.
