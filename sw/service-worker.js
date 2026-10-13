@@ -3,36 +3,54 @@
  * - App-Gerüst (Startseite) und statische Dateien werden gecacht, damit die App auch ohne Netz startet.
  * - Notiz-Daten (GET-Anfragen der API) werden „network first“ geladen und als Fallback für offline gespeichert.
  * - Schreibende Anfragen gehen immer direkt ans Netz; offline übernimmt die lokale Sicherung im Browser.
+ * - Updates: scripts/build-info.mjs setzt beim Build die Build-ID ein, dadurch erkennt der Browser jede neue
+ *   Version. Ein neuer Service Worker wartet, bis die App „Neu laden“ auslöst (Nachricht „skip-waiting“).
+ *
+ * Quelle: sw/service-worker.js – public/sw.js wird daraus erzeugt.
  */
-const VERSION = 'v1'
-const SHELL_CACHE = 'noted-shell-' + VERSION
-const STATIC_CACHE = 'noted-static-' + VERSION
+const VERSION = '__NOTED_BUILD_ID__'
+const SHELL_CACHE = 'noted-shell'
+const STATIC_CACHE = 'noted-static'
 const DATA_CACHE = 'noted-data'
 
 const DATA_ROUTES = [/^\/api\/notes$/, /^\/api\/notes\/[0-9a-f-]{36}$/, /^\/api\/folders$/, /^\/api\/tags$/, /^\/api\/attachments$/]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]
 
 self.addEventListener('install', () => {
-  self.skipWaiting()
+  // Erste Installation sofort aktivieren (Offline-Betrieb ab dem ersten Besuch).
+  // Updates warten dagegen, damit offene Seiten nicht unter laufendem Betrieb ihre Dateien verlieren.
+  if (!self.registration.active) self.skipWaiting()
 })
+
+/** Dateien früherer Versionen entfernen: Next.js hängt die Build-ID als ?dpl=… an seine Dateien an. */
+async function pruneStatic() {
+  const cache = await caches.open(STATIC_CACHE)
+  for (const request of await cache.keys()) {
+    const url = new URL(request.url)
+    const dpl = url.searchParams.get('dpl')
+    // Icons und Manifest werden bei Bedarf neu geladen, damit auch sie aktuell bleiben
+    if ((dpl && dpl !== VERSION) || !url.pathname.startsWith('/_next/')) await cache.delete(request)
+  }
+}
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys()
-      await Promise.all(
-        keys
-          .filter((k) => (k.startsWith('noted-shell-') && k !== SHELL_CACHE) || (k.startsWith('noted-static-') && k !== STATIC_CACHE))
-          .map((k) => caches.delete(k)),
-      )
+      // Caches älterer Service Worker (Name mit Versionsnummer)
+      await Promise.all(keys.filter((k) => /^noted-(shell|static)-/.test(k)).map((k) => caches.delete(k)))
+      await pruneStatic()
       await self.clients.claim()
     })(),
   )
 })
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'clear') {
+  const type = event.data && event.data.type
+  if (type === 'clear') {
     event.waitUntil(Promise.all([caches.delete(DATA_CACHE), caches.delete(SHELL_CACHE)]))
+  } else if (type === 'skip-waiting') {
+    self.skipWaiting()
   }
 })
 

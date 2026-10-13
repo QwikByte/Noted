@@ -5,6 +5,7 @@
   "description": "Noted – Notizen für die Uni im Obsidian-Format",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/build-info.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

@@ -8,9 +8,12 @@ import {
   Lock,
   LogOut,
   MoreHorizontal,
+  Package,
   Pencil,
   Power,
+  RefreshCw,
   ScrollText,
+  Server,
   ShieldCheck,
   ShieldOff,
   Trash2,
@@ -31,9 +34,9 @@ import { cn } from '../ui/cn'
 import { api, errorMessage } from '@/lib/client/api'
 import { copyText } from '@/lib/client/clipboard'
 import { formatDateTime, formatRelative } from '@/lib/client/format'
-import type { AdminUser, Role } from '@/lib/shared/types'
+import type { AdminUser, Role, SystemInfo, UpdateRunState } from '@/lib/shared/types'
 
-type Tab = 'users' | 'security' | 'audit'
+type Tab = 'users' | 'security' | 'audit' | 'system'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('users')
@@ -41,6 +44,7 @@ export function AdminPage() {
     { id: 'users', label: 'Benutzer', icon: <Users className="size-4" /> },
     { id: 'security', label: 'Sicherheit', icon: <ShieldCheck className="size-4" /> },
     { id: 'audit', label: 'Protokoll', icon: <ScrollText className="size-4" /> },
+    { id: 'system', label: 'System', icon: <Server className="size-4" /> },
   ]
   return (
     <div className="min-h-dvh bg-subtle">
@@ -55,16 +59,16 @@ export function AdminPage() {
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                'flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3',
                 tab === t.id ? 'bg-accent text-white shadow-sm' : 'text-muted hover:bg-hover hover:text-fg',
               )}
             >
-              {t.icon}
-              {t.label}
+              <span className="max-sm:hidden">{t.icon}</span>
+              <span className="truncate">{t.label}</span>
             </button>
           ))}
         </div>
-        {tab === 'users' ? <UsersTab /> : tab === 'security' ? <SecurityTab /> : <AuditTab />}
+        {tab === 'users' ? <UsersTab /> : tab === 'security' ? <SecurityTab /> : tab === 'audit' ? <AuditTab /> : <SystemTab />}
       </main>
     </div>
   )
@@ -721,6 +725,7 @@ const EVENTS: Record<string, { label: string; tone: 'neutral' | 'success' | 'war
   mfa_reset: { label: 'MFA zurückgesetzt', tone: 'warning' },
   sessions_revoked_by_admin: { label: 'Sitzungen beendet (Admin)', tone: 'warning' },
   settings_changed: { label: 'Einstellungen geändert', tone: 'accent' },
+  update_requested: { label: 'Update angefordert', tone: 'accent' },
 }
 
 function AuditTab() {
@@ -771,5 +776,210 @@ function AuditTab() {
         </Button>
       ) : null}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// System: Version und automatische Updates
+// ---------------------------------------------------------------------------
+
+const UPDATE_STATES: Record<UpdateRunState, { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'accent' }> = {
+  ok: { label: 'In Ordnung', tone: 'success' },
+  updating: { label: 'Update läuft', tone: 'accent' },
+  failed: { label: 'Fehlgeschlagen', tone: 'warning' },
+  rolled_back: { label: 'Zurückgerollt', tone: 'danger' },
+  error: { label: 'Fehler', tone: 'danger' },
+  unknown: { label: 'Unbekannt', tone: 'neutral' },
+}
+
+/** Läuft der Update-Dienst noch? (prüft stündlich; großzügig, falls er auf nächtlich umgestellt wurde) */
+function checkIsStale(checkedAt: number | null) {
+  return checkedAt !== null && Date.now() - checkedAt > 26 * 3600_000
+}
+
+/** Anfrage seit zwei Minuten nicht abgeholt → der Dienst reagiert offenbar nicht */
+function requestIsStuck(at: number | null) {
+  return at !== null && Date.now() - at > 2 * 60_000
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return <code className="rounded bg-subtle px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
+}
+
+function SystemTab() {
+  const query = useQuery({
+    queryKey: ['admin', 'system'],
+    queryFn: () => api<{ system: SystemInfo }>('/api/admin/system').then((r) => r.system),
+    refetchInterval: (q) => {
+      const data = q.state.data
+      const busy = data?.updateRequest || (data?.update.configured && data.update.state === 'updating')
+      return busy ? 3_000 : 60_000
+    },
+  })
+  const info = query.data
+  if (!info) {
+    return (
+      <p className="py-8 text-center text-sm text-muted">{query.error ? errorMessage(query.error) : 'Wird geladen …'}</p>
+    )
+  }
+  return (
+    <div className="space-y-5">
+      <Section icon={<Package />} title="Version" description="Die Version, die gerade auf dem Server läuft.">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+          <dt className="text-muted">Version</dt>
+          <dd className="font-medium" data-testid="app-version">
+            {info.version === 'dev' ? 'Entwicklungsstand' : info.version}
+          </dd>
+          {info.commit ? (
+            <>
+              <dt className="text-muted">Commit</dt>
+              <dd className="font-mono text-xs leading-5">{info.commit}</dd>
+            </>
+          ) : null}
+          {info.buildDate ? (
+            <>
+              <dt className="text-muted">Gebaut</dt>
+              <dd>{formatDateTime(Date.parse(info.buildDate))}</dd>
+            </>
+          ) : null}
+          <dt className="text-muted">Node.js</dt>
+          <dd>{info.node}</dd>
+        </dl>
+      </Section>
+      <UpdateSection info={info} />
+    </div>
+  )
+}
+
+function UpdateActions({ info }: { info: SystemInfo }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [busy, setBusy] = useState<'check' | 'retry' | null>(null)
+  const update = info.update
+  const request = info.updateRequest
+  const running = update.configured && update.state === 'updating'
+  const failedTag = update.configured ? update.failedTag : null
+
+  async function send(retry: boolean) {
+    setBusy(retry ? 'retry' : 'check')
+    try {
+      await api('/api/admin/system/update', { method: 'POST', body: { retry } })
+      await qc.invalidateQueries({ queryKey: ['admin', 'system'] })
+      toast.success('Angefordert – der Server prüft gleich.')
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!info.canRequestUpdate) return null
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => send(false)} loading={busy === 'check'} disabled={!!request || running}>
+          <RefreshCw className="size-4" />
+          Jetzt nach Updates suchen
+        </Button>
+        {failedTag ? (
+          <Button variant="ghost" onClick={() => send(true)} loading={busy === 'retry'} disabled={!!request || running}>
+            {failedTag} erneut versuchen
+          </Button>
+        ) : null}
+      </div>
+      {request ? (
+        <p className="text-sm text-muted" data-testid="update-request">
+          {request.retry ? 'Erneuter Versuch' : 'Prüfung'} angefordert
+          {request.at ? ` ${formatRelative(request.at)}` : ''}
+          {request.by ? ` von @${request.by}` : ''} – der Server holt die Anfrage gleich ab.
+        </p>
+      ) : null}
+      {request && requestIsStuck(request.at) ? (
+        <ErrorText>
+          Die Anfrage wurde noch nicht abgeholt. Läuft der Update-Dienst? Auf dem Server: <Code>systemctl status noted-update.path</Code>
+        </ErrorText>
+      ) : null}
+    </div>
+  )
+}
+
+function UpdateSection({ info }: { info: SystemInfo }) {
+  const update = info.update
+  const description = 'Der Server prüft stündlich auf neue Releases (Git-Tags vX.Y.Z) und spielt sie selbst ein.'
+  if (!update.configured) {
+    return (
+      <Section icon={<RefreshCw />} title="Automatische Updates" description={description}>
+        <div className="space-y-4" data-testid="update-status">
+          <p className="text-sm text-muted">
+            {info.canRequestUpdate
+              ? 'Der Update-Dienst ist eingerichtet, hat aber noch nicht geprüft.'
+              : 'Nicht eingerichtet. Der Installer richtet den Update-Dienst automatisch ein; für eine manuelle Einrichtung siehe README, „Automatische Updates“.'}
+          </p>
+          <UpdateActions info={info} />
+        </div>
+      </Section>
+    )
+  }
+  const state = UPDATE_STATES[update.state]
+  const stale = checkIsStale(update.checkedAt)
+  const pending =
+    update.latest && update.latest !== update.current && update.latest !== update.failedTag && update.state !== 'updating'
+  return (
+    <Section icon={<RefreshCw />} title="Automatische Updates" description={description}>
+      <div className="space-y-4" data-testid="update-status">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <Badge tone={state.tone}>{state.label}</Badge>
+          {update.message ? <span className="text-sm">{update.message}</span> : null}
+        </div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+          <dt className="text-muted">Zuletzt geprüft</dt>
+          <dd className={stale ? 'text-warning' : undefined}>{update.checkedAt ? formatRelative(update.checkedAt) : '–'}</dd>
+          <dt className="text-muted">Neuestes Release</dt>
+          <dd>
+            {update.latest ?? 'noch keins'}
+            {pending ? <span className="text-muted"> – wird beim nächsten Lauf installiert</span> : null}
+          </dd>
+          <dt className="text-muted">Letztes Update</dt>
+          <dd>
+            {update.updatedAt ? formatDateTime(update.updatedAt) : '–'}
+            {update.updatedAt && update.current ? <span className="text-muted"> ({update.current})</span> : null}
+          </dd>
+          {update.failedTag ? (
+            <>
+              <dt className="text-muted">Fehlgeschlagen</dt>
+              <dd>
+                {update.failedTag}
+                {update.failedAt ? <span className="text-muted"> am {formatDateTime(update.failedAt)}</span> : null}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+        {stale ? (
+          <ErrorText>
+            Seit über einem Tag hat der Update-Dienst nicht mehr geprüft. Auf dem Server: <Code>systemctl status noted-update.timer</Code>
+          </ErrorText>
+        ) : null}
+        {update.failedTag ? (
+          <p className="text-sm text-muted">
+            {update.failedStage === 'build'
+              ? `${update.failedTag} ließ sich nicht bauen und wird nach einigen Stunden automatisch erneut versucht.`
+              : `${update.failedTag} wird übersprungen, bis ein neueres Release erscheint.`}
+          </p>
+        ) : null}
+        <UpdateActions info={info} />
+        {update.log ? (
+          <details className="group rounded-xl border border-border">
+            <summary className="cursor-pointer px-3.5 py-2.5 text-sm font-medium select-none">Protokoll des letzten Update-Laufs</summary>
+            <pre className="max-h-80 overflow-auto border-t border-border bg-subtle px-3.5 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {update.log}
+            </pre>
+          </details>
+        ) : null}
+        <p className="text-xs text-faint">
+          Neues Release veröffentlichen: <Code>npm version patch</Code> (oder <Code>minor</Code>/<Code>major</Code>) und{' '}
+          <Code>git push --follow-tags</Code>.
+        </p>
+      </div>
+    </Section>
   )
 }

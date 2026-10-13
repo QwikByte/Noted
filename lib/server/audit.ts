@@ -19,6 +19,7 @@ export type AuditEvent =
   | 'mfa_reset'
   | 'sessions_revoked_by_admin'
   | 'settings_changed'
+  | 'update_requested'
 
 export type AuditEntry = {
   event: AuditEvent

@@ -1,0 +1,34 @@
+# Legt zu jedem Versions-Tag (vX.Y.Z) ein GitHub-Release an und hängt den Installer an.
+# Dadurch funktioniert immer: curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release anlegen und Installer anhängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "Kein Versions-Tag: $TAG"
+            exit 0
+          fi
+          # Vorabversionen (v1.2.0-beta) installiert der Server nicht automatisch
+          prerelease=()
+          [[ $TAG == *-* ]] && prerelease=(--prerelease)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" scripts/install.sh --clobber
+          else
+            gh release create "$TAG" scripts/install.sh --title "Noted $TAG" --generate-notes --verify-tag "${prerelease[@]}"
+          fi

@@ -1,6 +1,11 @@
 services:
   noted:
-    build: .
+    build:
+      context: .
+      args:
+        # Setzt scripts/auto-update.sh; bei manuellem Build optional, z. B. APP_VERSION=v1.2.0 docker compose build
+        APP_VERSION: ${APP_VERSION:-}
+        GIT_COMMIT: ${GIT_COMMIT:-}
     image: noted:latest
     container_name: noted
     restart: unless-stopped
@@ -10,8 +15,14 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      UPDATE_REQUEST_DIR: /app/.update-requests
     volumes:
       - noted-data:/data
+      # Automatische Updates (scripts/auto-update.sh): Status nur lesend, für Administration → System …
+      - ./.update:/app/.update:ro
+      # … und ein Ordner, in dem der Button „Jetzt nach Updates suchen“ eine Anfrage ablegt
+      - ./.update/requests:/app/.update-requests
 
 volumes:
   noted-data:

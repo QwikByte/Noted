@@ -12,10 +12,16 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Version für Anzeige und Update-Erkennung (setzt scripts/auto-update.sh)
+ARG APP_VERSION=""
+ARG GIT_COMMIT=""
 RUN npm run build
 
 # ---- Laufzeit ----------------------------------------------------------------
 FROM node:22-bookworm-slim AS runner
+ARG APP_VERSION=""
+LABEL org.opencontainers.image.title="noted" \
+      org.opencontainers.image.version="${APP_VERSION}"
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

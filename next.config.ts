@@ -1,4 +1,19 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { NextConfig } from 'next'
+
+type BuildInfo = { version: string; commit: string; buildDate: string; buildId: string }
+
+/** Schreibt scripts/build-info.mjs vor jedem Build; ohne die Datei (z. B. bei `next dev`) gelten Entwicklungswerte. */
+function readBuildInfo(): BuildInfo {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(process.cwd(), '.build-info.json'), 'utf8')) as BuildInfo
+  } catch {
+    return { version: 'dev', commit: '', buildDate: '', buildId: 'dev' }
+  }
+}
+
+const build = readBuildInfo()
 
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -12,6 +27,15 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   reactStrictMode: true,
+  // Versionswechsel erkennen: Next.js hängt die ID an seine Dateien an und lädt bei Abweichung komplett neu
+  deploymentId: build.buildId === 'dev' ? undefined : build.buildId,
+  // Werden beim Build fest eingesetzt (Server und Browser), siehe lib/shared/build.ts
+  env: {
+    NOTED_VERSION: build.version,
+    NOTED_COMMIT: build.commit,
+    NOTED_BUILD_DATE: build.buildDate,
+    NOTED_BUILD_ID: build.buildId,
+  },
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },

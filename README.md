@@ -53,13 +53,33 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - CSRF-Schutz, strikte Content-Security-Policy mit Nonce, HttpOnly-Cookies
   - Sitzungsübersicht mit Abmelden einzelner Geräte
 
-## Schnellstart mit Docker
+## Installation (Ubuntu/Debian)
 
-Voraussetzungen: ein Server (VPS, NAS, Raspberry Pi …) mit Docker und Docker Compose v2.
+Auf einem frischen Server (VPS, Raspberry Pi, Heimserver …) reicht eine Zeile:
+
+```bash
+curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash
+```
+
+Der Installer
+- installiert Docker samt Compose (aus der offiziellen Paketquelle von Docker), falls nötig,
+- lädt Noted nach `/opt/noted` und baut das neueste Release,
+- richtet die [automatischen Updates](#automatische-updates) ein,
+- fragt nach einer Domain und richtet auf Wunsch HTTPS mit [Caddy](https://caddyserver.com/) ein (Let's-Encrypt-Zertifikat automatisch),
+- zeigt am Ende Adresse, Benutzername `admin` und das erzeugte Startpasswort an.
+
+Ohne Rückfragen geht es mit Optionen, z. B. `… | sudo bash -s -- --domain notizen.example.com --email du@example.com` oder `--no-https`. Den Installer erneut auszuführen ist gefahrlos – so lässt sich z. B. HTTPS nachträglich einrichten.
+
+Für HTTPS muss die Domain bereits per DNS auf den Server zeigen und die Ports 80 und 443 müssen erreichbar sein.
+
+## Manuelle Installation mit Docker
+
+Voraussetzungen: ein Server mit Docker und Docker Compose v2.
 
 ```bash
 git clone https://github.com/QwikByte/Noted.git
 cd Noted
+git checkout "$(git tag --list 'v*' --sort=-v:refname | head -n 1)"   # neuestes Release
 cp .env.example .env        # optional anpassen
 docker compose up -d --build
 docker compose logs noted   # zeigt beim ersten Start das Admin-Passwort
@@ -71,6 +91,7 @@ Alle Daten liegen im Docker-Volume `noted-data`, gemountet unter `/data`:
 - `noted.db`: SQLite-Datenbank mit Benutzern und Notizen
 - `attachments/`: hochgeladene Dateien
 - `secret.key`: Schlüssel für die MFA-Geheimnisse
+- `backups/`: automatische Sicherungen der Datenbank vor jedem Update
 
 ### HTTPS (wichtig)
 
@@ -110,7 +131,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 
 ### Backup
 
-Sichere einfach das Volume, zum Beispiel so:
+Vor jedem Update sichert Noted die Datenbank automatisch nach `/data/backups` (die letzten 10 bleiben erhalten). Das ersetzt aber kein Backup auf einem anderen Gerät – sichere dafür das ganze Volume, zum Beispiel so:
 
 ```bash
 docker run --rm -v noted-data:/data -v "$PWD":/backup alpine \
@@ -119,14 +140,45 @@ docker run --rm -v noted-data:/data -v "$PWD":/backup alpine \
 
 Zusätzlich kann jeder Benutzer unter **Einstellungen → Export & Import** jederzeit ein ZIP mit allen Notizen herunterladen.
 
-### Update
+### Automatische Updates
+
+Der Server aktualisiert sich selbst, sobald es ein neues **Release** gibt – ein Git-Tag der Form `vX.Y.Z` (Vorabversionen wie `v1.3.0-beta` werden nicht automatisch installiert). Das übernimmt `scripts/auto-update.sh`:
+
+1. neues Release auschecken und das Image bauen – die laufende Version bleibt währenddessen erreichbar,
+2. die Datenbank sichern (`/data/backups`),
+3. den Container austauschen (wenige Sekunden Unterbrechung) und warten, bis die App antwortet,
+4. startet die neue Version nicht, wird automatisch zurückgerollt – auf das vorherige Image, den vorherigen Stand und, falls die neue Version die Datenbank schon umgebaut hat, auf die Sicherung. Ein solches Release wird übersprungen, bis ein neueres erscheint.
+
+**Wann?** Stündlich (systemd-Timer `noted-update.timer`), sofort per Klick auf **Administration → System → Jetzt nach Updates suchen** oder auf dem Server mit `sudo noted-update`. Unter **Administration → System** siehst du außerdem die laufende Version, den letzten Prüfzeitpunkt, Fehler und das Protokoll des letzten Updates.
+
+Geöffnete Apps (auch die installierte PWA auf dem Handy) merken, dass eine neue Version läuft, und zeigen **„Neue Version verfügbar – Neu laden“**. Ungespeicherte Änderungen gehen dabei nicht verloren, sie liegen ohnehin lokal und werden nach dem Neuladen weiter synchronisiert.
+
+Nützliche Befehle auf dem Server:
 
 ```bash
-git pull
-docker compose up -d --build
+sudo noted-update            # jetzt prüfen und ggf. installieren (mit Ausgabe)
+sudo noted-update --check    # nur nachsehen
+sudo noted-update --retry    # ein übersprungenes Release erneut versuchen
+sudo noted-update --status   # letzter Stand
+journalctl -u noted-update   # Protokoll des Dienstes
 ```
 
-Datenbank-Migrationen laufen beim Start automatisch.
+**Ohne den Installer einrichten:** Das Skript erwartet, dass es im geklonten Repository liegt (dort, wo `docker-compose.yml` liegt), und läuft als root. Am einfachsten kopierst du die drei systemd-Units aus `scripts/install.sh` (Funktion `install_update_service`) oder nimmst Cron:
+
+```cron
+0 * * * * /opt/noted/scripts/auto-update.sh
+```
+
+Mit Cron holt das Skript Klicks auf „Jetzt nach Updates suchen“ erst beim nächsten Lauf ab. Damit die App die Anfrage ablegen kann, muss der Ordner `.update/requests` dem Benutzer im Container gehören – das erledigt das Skript beim ersten Lauf (`chown 1001:1001`).
+
+### Ein neues Release veröffentlichen
+
+```bash
+npm version patch            # bzw. minor / major – erhöht die Version, committet und setzt den Tag vX.Y.Z
+git push --follow-tags
+```
+
+Eine GitHub Action legt daraufhin das Release an und hängt den Installer an. Spätestens nach einer Stunde (oder per Klick im Admin-Bereich) läuft die neue Version auf dem Server.
 
 ### Notfall: Admin ausgesperrt (z. B. Handy verloren)
 
@@ -137,6 +189,15 @@ docker compose exec noted node scripts/admin-cli.mjs list
 docker compose exec noted node scripts/admin-cli.mjs reset-mfa admin
 docker compose exec noted node scripts/admin-cli.mjs reset-password admin
 docker compose exec noted node scripts/admin-cli.mjs make-admin lisa
+docker compose exec noted node scripts/admin-cli.mjs backup                # Datenbank sichern
+```
+
+Eine Sicherung zurückspielen (nur bei gestoppter App):
+
+```bash
+docker compose stop noted
+docker compose run --rm noted node scripts/admin-cli.mjs restore /data/backups/noted-….db
+docker compose start noted
 ```
 
 ## Arbeiten mit Obsidian
@@ -170,7 +231,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 
 | Befehl | Zweck |
 | --- | --- |
-| `npm run build` | Produktions-Build (`.next/standalone`) |
+| `npm run build` | Produktions-Build (`.next/standalone`); Version aus `APP_VERSION` bzw. einem Git-Tag auf dem aktuellen Commit |
 | `npm test` | Unit- und API-Tests (Vitest) |
 | `npm run test:e2e` | Browser-Tests (Playwright; vorher `npm run build`) |
 | `npm run lint` | ESLint |
@@ -188,8 +249,11 @@ components/           UI: app/ (Notizen), auth/, admin/, settings/, ui/ (Baustei
 lib/server/           Datenbank, Auth, Sessions, MFA, Notizen, Anhänge, Export/Import
 lib/client/           API-Client, lokale Sicherung/Sync, Markdown-Rendering, Editor
 lib/shared/           Gemeinsamer Code (Obsidian-Metadaten, Namensregeln, Vorlagen, Typen)
-public/sw.js          Service Worker (Offline)
+sw/service-worker.js  Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 proxy.ts              Content-Security-Policy und Login-Umleitung
-scripts/admin-cli.mjs Notfall-Werkzeug für Admins
+scripts/install.sh    Installer für Ubuntu/Debian
+scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
+scripts/build-info.mjs  Versionsinfos für den Build (läuft vor `npm run build`)
+scripts/admin-cli.mjs Notfall-Werkzeug für Admins (inkl. Sicherung/Wiederherstellung)
 tests/, e2e/          Vitest- und Playwright-Tests
 ```

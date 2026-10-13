@@ -1,6 +1,9 @@
 node_modules
 .next
 data
+.update
+.build-info.json
+public/sw.js
 .git
 .env
 .env.*

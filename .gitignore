@@ -7,6 +7,14 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
+# Beim Build erzeugt (scripts/build-info.mjs)
+/.build-info.json
+/public/sw.js
+
+# Auto-Update: Status und Protokolle (scripts/auto-update.sh)
+/.update/*
+!/.update/.gitkeep
+
 # Daten (SQLite, Anhänge, Schlüssel)
 data/
 *.db

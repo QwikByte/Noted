@@ -16,7 +16,8 @@ const ToastContext = createContext<ToastApi | null>(null)
 
 let counter = 0
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
+/** `sticky`: dauerhafter Hinweis über den Meldungen (z. B. „Neue Version verfügbar“) */
+export function ToastProvider({ children, sticky }: { children: React.ReactNode; sticky?: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
@@ -46,6 +47,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-col items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
         aria-live="polite"
       >
+        {sticky}
         {toasts.map((t) => (
           <div
             key={t.id}
