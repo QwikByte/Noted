@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Noted – Installer für Ubuntu und Debian.
 #
-#   curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash
+#   sudo bash -c "$(curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh)"
 #
 # Richtet ein:
 #   - Docker Engine mit Compose (offizielle Paketquelle von Docker), falls noch nicht vorhanden
@@ -12,6 +12,10 @@
 # Ohne Rückfragen, z. B.:
 #   curl -fsSL …/install.sh | sudo bash -s -- --domain notizen.example.com --email du@example.com
 #   curl -fsSL …/install.sh | sudo bash -s -- --no-https
+#
+# Rückfragen gibt es nur beim Start über „sudo bash -c …“: Bei „curl … | sudo bash“ kommen Tastatureingaben
+# mit sudo-rs (Standard ab Ubuntu 25.10) nicht beim Skript an – dann wird nichts gefragt, sondern auf
+# --domain hingewiesen.
 #
 # Optionen:
 #   --domain NAME    HTTPS mit Caddy für diese Domain einrichten (muss bereits auf den Server zeigen)
@@ -32,6 +36,7 @@ main() {
   EMAIL=''
   HTTPS='ask'
   FRESH=0
+  TEE_PID=''
   ADMIN_PW=''
   START_PW_PENDING=0
   ADMIN_USER='admin'
@@ -55,6 +60,7 @@ main() {
     # Alles zusätzlich ins Protokoll schreiben (für die Fehlersuche)
     printf '\n===== %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
     exec > >(tee -a "$LOG") 2>&1
+    TEE_PID=$!
   fi
   title 'Noted wird installiert'
   check_system
@@ -70,6 +76,11 @@ main() {
   if [[ $HTTPS == ask ]]; then ask_domain; fi
   if [[ $HTTPS == yes ]]; then setup_caddy; fi
   summary
+  # Ausgabe abschließen und auf tee warten, damit nichts erst nach der Eingabeaufforderung erscheint
+  if [[ -n $TEE_PID ]]; then
+    exec > /dev/null 2>&1
+    wait "$TEE_PID" 2> /dev/null || true
+  fi
 }
 
 # ---- Ausgabe ---------------------------------------------------------------------
@@ -89,11 +100,20 @@ die() {
   exit 1
 }
 
-# Rückfragen auch bei „curl … | sudo bash“ (dann ist stdin das Skript selbst)
+# Kann der Installer Rückfragen stellen? Nur wenn die Eingabe ein Terminal ist (Start über „sudo bash -c …“).
+# Bei „curl … | sudo bash“ ist stdin das Skript selbst, und sudo-rs leitet die Tastatur nicht weiter.
+can_ask() {
+  [[ -t 0 ]] && { : < /dev/tty; } 2> /dev/null
+}
+
+# Rückfrage direkt am Terminal. Die Frage geht bewusst nicht durch tee (Protokoll): manche tee-Versionen,
+# z. B. die Rust-Coreutils ab Ubuntu 25.10, halten Text ohne Zeilenumbruch zurück – sie wäre unsichtbar.
 ask() {
   local prompt=$1 answer=''
-  if [[ -r /dev/tty ]] && { : < /dev/tty; } 2> /dev/null; then
-    read -r -p "$prompt" answer < /dev/tty || true
+  if can_ask; then
+    printf '%s' "$prompt" > /dev/tty
+    read -r answer < /dev/tty || true
+    printf '%s%s\n' "$prompt" "$answer" >> "${LOG:-/dev/null}" 2> /dev/null || true
   fi
   printf '%s' "$answer"
 }
@@ -284,6 +304,12 @@ read_start_password() {
 
 ask_domain() {
   title 'HTTPS'
+  if ! can_ask; then
+    note 'Keine Rückfrage möglich (Installer über eine Pipe gestartet) – HTTPS wird jetzt nicht eingerichtet.'
+    printf 'Mit Domain erneut starten:\n  curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --domain DEINE.DOMAIN\n'
+    HTTPS=no
+    return
+  fi
   printf 'Für die Nutzung unterwegs braucht Noted eine Domain mit HTTPS (z. B. notizen.example.com).\n'
   printf 'Die Domain muss schon auf diesen Server zeigen und die Ports 80 und 443 müssen erreichbar sein.\n'
   DOMAIN=$(ask 'Domain (leer lassen = kein HTTPS, nur lokal auf Port 3000): ')

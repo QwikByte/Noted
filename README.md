@@ -58,7 +58,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 Auf einem frischen Server (VPS, Raspberry Pi, Heimserver …) reicht eine Zeile:
 
 ```bash
-curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh)"
 ```
 
 Der Installer
@@ -68,7 +68,14 @@ Der Installer
 - fragt nach einer Domain und richtet auf Wunsch HTTPS mit [Caddy](https://caddyserver.com/) ein (Let's-Encrypt-Zertifikat automatisch),
 - zeigt am Ende Adresse, Benutzername `admin` und das erzeugte Startpasswort an.
 
-Ohne Rückfragen geht es mit Optionen, z. B. `… | sudo bash -s -- --domain notizen.example.com --email du@example.com` oder `--no-https`. Den Installer erneut auszuführen ist gefahrlos – so lässt sich z. B. HTTPS nachträglich einrichten.
+Ohne Rückfragen geht es mit Optionen, z. B.:
+
+```bash
+curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --domain notizen.example.com --email du@example.com
+curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --no-https
+```
+
+(Bei `curl … | sudo bash` stellt der Installer keine Fragen: mit `sudo-rs`, dem Standard ab Ubuntu 25.10, kommen Tastatureingaben dort nicht beim Skript an.) Den Installer erneut auszuführen ist gefahrlos – so lässt sich z. B. HTTPS nachträglich einrichten.
 
 Für HTTPS muss die Domain bereits per DNS auf den Server zeigen und die Ports 80 und 443 müssen erreichbar sein.
 
