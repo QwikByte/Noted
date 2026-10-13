@@ -240,6 +240,20 @@ describe('auto-update.sh', () => {
     expect(fs.readFileSync(path.join(server, '.update/update.log'), 'utf8')).toContain('Im Admin-Bereich angestoßen von adminx (erneuter Versuch)')
   })
 
+  it('legt nach einem Update fehlende Befehle wie noted-domain an', () => {
+    const bin = path.join(base, 'usr-local-bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.copyFileSync(path.resolve(import.meta.dirname, '../scripts/domain.sh'), path.join(server, 'scripts/domain.sh'))
+    fs.chmodSync(path.join(server, 'scripts/domain.sh'), 0o755)
+    // nur bei einer Installation per Installer (noted-update zeigt auf dieses Repository)
+    expect(update([], { NOTED_BIN_DIR: bin }).code).toBe(0)
+    expect(fs.existsSync(path.join(bin, 'noted-domain'))).toBe(false)
+    fs.symlinkSync(path.join(server, 'scripts/auto-update.sh'), path.join(bin, 'noted-update'))
+    expect(update([], { NOTED_BIN_DIR: bin }).code).toBe(0)
+    expect(fs.readlinkSync(path.join(bin, 'noted-domain'))).toBe(path.join(server, 'scripts/domain.sh'))
+    fs.rmSync(path.join(server, 'scripts/domain.sh'))
+  })
+
   it('zeigt den Status mit --status', () => {
     const res = update(['--status'])
     expect(res.stdout).toContain('CURRENT=v1.6.0')

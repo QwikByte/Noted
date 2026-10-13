@@ -1,6 +1,6 @@
 {
   "name": "noted",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Noted – Notizen für die Uni im Obsidian-Format",
   "scripts": {

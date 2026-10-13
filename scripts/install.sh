@@ -7,7 +7,7 @@
 #   - Docker Engine mit Compose (offizielle Paketquelle von Docker), falls noch nicht vorhanden
 #   - Noted unter /opt/noted, gebaut aus dem neuesten Release
 #   - automatische Updates: stündlich, sofort per Button unter Administration → System, von Hand mit „sudo noted-update“
-#   - auf Wunsch HTTPS mit Caddy und Let's-Encrypt-Zertifikat für deine Domain
+#   - auf Wunsch HTTPS mit Caddy und Let's-Encrypt-Zertifikat für deine Domain (später ändern: sudo noted-domain)
 #
 # Ohne Rückfragen, z. B.:
 #   curl -fsSL …/install.sh | sudo bash -s -- --domain notizen.example.com --email du@example.com
@@ -215,16 +215,6 @@ configure_env() {
   chown 1001:1001 "$DIR/.update/requests"
 }
 
-# Setzt KEY=Wert in .env (ersetzt eine vorhandene – auch auskommentierte – Zeile)
-set_env() {
-  local key=$1 value=$2 file="$DIR/.env"
-  if grep -qE "^#? *$key=" "$file"; then
-    sed -i -E "s|^#? *$key=.*|$key=$value|" "$file"
-  else
-    printf '%s=%s\n' "$key" "$value" >> "$file"
-  fi
-}
-
 install_update_service() {
   title 'Automatische Updates'
   cat > /etc/systemd/system/noted-update.service << EOF
@@ -264,6 +254,7 @@ Unit=noted-update.service
 WantedBy=paths.target
 EOF
   ln -sf "$DIR/scripts/auto-update.sh" /usr/local/bin/noted-update
+  ln -sf "$DIR/scripts/domain.sh" /usr/local/bin/noted-domain
   systemctl daemon-reload
   systemctl enable --quiet noted-update.timer noted-update.path
   step 'stündlich per systemd-Timer, sofort per Button unter Administration → System'
@@ -306,7 +297,7 @@ ask_domain() {
   title 'HTTPS'
   if ! can_ask; then
     note 'Keine Rückfrage möglich (Installer über eine Pipe gestartet) – HTTPS wird jetzt nicht eingerichtet.'
-    printf 'Mit Domain erneut starten:\n  curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --domain DEINE.DOMAIN\n'
+    printf 'Domain später einrichten:\n  sudo noted-domain DEINE.DOMAIN\n'
     HTTPS=no
     return
   fi
@@ -322,53 +313,23 @@ ask_domain() {
   fi
 }
 
+# HTTPS einrichten – dasselbe Skript, mit dem sich die Domain später ändern lässt (sudo noted-domain)
 setup_caddy() {
-  [[ $DOMAIN =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && $DOMAIN == *.* ]] || die "Ungültige Domain: $DOMAIN"
+  local args=("$DOMAIN" --yes)
+  [[ -n $EMAIL ]] && args+=(--email "$EMAIL")
   title "HTTPS für $DOMAIN"
-  if ! command -v caddy > /dev/null; then
-    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list
-    chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
-    apt-get update -qq
-    apt-get install -y -qq caddy > /dev/null
-    step 'Caddy installiert'
+  [[ -x $DIR/scripts/domain.sh ]] || die "$DIR/scripts/domain.sh fehlt – bitte zuerst auf das neueste Release aktualisieren (sudo noted-update)."
+  if "$DIR/scripts/domain.sh" "${args[@]}"; then
+    return 0
   fi
-  local file=/etc/caddy/Caddyfile block
-  block="# Noted (eingerichtet von install.sh)
-$DOMAIN {
-	reverse_proxy 127.0.0.1:3000
-}"
-  if [[ -n $EMAIL ]]; then
-    block="{
-	email $EMAIL
-}
-
-$block"
-  fi
-  if [[ ! -s $file ]] || grep -q '/usr/share/caddy' "$file"; then
-    # Beispielkonfiguration des Pakets ersetzen
-    printf '%s\n' "$block" > "$file"
-  elif ! grep -qE "^${DOMAIN//./\\.}[[:space:]]*\\{" "$file"; then
-    cp "$file" "$file.vor-noted"
-    printf '\n# Noted (eingerichtet von install.sh)\n%s {\n\treverse_proxy 127.0.0.1:3000\n}\n' "$DOMAIN" >> "$file"
-    note "Bestehende Caddy-Konfiguration ergänzt (Sicherung: $file.vor-noted)"
-  fi
-  caddy validate --config "$file" --adapter caddyfile > /dev/null 2>&1 || die "Caddy-Konfiguration ungültig: $file"
-  systemctl enable --quiet caddy
-  systemctl reload-or-restart caddy
-  if command -v ufw > /dev/null && ufw status 2> /dev/null | grep -q 'Status: active'; then
-    ufw allow 80/tcp > /dev/null && ufw allow 443/tcp > /dev/null
-    step 'Firewall (ufw): Ports 80 und 443 geöffnet'
-  fi
-  set_env APP_URL "https://$DOMAIN"
-  (cd "$DIR" && docker compose up -d --no-build > /dev/null 2>&1) # neue APP_URL übernehmen
-  step "Caddy leitet https://$DOMAIN an Noted weiter"
-  step 'Das Zertifikat holt Caddy automatisch, sobald die Domain auf diesen Server zeigt'
+  HTTPS=failed
+  note "HTTPS ließ sich nicht einrichten – Noted läuft weiter (lokal auf Port 3000${EXISTING_URL:+ bzw. unter $EXISTING_URL})."
+  note "Sobald die Domain auf diesen Server zeigt: sudo noted-domain $DOMAIN"
 }
 
 summary() {
   local url='http://127.0.0.1:3000'
-  if [[ $HTTPS == yes ]]; then url="https://$DOMAIN"; elif [[ $HTTPS == keep ]]; then url=$EXISTING_URL; fi
+  if [[ $HTTPS == yes ]]; then url="https://$DOMAIN"; elif [[ $HTTPS == keep || ( $HTTPS == failed && -n $EXISTING_URL ) ]]; then url=$EXISTING_URL; fi
   title "${GREEN}Fertig!${RESET}${BOLD} Noted ist installiert"
   printf '\n  Adresse:        %s\n' "$url"
   if [[ -n $ADMIN_PW ]]; then
@@ -380,9 +341,10 @@ summary() {
   fi
   if [[ $HTTPS == no ]]; then
     printf '\n  %sOhne HTTPS ist Noted nur auf dem Server selbst erreichbar. HTTPS später einrichten:%s\n' "$DIM" "$RESET"
-    printf '  %scurl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --domain DEINE.DOMAIN%s\n' "$DIM" "$RESET"
+    printf '  %ssudo noted-domain DEINE.DOMAIN%s\n' "$DIM" "$RESET"
   fi
   printf '\n  Updates:        stündlich automatisch, sofort unter Administration → System oder mit „sudo noted-update“\n'
+  printf '  Domain:         anzeigen bzw. ändern mit „sudo noted-domain“ / „sudo noted-domain neu.example.com“\n'
   printf '  Daten:          Docker-Volume, Sicherungen vor jedem Update unter /data/backups\n'
   printf '  Notfall:        cd %s && docker compose exec noted node scripts/admin-cli.mjs reset-mfa admin\n\n' "$DIR"
 }

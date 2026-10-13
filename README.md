@@ -75,7 +75,7 @@ curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh
 curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash -s -- --no-https
 ```
 
-(Bei `curl … | sudo bash` stellt der Installer keine Fragen: mit `sudo-rs`, dem Standard ab Ubuntu 25.10, kommen Tastatureingaben dort nicht beim Skript an.) Den Installer erneut auszuführen ist gefahrlos – so lässt sich z. B. HTTPS nachträglich einrichten.
+(Bei `curl … | sudo bash` stellt der Installer keine Fragen: mit `sudo-rs`, dem Standard ab Ubuntu 25.10, kommen Tastatureingaben dort nicht beim Skript an.) Den Installer erneut auszuführen ist gefahrlos. HTTPS nachträglich einrichten oder die Domain wechseln geht am einfachsten mit `sudo noted-domain` (siehe [Domain ändern](#domain-ändern)).
 
 Für HTTPS muss die Domain bereits per DNS auf den Server zeigen und die Ports 80 und 443 müssen erreichbar sein.
 
@@ -129,6 +129,19 @@ notizen.example.com {
 ```
 
 Mit nginx oder Traefik geht es genauso. Wichtig ist, dass der Proxy `X-Forwarded-For` und `X-Forwarded-Proto` setzt (bei Caddy automatisch), denn die Begrenzung von Anmeldeversuchen arbeitet mit der IP-Adresse. Erhöhe bei nginx außerdem das Upload-Limit, falls du große Dateien hochladen willst (`client_max_body_size 30m;`). Betreibe die App nicht ohne Reverse Proxy direkt im Internet.
+
+### Domain ändern
+
+```bash
+sudo noted-domain                         # aktuelle Domain anzeigen
+sudo noted-domain neu.example.com         # auf eine neue Domain umstellen
+```
+
+Der Befehl prüft zuerst, ob die neue Domain per DNS auf den Server zeigt, ersetzt dann den Noted-Eintrag in `/etc/caddy/Caddyfile` (andere Seiten dort bleiben unberührt), wartet, bis HTTPS für die neue Domain funktioniert, und setzt erst danach `APP_URL` und startet Noted neu. **Die alte Domain wird dabei abgeschaltet.** Klappt HTTPS für die neue Domain nicht (DNS noch nicht umgestellt, Ports 80/443 zu), wird die vorherige Konfiguration automatisch wiederhergestellt – Noted läuft dann unter der alten Domain weiter. Ohne Domain installiert? Derselbe Befehl richtet HTTPS nachträglich ein.
+
+Vor dem Wechsel jedes Gerät einmal online öffnen, damit offline geschriebene Änderungen hochgeladen sind. Danach meldest du dich unter der neuen Adresse neu an (Anmeldungen gelten pro Domain) und installierst die Handy-App einmal neu. Die Authenticator-App für MFA funktioniert unverändert weiter.
+
+Optionen: `--email ADRESSE` (Kontakt für Let's Encrypt), `--yes` (ohne Rückfrage), `--force` (ohne DNS-Prüfung und ohne Zurückrollen, z. B. wenn die Domain hinter Cloudflare liegt oder erst später umgestellt wird).
 
 ### Konfiguration
 
@@ -271,6 +284,7 @@ sw/service-worker.js  Service Worker (Offline, Update-Erkennung) – public/sw.j
 proxy.ts              Content-Security-Policy und Login-Umleitung
 scripts/install.sh    Installer für Ubuntu/Debian
 scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
+scripts/domain.sh     Domain anzeigen/ändern (sudo noted-domain)
 scripts/build-info.mjs  Versionsinfos für den Build (läuft vor `npm run build`)
 scripts/admin-cli.mjs Notfall-Werkzeug für Admins (inkl. Sicherung/Wiederherstellung)
 tests/, e2e/          Vitest- und Playwright-Tests
