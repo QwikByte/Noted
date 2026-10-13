@@ -178,7 +178,7 @@ npm version patch            # bzw. minor / major – erhöht die Version, commi
 git push --follow-tags
 ```
 
-Eine GitHub Action legt daraufhin das Release an und hängt den Installer an. Spätestens nach einer Stunde (oder per Klick im Admin-Bereich) läuft die neue Version auf dem Server.
+Eine GitHub Action legt daraufhin das Release an und hängt den Installer an. Alternativ ohne Terminal (z. B. vom Handy): auf GitHub unter **Actions → Release → Run workflow** die Version eintragen, z. B. `v1.2.0` – Tag und Release entstehen dann auf dem aktuellen Stand von `main`. Spätestens nach einer Stunde (oder per Klick im Admin-Bereich) läuft die neue Version auf dem Server.
 
 ### Notfall: Admin ausgesperrt (z. B. Handy verloren)
 

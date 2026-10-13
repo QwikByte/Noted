@@ -1,10 +1,19 @@
 # Legt zu jedem Versions-Tag (vX.Y.Z) ein GitHub-Release an und hängt den Installer an.
 # Dadurch funktioniert immer: curl -fsSL https://github.com/QwikByte/Noted/releases/latest/download/install.sh | sudo bash
+#
+# Zwei Wege zu einem Release:
+#   - Tag pushen:  npm version patch && git push --follow-tags
+#   - im Browser:  Actions → Release → „Run workflow“, Version eintragen (Tag entsteht auf dem aktuellen Stand von main)
 name: Release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, z. B. v1.2.0'
+        required: true
 
 permissions:
   contents: write
@@ -18,10 +27,11 @@ jobs:
       - name: Release anlegen und Installer anhängen
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.version || github.ref_name }}
         run: |
           if [[ ! $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-            echo "Kein Versions-Tag: $TAG"
+            echo "Keine gültige Version: $TAG (erwartet z. B. v1.2.0)"
+            [[ $GITHUB_EVENT_NAME == workflow_dispatch ]] && exit 1
             exit 0
           fi
           # Vorabversionen (v1.2.0-beta) installiert der Server nicht automatisch
@@ -30,5 +40,6 @@ jobs:
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" scripts/install.sh --clobber
           else
-            gh release create "$TAG" scripts/install.sh --title "Noted $TAG" --generate-notes --verify-tag "${prerelease[@]}"
+            # --target gilt nur, wenn der Tag noch nicht existiert (Start über „Run workflow“)
+            gh release create "$TAG" scripts/install.sh --title "Noted $TAG" --generate-notes --target "$GITHUB_SHA" "${prerelease[@]}"
           fi
