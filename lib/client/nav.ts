@@ -10,6 +10,14 @@ export type View =
   | { kind: 'search'; q: string }
   | { kind: 'trash' }
   | { kind: 'files' }
+  | { kind: 'cards' }
+  | { kind: 'deck'; id: string }
+  | { kind: 'study'; scope: StudyScope; mode: StudyMode }
+
+/** Was gelernt wird: alle Stapel, ein Stapel oder die Karten aus einer Notiz */
+export type StudyScope = 'all' | `deck:${string}` | `note:${string}`
+/** learn: Lernmodus mit Wiederholungsplan · practice: Üben ohne Einfluss auf den Plan */
+export type StudyMode = 'learn' | 'practice'
 
 export function viewFromParams(params: URLSearchParams): View {
   const n = params.get('n')
@@ -18,11 +26,18 @@ export function viewFromParams(params: URLSearchParams): View {
   if (f) return { kind: 'folder', id: f }
   const t = params.get('t')
   if (t) return { kind: 'tag', tag: t }
+  const d = params.get('d')
+  if (d) return { kind: 'deck', id: d }
+  const s = params.get('s')
+  if (s === 'all' || /^(deck|note):[\w-]+$/.test(s ?? '')) {
+    return { kind: 'study', scope: s as StudyScope, mode: params.get('m') === 'practice' ? 'practice' : 'learn' }
+  }
   const q = params.get('q')
   if (q !== null) return { kind: 'search', q }
   const v = params.get('v')
   if (v === 'trash') return { kind: 'trash' }
   if (v === 'files') return { kind: 'files' }
+  if (v === 'cards') return { kind: 'cards' }
   return { kind: 'home' }
 }
 
@@ -40,6 +55,12 @@ export function viewToUrl(view: View): string {
       return '/?v=trash'
     case 'files':
       return '/?v=files'
+    case 'cards':
+      return '/?v=cards'
+    case 'deck':
+      return `/?d=${encodeURIComponent(view.id)}`
+    case 'study':
+      return `/?s=${encodeURIComponent(view.scope)}${view.mode === 'practice' ? '&m=practice' : ''}`
     default:
       return '/'
   }

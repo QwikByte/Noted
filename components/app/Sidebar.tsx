@@ -6,6 +6,7 @@ import {
   FolderPlus,
   Hash,
   Home,
+  Layers,
   Paperclip,
   Plus,
   Search,
@@ -15,6 +16,7 @@ import { useApp } from './context'
 import { FolderTree } from './FolderTree'
 import { UserMenu } from './UserMenu'
 import { SyncBadge } from './SyncBadge'
+import { useDueTotal } from './cards/CardsView'
 import { Logo } from '../Logo'
 import { Button } from '../ui/button'
 import { cn } from '../ui/cn'
@@ -54,6 +56,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
   const app = useApp()
   const { view } = app
   const { data: tags = [] } = useTags()
+  const due = useDueTotal()
   const [tagsOpen, setTagsOpen] = usePref<'1' | '0'>('noted:tagsOpen', '1')
   const [query, setQuery] = useState(view.kind === 'search' ? view.q : '')
   // Suchfeld leeren, sobald die Suche verlassen wird
@@ -104,6 +107,13 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
 
       <nav className="mt-3 space-y-0.5 px-2">
         <NavItem icon={<Home />} label="Start" active={view.kind === 'home'} onClick={() => app.go({ kind: 'home' })} />
+        <NavItem
+          icon={<Layers />}
+          label="Karteikarten"
+          active={view.kind === 'cards' || view.kind === 'deck' || view.kind === 'study'}
+          onClick={() => app.go({ kind: 'cards' })}
+          count={due}
+        />
         <NavItem icon={<Paperclip />} label="Anhänge" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />
         <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} onClick={() => app.go({ kind: 'trash' })} />
       </nav>

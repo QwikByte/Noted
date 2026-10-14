@@ -12,9 +12,12 @@ import {
   Columns2,
   Copy,
   Download,
+  Dumbbell,
   FileText,
   FolderInput,
+  GraduationCap,
   Info,
+  Layers,
   Link2,
   Loader2,
   Menu as MenuIcon,
@@ -23,13 +26,15 @@ import {
   Pin,
   PinOff,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import { useApp } from './context'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview } from './Preview'
 import { Button } from '../ui/button'
-import { Menu, MenuItem, MenuSeparator } from '../ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu'
+import { cardFromSelection } from './cards/CardEditor'
 import { Modal } from '../ui/modal'
 import { useToast } from '../ui/toast'
 import { cn } from '../ui/cn'
@@ -41,7 +46,10 @@ import { folderPath } from '@/lib/client/tree'
 import { formatDateTime, formatRelative, wordCount } from '@/lib/client/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/lib/client/upload'
 import { errorMessage, ApiError } from '@/lib/client/api'
-import { splitFrontmatter } from '@/lib/shared/markdown-meta'
+import { useFlashcards } from '@/lib/client/flashcards'
+import { registerActiveEditor } from '@/lib/client/active-editor'
+import { findWikiLinks, splitFrontmatter } from '@/lib/shared/markdown-meta'
+import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/lib/shared/card-markdown'
 import { validateName } from '@/lib/shared/names'
 import type { Note } from '@/lib/shared/types'
 
@@ -53,16 +61,17 @@ function useSyncStatus(id: string): NoteSyncStatus {
   )
 }
 
-function useIsWide() {
-  return useSyncExternalStore(
-    (fn) => {
-      const mq = matchMedia('(min-width: 1280px)')
-      mq.addEventListener('change', fn)
-      return () => mq.removeEventListener('change', fn)
-    },
-    () => matchMedia('(min-width: 1280px)').matches,
-    () => false,
-  )
+/** Breit genug für Editor und Vorschau nebeneinander? Gemessen am eigenen Bereich (daneben kann ein PDF offen sein). */
+function useIsWide(ref: React.RefObject<HTMLElement | null>) {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= 960))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return wide
 }
 
 function StatusIndicator({ status }: { status: NoteSyncStatus }) {
@@ -147,7 +156,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   const { data: tags = [] } = useTags()
   const { data: attachments = [] } = useAttachments()
   const status = useSyncStatus(note.id)
-  const isWide = useIsWide()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const isWide = useIsWide(rootRef)
+  const pdfInput = useRef<HTMLInputElement>(null)
 
   const initialDraft = sync.getDraft(note.id)
   const [content, setContent] = useState(initialDraft?.content ?? note.content)
@@ -221,6 +232,39 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     if (!err) sync.update(note.id, version, { title: value.trim() })
   }
 
+  // Text aus dem PDF-Viewer (Seitenlinks, Zitate) an der Cursorposition einfügen
+  const latest = useRef({ content, title, onChange })
+  useEffect(() => {
+    latest.current = { content, title, onChange }
+  })
+  useEffect(
+    () =>
+      registerActiveEditor({
+        noteId: note.id,
+        get title() {
+          return latest.current.title || 'Unbenannt'
+        },
+        insert: (text) => {
+          const view = editorRef.current?.view()
+          if (!view) {
+            const cur = latest.current.content
+            const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
+            latest.current.onChange(cur + sep + text + '\n')
+            return
+          }
+          const doc = view.state.doc
+          let { from, to } = view.state.selection.main
+          // Cursor nie gesetzt (ganz am Anfang)? Dann ans Ende
+          if (from === 0 && to === 0 && doc.length > 0 && !view.hasFocus) from = to = doc.length
+          const before = doc.sliceString(Math.max(0, from - 2), from)
+          const prefix = from === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
+          const insert = prefix + text + (doc.sliceString(to, to + 1) === '\n' ? '\n' : '\n\n')
+          view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true })
+        },
+      }),
+    [note.id],
+  )
+
   const upload = useCallback(
     async (files: File[]) => {
       for (const file of files) {
@@ -278,6 +322,46 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     [content, onChange],
   )
 
+  /** Karteikarte aus der Markierung (Editor oder Lesemodus) */
+  function createCard() {
+    const view = editorRef.current?.view()
+    const selected = view
+      ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
+      : (document.getSelection()?.toString() ?? '')
+    app.openCardEditor({ ...(selected.trim() ? cardFromSelection(selected) : {}), noteId: note.id, deckName: title })
+  }
+
+  // PDFs, die in dieser Notiz eingebettet oder verlinkt sind
+  const notePdfs = useMemo(
+    () => [...new Set(findWikiLinks(content).map((l) => l.target).filter((t) => /\.pdf$/i.test(t)))],
+    [content],
+  )
+  const otherPdfs = attachments.filter((a) => a.mime === 'application/pdf' && !notePdfs.includes(a.filename))
+
+  async function uploadPdf(files: File[]) {
+    const file = files[0]
+    if (!file) return
+    try {
+      toast.show(`Lade „${file.name}“ hoch …`)
+      const att = await uploadAttachment(file, niceFileName(file))
+      qc.invalidateQueries({ queryKey: keys.attachments })
+      // In der Notiz einbetten, damit sie mit dem Skript verknüpft ist
+      insertLine(`![[${att.filename}]]`)
+      app.openPdf(att.filename)
+    } catch (err) {
+      toast.error(`Upload fehlgeschlagen: ${errorMessage(err)}`)
+    }
+  }
+  function insertLine(text: string) {
+    const view = editorRef.current?.view()
+    if (view) {
+      const pos = view.state.selection.main.head || view.state.doc.length
+      const line = view.state.doc.lineAt(pos)
+      const prefix = pos > line.from && line.text.trim() ? '\n' : ''
+      view.dispatch({ changes: { from: pos, insert: prefix + text + '\n' } })
+    } else onChange(content + (content.endsWith('\n') || !content ? '' : '\n') + text + '\n')
+  }
+
   async function copy(kind: 'markdown' | 'body' | 'link') {
     const text =
       kind === 'link'
@@ -305,6 +389,14 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  const { data: flashcards } = useFlashcards()
+  const linkedCards = useMemo(() => flashcards?.cards.filter((c) => c.noteId === note.id).length ?? 0, [flashcards, note.id])
+  // Im Lesemodus auf Karten in der Notiz hinweisen (Frage::Antwort, Frage-Callouts …)
+  const cardsInNote = useMemo(
+    () => mode === 'read' && parseCardsFromNote(content).some((c) => EXPLICIT_SOURCES.includes(c.source)),
+    [mode, content],
+  )
+
   const path = folderPath(folders, folderId)
   const summaryForActions = summary ?? { ...note, title }
 
@@ -328,11 +420,12 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       onCreateNote={(t) => app.createNote({ title: t, folderId })}
       onOpenTag={(tag) => app.go({ kind: 'tag', tag })}
       onToggleTask={toggleTask}
+      onOpenPdf={app.openPdf}
     />
   )
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={rootRef} className="@container flex h-full flex-col">
       {/* Kopfzeile */}
       <header className="pt-safe flex items-center gap-1 border-b border-border px-2 py-1.5 sm:px-3">
         <Button
@@ -346,7 +439,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         </Button>
         <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
           {path.map((f) => (
-            <span key={f.id} className="flex min-w-0 shrink items-center gap-1 max-md:hidden">
+            <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
               <button type="button" onClick={() => app.go({ kind: 'folder', id: f.id })} className="truncate hover:text-fg">
                 {f.name}
               </button>
@@ -356,6 +449,32 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
           <span className="truncate font-medium text-fg">{title || 'Unbenannt'}</span>
         </nav>
         <StatusIndicator status={status} />
+        <Menu
+          className="max-h-[60vh] w-72 overflow-y-auto"
+          trigger={(p) => (
+            <Button variant="ghost" size="sm" className="ml-1 px-2" title="PDF daneben öffnen" aria-label="PDF daneben öffnen" {...p}>
+              <FileText className="size-4" />
+              <span className="@max-2xl:hidden">PDF</span>
+            </Button>
+          )}
+        >
+          {notePdfs.length > 0 ? <MenuLabel>In dieser Notiz</MenuLabel> : null}
+          {notePdfs.map((f) => (
+            <MenuItem key={f} icon={<FileText />} onSelect={() => app.openPdf(f)}>
+              <span className="block truncate">{f}</span>
+            </MenuItem>
+          ))}
+          {otherPdfs.length > 0 ? <MenuLabel>{notePdfs.length > 0 ? 'Weitere PDFs' : 'PDFs'}</MenuLabel> : null}
+          {otherPdfs.slice(0, 30).map((a) => (
+            <MenuItem key={a.id} icon={<FileText />} onSelect={() => app.openPdf(a.filename)}>
+              <span className="block truncate">{a.filename}</span>
+            </MenuItem>
+          ))}
+          {notePdfs.length + otherPdfs.length > 0 ? <MenuSeparator /> : null}
+          <MenuItem icon={<Upload />} onSelect={() => pdfInput.current?.click()}>
+            PDF hochladen und öffnen …
+          </MenuItem>
+        </Menu>
         <div className="ml-1 flex items-center rounded-lg bg-subtle p-0.5" role="radiogroup" aria-label="Ansicht">
           {(
             [
@@ -378,14 +497,14 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
               )}
             >
               {icon}
-              <span className="hidden md:inline">{label}</span>
+              <span className="hidden @2xl:inline">{label}</span>
             </button>
           ))}
         </div>
-        <Button variant="ghost" size="sm" onClick={() => copy('markdown')} className="ml-1 max-sm:hidden" title="Markdown kopieren">
+        <Button variant="ghost" size="sm" onClick={() => copy('markdown')} className="ml-1 @max-xl:hidden" title="Markdown kopieren">
           <Copy className="size-4" /> Kopieren
         </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => copy('markdown')} className="sm:hidden" aria-label="Markdown kopieren">
+        <Button variant="ghost" size="icon-sm" onClick={() => copy('markdown')} className="@xl:hidden" aria-label="Markdown kopieren">
           <Copy className="size-4" />
         </Button>
         <Menu
@@ -418,6 +537,18 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             Informationen
           </MenuItem>
           <MenuSeparator />
+          <MenuItem icon={<Layers />} onSelect={createCard}>
+            Karteikarte erstellen
+          </MenuItem>
+          <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content })}>
+            Karteikarten aus Notiz …
+          </MenuItem>
+          {linkedCards > 0 ? (
+            <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
+              {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
+            </MenuItem>
+          ) : null}
+          <MenuSeparator />
           <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
             In den Papierkorb
           </MenuItem>
@@ -446,7 +577,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       {effectiveMode !== 'read' ? (
         <div className="border-b border-border">
           <div className="mx-auto max-w-[800px]">
-            <EditorToolbar getView={() => editorRef.current?.view() ?? null} onUpload={upload} />
+            <EditorToolbar getView={() => editorRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
           </div>
         </div>
       ) : null}
@@ -468,11 +599,33 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
               <div className="pt-6" />
             )}
             {preview}
-            {effectiveMode === 'read' ? <Backlinks id={note.id} /> : null}
+            {effectiveMode === 'read' ? (
+              <>
+                {linkedCards > 0 || cardsInNote ? (
+                  <NoteCards
+                    count={linkedCards}
+                    onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
+                    onCreate={() => app.openCardsFromNote({ id: note.id, title, content })}
+                  />
+                ) : null}
+                <Backlinks id={note.id} />
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
 
+      <input
+        ref={pdfInput}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          void uploadPdf(files)
+        }}
+      />
       <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Informationen" size="sm">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-muted">Erstellt</dt>
@@ -526,6 +679,33 @@ function TitleInput({
         data-testid="note-title"
       />
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
+    </div>
+  )
+}
+
+/** Lesemodus: Karteikarten aus dieser Notiz */
+function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
+  return (
+    <div className="mx-auto max-w-[760px] px-5 pb-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3 text-sm">
+        <Layers className="size-4 text-muted" />
+        <span className="flex-1 text-muted">
+          {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
+        </span>
+        {count > 0 ? (
+          <>
+            <Button size="sm" variant="ghost" onClick={() => onLearn('learn')}>
+              <GraduationCap className="size-4" /> Lernen
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onLearn('practice')}>
+              <Dumbbell className="size-4" /> Üben
+            </Button>
+          </>
+        ) : null}
+        <Button size="sm" variant="ghost" onClick={onCreate}>
+          <Layers className="size-4" /> Karten erstellen
+        </Button>
+      </div>
     </div>
   )
 }

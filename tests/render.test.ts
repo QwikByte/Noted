@@ -23,6 +23,26 @@ describe('Obsidian-Vorschau', () => {
     expect(html).toContain('src="/api/files/foto.jpg"')
   })
 
+  it('verlinkt Dateien und PDF-Seiten für den eingebauten Viewer', () => {
+    const { html } = renderMarkdown('[[skript.pdf#page=12]] [[folien.pdf|Folien]] [[liste.docx]]\n\n![[skript.pdf#page=3]]', env)
+    expect(html).toContain(
+      '<a class="file-link file-link-pdf" href="/api/files/skript.pdf" target="_blank" rel="noopener" data-pdf="skript.pdf" data-page="12">skript.pdf, S. 12</a>',
+    )
+    expect(html).toContain('data-pdf="folien.pdf">Folien</a>')
+    // Andere Dateien sind keine (nicht vorhandenen) Notizen
+    expect(html).toContain('<a class="file-link" href="/api/files/liste.docx" target="_blank" rel="noopener">liste.docx</a>')
+    expect(html).toContain('data-pdf="skript.pdf" data-page="3"><span class="embed-file-icon"></span><span>skript.pdf · Seite 3</span>')
+  })
+
+  it('behandelt Notiztitel mit Punkt nicht als Datei', () => {
+    const resolve = (t: string) => (t === 'Kapitel 3.1' ? { id: 'k31', title: 'Kapitel 3.1' } : null)
+    const { html } = renderMarkdown('[[Kapitel 3.1]] [[Übung 2.3]] [[Woche 2.Semester]]', { resolveNote: resolve })
+    expect(html).toContain('<a class="wikilink" href="/?n=k31" data-note-id="k31" data-target="Kapitel 3.1">Kapitel 3.1</a>')
+    expect(html).toContain('<a class="wikilink unresolved" href="#" data-target="Übung 2.3"')
+    expect(html).toContain('data-target="Woche 2.Semester"')
+    expect(html).not.toContain('file-link')
+  })
+
   it('rendert Tags, Markierungen und Fußnoten', () => {
     const { html } = renderMarkdown('Text #uni/mathe und ==wichtig== #123 Fußnote[^1]\n\n[^1]: Quelle')
     expect(html).toContain('<a class="tag" href="/?t=uni%2Fmathe" data-tag="uni/mathe">#uni/mathe</a>')

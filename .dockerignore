@@ -4,6 +4,7 @@ data
 .update
 .build-info.json
 public/sw.js
+public/pdfjs
 .git
 .env
 .env.*

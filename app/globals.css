@@ -489,6 +489,19 @@ body {
 .markdown-body .embed-note.unresolved {
   opacity: 0.6;
 }
+/* Links auf Dateien, z. B. [[Skript.pdf#page=12]] */
+.markdown-body a.file-link {
+  text-decoration: none;
+  font-weight: 500;
+}
+.markdown-body a.file-link:hover {
+  text-decoration: underline;
+}
+.markdown-body a.file-link-pdf::before {
+  content: '📄';
+  margin-right: 0.2em;
+  font-size: 0.9em;
+}
 .markdown-body .contains-task-list {
   list-style: none;
   padding-left: 0.4em;
@@ -695,4 +708,47 @@ body {
 .dark .hljs-template-variable,
 .dark .hljs-params {
   color: #ff9e7a;
+}
+
+/* ------------------------------------------------------------------ */
+/* Karteikarten                                                         */
+/* ------------------------------------------------------------------ */
+.markdown-body.card-markdown {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.markdown-body.card-markdown > :first-child {
+  margin-top: 0;
+}
+.markdown-body.card-markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body.card-markdown p {
+  margin: 0.4em 0;
+}
+.markdown-body.study-question {
+  font-size: calc(var(--editor-font-size, 16px) * 1.2);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* PDF-Viewer (pdf.js)                                                  */
+/* ------------------------------------------------------------------ */
+.pdf-container {
+  background: var(--bg-subtle);
+  outline: none;
+  overscroll-behavior: contain;
+}
+.pdf-container .pdfViewer {
+  padding: 8px 0 24px;
+}
+.pdf-container .pdfViewer .page {
+  border: none;
+  margin: 8px auto;
+  box-shadow: var(--shadow);
+}
+.dark .pdf-container .pdfViewer .page {
+  /* Seiten bleiben weiß (Folien und Skripte sind so gestaltet), nur etwas gedämpft */
+  filter: brightness(0.92);
 }

@@ -10,6 +10,7 @@ next-env.d.ts
 # Beim Build erzeugt (scripts/build-info.mjs)
 /.build-info.json
 /public/sw.js
+/public/pdfjs/
 
 # Auto-Update: Status und Protokolle (scripts/auto-update.sh)
 /.update/*

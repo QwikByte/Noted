@@ -1,27 +1,10 @@
 'use client'
 import { useEffect, useMemo, useRef } from 'react'
-import DOMPurify from 'dompurify'
 import { renderMarkdown } from '@/lib/client/markdown/render'
+import { sanitize } from '@/lib/client/markdown/sanitize'
 import type { ResolvedNote } from '@/lib/client/markdown/obsidian'
 import { isDarkMode } from '@/lib/client/prefs'
 import { Properties } from './Properties'
-
-let hooked = false
-function sanitize(html: string) {
-  if (!hooked) {
-    hooked = true
-    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-      if (node.tagName === 'A') {
-        const href = node.getAttribute('href') ?? ''
-        if (/^(https?:|mailto:)/i.test(href)) {
-          node.setAttribute('target', '_blank')
-          node.setAttribute('rel', 'noopener noreferrer')
-        }
-      }
-    })
-  }
-  return DOMPurify.sanitize(html, { ADD_ATTR: ['target'], FORBID_TAGS: ['style', 'form'] })
-}
 
 let mermaidCounter = 0
 
@@ -57,6 +40,7 @@ export function Preview({
   onCreateNote,
   onOpenTag,
   onToggleTask,
+  onOpenPdf,
 }: {
   content: string
   resolveNote: (target: string) => ResolvedNote | null
@@ -64,6 +48,8 @@ export function Preview({
   onCreateNote: (title: string) => void
   onOpenTag: (tag: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
+  /** PDF im eingebauten Viewer öffnen statt in einem neuen Tab */
+  onOpenPdf?: (file: string, page?: number) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const rendered = useMemo(() => {
@@ -88,7 +74,10 @@ export function Preview({
     const a = target.closest('a')
     if (!a) return
     if (e.metaKey || e.ctrlKey || e.shiftKey) return
-    if (a.classList.contains('tag')) {
+    if (a.dataset.pdf && onOpenPdf) {
+      e.preventDefault()
+      onOpenPdf(a.dataset.pdf, Number(a.dataset.page) || undefined)
+    } else if (a.classList.contains('tag')) {
       e.preventDefault()
       onOpenTag(a.dataset.tag ?? '')
     } else if (a.dataset.noteId) {

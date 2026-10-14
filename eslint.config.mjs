@@ -11,5 +11,5 @@ export default defineConfig([
       '@next/next/no-location-assign-relative-destination': 'off',
     },
   },
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'data/**', 'next-env.d.ts', 'public/sw.js', 'sw/**']),
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'data/**', 'next-env.d.ts', 'public/sw.js', 'public/pdfjs/**', 'sw/**']),
 ])
