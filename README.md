@@ -27,8 +27,26 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
 - Eingebettet wie in Obsidian: `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
 
+**PDF-Viewer neben der Notiz**
+- PDFs (z. B. Vorlesungsfolien) öffnen direkt in der App, ohne neues Browserfenster: Auf dem Desktop stehen PDF und Notiz nebeneinander, auf dem Handy übereinander. Den Trenner kannst du verschieben (Doppelklick: halbe-halbe); auf Wunsch füllt das PDF die ganze Fläche.
+- Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Anhänge**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
+- Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
+- **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite; das Format versteht auch Obsidian.
+- Markierten Text **zitieren** (als Zitat mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
+
+**Karteikarten**
+- Eigener Bereich **Karteikarten** mit Stapeln (z. B. pro Fach). Kartenarten: Grundkarte (Frage → Antwort), beidseitig (wird in beide Richtungen abgefragt) und **Multiple Choice** mit einer oder mehreren richtigen Antworten und optionaler Erklärung. Karten können Markdown, LaTeX-Formeln, Bilder und Links auf Notizen oder PDF-Seiten enthalten.
+- **Lernmodus mit Wiederholungsplan** (Spaced Repetition nach dem Vorbild von Anki/SM-2): Neue Karten durchlaufen kurze Lernschritte (1 und 10 Minuten), danach kommen sie in wachsenden Abständen wieder. Du bewertest mit *Nochmal*, *Schwer*, *Gut* oder *Einfach*; auf den Knöpfen steht, wann die Karte wiederkommt. Vergessene Karten werden neu gelernt. Je Stapel gibt es ein Tageslimit für neue Karten (Standard 20).
+- **Übungsmodus** (z. B. kurz vor der Klausur): alle Karten in zufälliger Reihenfolge, ohne den Lernplan zu verändern. Falsch beantwortete Karten kommen wieder; am Ende siehst du deine Quote und kannst die Fehler wiederholen.
+- Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort` oder tabulatorgetrennt, z. B. aus Quizlet oder Anki kopiert).
+- **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen.
+- Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
+- Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
+
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen.
+- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, `#flashcards/…`). Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
 - Import von `.md`-Dateien, ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault) und beliebigen Dateien als Anhänge.
 
 **Unterwegs & offline (PWA)**
@@ -269,7 +287,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 | `npm run typecheck` | TypeScript |
 
 **Technik:**
-- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, markdown-it, KaTeX, Mermaid
+- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, markdown-it, KaTeX, Mermaid, pdf.js
 - Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), @node-rs/argon2, otpauth
 
 **Aufbau:**
@@ -277,15 +295,18 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 ```
 app/                  Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 components/           UI: app/ (Notizen), auth/, admin/, settings/, ui/ (Bausteine)
-lib/server/           Datenbank, Auth, Sessions, MFA, Notizen, Anhänge, Export/Import
-lib/client/           API-Client, lokale Sicherung/Sync, Markdown-Rendering, Editor
-lib/shared/           Gemeinsamer Code (Obsidian-Metadaten, Namensregeln, Vorlagen, Typen)
+components/app/cards/  Karteikarten: Übersicht, Stapel, Karteneditor, Lernen/Üben, „Karten aus Notiz“
+components/app/pdf/   PDF-Viewer (pdf.js) und geteilte Ansicht
+lib/server/           Datenbank, Auth, Sessions, MFA, Notizen, Anhänge, Karteikarten, Export/Import
+lib/client/           API-Client, lokale Sicherung/Sync, Markdown-Rendering, Editor, Karteikarten (Offline-Bewertungen)
+lib/shared/           Gemeinsamer Code (Obsidian-Metadaten, Namensregeln, Vorlagen, Typen, Wiederholungsplan, Karten ↔ Markdown)
 sw/service-worker.js  Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 proxy.ts              Content-Security-Policy und Login-Umleitung
 scripts/install.sh    Installer für Ubuntu/Debian
 scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
 scripts/domain.sh     Domain anzeigen/ändern (sudo noted-domain)
 scripts/build-info.mjs  Versionsinfos für den Build (läuft vor `npm run build`)
+scripts/vendor-pdfjs.mjs  Kopiert Worker, Schriften und Decoder von pdf.js nach public/pdfjs (vor `build` und `dev`)
 scripts/admin-cli.mjs Notfall-Werkzeug für Admins (inkl. Sicherung/Wiederherstellung)
 tests/, e2e/          Vitest- und Playwright-Tests
 ```

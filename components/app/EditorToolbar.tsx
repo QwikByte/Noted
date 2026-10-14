@@ -10,6 +10,7 @@ import {
   Heading3,
   Highlighter,
   Italic,
+  Layers,
   Link2,
   List,
   ListChecks,
@@ -87,9 +88,12 @@ const CALLOUTS: [string, string][] = [
 export function EditorToolbar({
   getView,
   onUpload,
+  onCreateCard,
 }: {
   getView: () => EditorView | null
   onUpload: (files: File[]) => void
+  /** Karteikarte aus der Markierung erstellen */
+  onCreateCard: () => void
 }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
@@ -195,6 +199,9 @@ export function EditorToolbar({
       </ToolButton>
       <ToolButton label="Foto aufnehmen" onClick={() => cameraInput.current?.click()} className="sm:hidden">
         <Camera />
+      </ToolButton>
+      <ToolButton label="Karteikarte aus Markierung" onClick={onCreateCard}>
+        <Layers />
       </ToolButton>
       <Divider />
       <ToolButton label="Rückgängig" onClick={run((v) => undo(v))}>

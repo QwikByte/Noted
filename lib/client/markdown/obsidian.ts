@@ -29,6 +29,7 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i
 const AUDIO_EXT = /\.(mp3|m4a|wav|ogg|flac)$/i
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i
+const PDF_PAGE_RE = /^page=(\d{1,5})\b/i
 
 export function defaultFileUrl(name: string) {
   return '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
@@ -69,9 +70,17 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
   }
   const fileUrl = env.fileUrl ?? defaultFileUrl
 
-  if (embed && target && isFileTarget(target)) {
+  if (target && isFileTarget(target)) {
     const url = escapeHtml(fileUrl(target))
     const name = escapeHtml(target.split('/').pop() ?? target)
+    // PDFs öffnen im eingebauten Viewer – auch direkt auf einer Seite: [[Skript.pdf#page=12]]
+    const isPdf = PDF_EXT.test(target)
+    const page = isPdf && heading ? (PDF_PAGE_RE.exec(heading)?.[1] ?? null) : null
+    const pdfAttrs = isPdf ? ` data-pdf="${escapeHtml(target)}"${page ? ` data-page="${page}"` : ''}` : ''
+    if (!embed) {
+      const label = alias ? escapeHtml(alias) : page ? `${name}, S. ${page}` : name
+      return `<a class="file-link${isPdf ? ' file-link-pdf' : ''}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}>${label}</a>`
+    }
     if (IMAGE_EXT.test(target)) {
       let size = ''
       const m = alias ? /^(\d+)(?:x(\d+))?$/.exec(alias) : null
@@ -81,8 +90,9 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     }
     if (AUDIO_EXT.test(target)) return `<audio controls preload="metadata" src="${url}" class="embed-audio"></audio>`
     if (VIDEO_EXT.test(target)) return `<video controls preload="metadata" src="${url}" class="embed-video"></video>`
-    const kind = PDF_EXT.test(target) ? 'pdf' : 'file'
-    return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"><span class="embed-file-icon"></span><span>${name}</span></a>`
+    const kind = isPdf ? 'pdf' : 'file'
+    const label = page ? `${name} · Seite ${page}` : name
+    return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}><span class="embed-file-icon"></span><span>${label}</span></a>`
   }
 
   const note = target ? (env.resolveNote?.(target) ?? null) : null

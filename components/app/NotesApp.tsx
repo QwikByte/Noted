@@ -1,8 +1,9 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
-import { AppContext, type AppActions, type NewNoteOptions } from './context'
+import { AppContext, type AppActions, type CardEditorInit, type NewNoteOptions } from './context'
 import { Sidebar } from './Sidebar'
 import { NoteView } from './NoteView'
 import { HomeView, FolderView, TagView, SearchView } from './views'
@@ -10,11 +11,18 @@ import { TrashView } from './TrashView'
 import { FilesView } from './FilesView'
 import { NewNoteDialog, MoveDialog, PromptDialog } from './dialogs'
 import { QuickSwitcher } from './QuickSwitcher'
+import { CardsView } from './cards/CardsView'
+import { DeckView } from './cards/DeckView'
+import { StudyView } from './cards/StudyView'
+import { CardEditorDialog } from './cards/CardEditor'
+import { CardsFromNoteDialog } from './cards/FromNoteDialog'
+import { SplitPane } from './pdf/SplitPane'
 import { Button } from '../ui/button'
 import { ConfirmModal } from '../ui/modal'
 import { useToast } from '../ui/toast'
 import { cn } from '../ui/cn'
 import { useNav, type View } from '@/lib/client/nav'
+import { usePref } from '@/lib/client/prefs'
 import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/lib/client/queries'
 import { api, errorMessage } from '@/lib/client/api'
 import { sync } from '@/lib/client/sync'
@@ -23,6 +31,18 @@ import { validateName } from '@/lib/shared/names'
 import type { Folder, NoteSummary } from '@/lib/shared/types'
 
 type MoveTarget = { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder }
+
+// pdf.js wird erst geladen, wenn ein PDF geöffnet wird
+const PdfPanel = dynamic(() => import('./pdf/PdfPanel'), { ssr: false })
+
+function readPdfPref(raw: string): { file: string } | null {
+  try {
+    const v = JSON.parse(raw)
+    return typeof v?.file === 'string' ? { file: v.file } : null
+  } catch {
+    return null
+  }
+}
 
 export default function NotesApp() {
   const { view, go } = useNav()
@@ -42,6 +62,15 @@ export default function NotesApp() {
   const [renameTarget, setRenameTarget] = useState<NoteSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [cardEditor, setCardEditor] = useState<{ init: CardEditorInit; n: number } | null>(null)
+  const [fromNote, setFromNote] = useState<{ id: string; title: string; content: string } | null>(null)
+
+  // PDF neben der aktuellen Ansicht – bleibt beim Wechseln der Notiz und nach dem Neuladen offen
+  const [pdfPref, setPdfPref] = usePref<string>('noted:pdf', '')
+  const [pdfJump, setPdfJump] = useState<{ page?: number; nonce: number }>({ nonce: 0 })
+  const [pdfFull, setPdfFull] = usePref<'1' | '0'>('noted:pdfFull', '0')
+  const [pdfSize, setPdfSize] = usePref<string>('noted:pdfSize', '50')
+  const pdf = readPdfPref(pdfPref)
 
   // Gespeicherte Notizen in die Caches übernehmen
   useEffect(() => {
@@ -153,8 +182,15 @@ export default function NotesApp() {
       renameNote: setRenameTarget,
       closeSidebar: () => setSidebarOpen(false),
       resolveTitle,
+      openCardEditor: (init = {}) => setCardEditor((c) => ({ init, n: (c?.n ?? 0) + 1 })),
+      openCardsFromNote: setFromNote,
+      openPdf: (file, page) => {
+        setPdfPref(JSON.stringify({ file }))
+        setPdfJump((j) => ({ page, nonce: j.nonce + 1 }))
+        setSidebarOpen(false)
+      },
     }),
-    [view, navigate, createNote, trashNote, togglePin, resolveTitle],
+    [view, navigate, createNote, trashNote, togglePin, resolveTitle, setPdfPref],
   )
 
   // Tastenkürzel
@@ -207,11 +243,21 @@ export default function NotesApp() {
     case 'files':
       main = <FilesView />
       break
+    case 'cards':
+      main = <CardsView />
+      break
+    case 'deck':
+      main = <DeckView key={view.id} id={view.id} />
+      break
+    case 'study':
+      main = <StudyView key={`${view.scope}:${view.mode}`} scope={view.scope} mode={view.mode} />
+      break
     default:
       main = <HomeView />
   }
 
-  const showTopBar = view.kind !== 'note'
+  const showTopBar = view.kind !== 'note' && view.kind !== 'study'
+  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck'].includes(view.kind)
 
   return (
     <AppContext.Provider value={actions}>
@@ -241,8 +287,29 @@ export default function NotesApp() {
               </Button>
             </header>
           ) : null}
-          <div className="min-h-0 flex-1">{main}</div>
-          {showTopBar && view.kind !== 'trash' ? (
+          <SplitPane
+            main={main}
+            side={
+              pdf ? (
+                <PdfPanel
+                  file={pdf.file}
+                  page={pdfJump.page}
+                  nonce={pdfJump.nonce}
+                  full={pdfFull === '1'}
+                  onToggleFull={() => setPdfFull(pdfFull === '1' ? '0' : '1')}
+                  onClose={() => {
+                    setPdfPref('')
+                    setPdfFull('0')
+                  }}
+                  onOpen={(file, page) => actions.openPdf(file, page)}
+                />
+              ) : null
+            }
+            full={pdfFull === '1'}
+            size={Number(pdfSize) || 50}
+            onResize={(n) => setPdfSize(String(n))}
+          />
+          {showFab ? (
             <button
               type="button"
               onClick={() => setNewNote({ folderId: currentFolderId })}
@@ -258,6 +325,8 @@ export default function NotesApp() {
       </div>
 
       <NewNoteDialog options={newNote} onClose={() => setNewNote(null)} />
+      {cardEditor ? <CardEditorDialog key={cardEditor.n} init={cardEditor.init} onClose={() => setCardEditor(null)} /> : null}
+      {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
       <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
       <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
       <PromptDialog

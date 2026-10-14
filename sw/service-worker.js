@@ -13,7 +13,14 @@ const SHELL_CACHE = 'noted-shell'
 const STATIC_CACHE = 'noted-static'
 const DATA_CACHE = 'noted-data'
 
-const DATA_ROUTES = [/^\/api\/notes$/, /^\/api\/notes\/[0-9a-f-]{36}$/, /^\/api\/folders$/, /^\/api\/tags$/, /^\/api\/attachments$/]
+const DATA_ROUTES = [
+  /^\/api\/notes$/,
+  /^\/api\/notes\/[0-9a-f-]{36}$/,
+  /^\/api\/folders$/,
+  /^\/api\/tags$/,
+  /^\/api\/attachments$/,
+  /^\/api\/flashcards$/,
+]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]
 
 self.addEventListener('install', () => {
@@ -28,7 +35,7 @@ async function pruneStatic() {
   for (const request of await cache.keys()) {
     const url = new URL(request.url)
     const dpl = url.searchParams.get('dpl')
-    // Icons und Manifest werden bei Bedarf neu geladen, damit auch sie aktuell bleiben
+    // Icons, Manifest und pdf.js werden bei Bedarf neu geladen, damit auch sie aktuell bleiben
     if ((dpl && dpl !== VERSION) || !url.pathname.startsWith('/_next/')) await cache.delete(request)
   }
 }
@@ -134,8 +141,8 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Icons und Manifest
-  if (url.pathname.startsWith('/icons/') || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.svg') {
+  // Icons, Manifest und die Dateien des PDF-Viewers (pdf.js)
+  if (url.pathname.startsWith('/icons/') || url.pathname.startsWith('/pdfjs/') || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.svg') {
     event.respondWith(cacheFirst(request))
   }
 })

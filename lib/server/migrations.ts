@@ -129,4 +129,51 @@ export const migrations: string[] = [
   );
   INSERT OR REPLACE INTO notes_fts_map (note_id, fts_rowid) SELECT note_id, rowid FROM notes_fts;
   `,
+
+  /* 3: Karteikarten – Stapel, Karten und Lernstand (Wiederholungsplan je Kartenseite) */ `
+  CREATE TABLE decks (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    new_per_day INTEGER NOT NULL DEFAULT 20,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX decks_user ON decks(user_id);
+
+  CREATE TABLE cards (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    note_id TEXT,
+    type TEXT NOT NULL CHECK (type IN ('basic', 'reversed', 'mc')),
+    front TEXT NOT NULL,
+    back TEXT NOT NULL DEFAULT '',
+    options TEXT NOT NULL DEFAULT '[]',
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX cards_deck ON cards(deck_id, position);
+  CREATE INDEX cards_user ON cards(user_id);
+  CREATE INDEX cards_note ON cards(note_id);
+
+  CREATE TABLE card_reviews (
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    side INTEGER NOT NULL CHECK (side IN (0, 1)),
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('learning', 'review', 'relearning')),
+    step INTEGER NOT NULL DEFAULT 0,
+    interval REAL NOT NULL DEFAULT 0,
+    ease REAL NOT NULL,
+    reps INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    due INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL,
+    introduced_at INTEGER NOT NULL,
+    PRIMARY KEY (card_id, side)
+  );
+  CREATE INDEX card_reviews_user ON card_reviews(user_id);
+  `,
 ]

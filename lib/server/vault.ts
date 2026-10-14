@@ -5,9 +5,13 @@ import { getConfig } from './config'
 import { ApiError, badRequest } from './http'
 import { createFolder, createNote, folderPathMap, listFolders, MAX_NOTE_LENGTH } from './notes'
 import { listAttachments, readAttachmentData, saveAttachment } from './attachments'
-import { sanitizeFilename, sanitizeName } from '@/lib/shared/names'
+import { getFlashcardData } from './flashcards'
+import { deckToMarkdown } from '@/lib/shared/card-markdown'
+import { sanitizeFilename, sanitizeName, uniqueName } from '@/lib/shared/names'
 
 export const EXPORT_ATTACHMENT_FOLDER = 'Anhänge'
+/** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
+export const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 
 type ExportEntry = { path: string; mtime: number; compress: boolean; data: () => Uint8Array }
 
@@ -31,6 +35,20 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
     if (![...usedDirs].some((d) => d === p || d.startsWith(p + '/'))) {
       entries.push({ path: p + '/', mtime: Date.now(), compress: false, data: () => new Uint8Array(0) })
     }
+  }
+  const { decks, cards } = getFlashcardData(userId)
+  // Dateinamen im Ordner „Karteikarten“ (auch von gleichnamigen Notizen) nicht doppelt vergeben
+  const prefix = `${EXPORT_FLASHCARD_FOLDER}/`
+  const taken = entries.filter((e) => e.path.startsWith(prefix)).map((e) => e.path.slice(prefix.length))
+  for (const deck of decks) {
+    const name = uniqueName(sanitizeName(deck.name), taken, '.md')
+    taken.push(name)
+    entries.push({
+      path: prefix + name,
+      mtime: deck.updatedAt,
+      compress: true,
+      data: () => strToU8(deckToMarkdown(deck, cards.filter((c) => c.deckId === deck.id))),
+    })
   }
   for (const att of listAttachments(userId)) {
     entries.push({

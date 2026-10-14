@@ -5,6 +5,7 @@ import { ToastProvider } from '../ui/toast'
 import { UpdateBanner } from './UpdateBanner'
 import { NetworkError, setApiUser } from '@/lib/client/api'
 import { sync } from '@/lib/client/sync'
+import { reviewQueue } from '@/lib/client/flashcards'
 import { startUpdateWatcher } from '@/lib/client/app-update'
 import { applyTheme, type Theme } from '@/lib/client/prefs'
 import type { PublicUser } from '@/lib/shared/types'
@@ -35,13 +36,14 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
 
   useEffect(() => {
     sync.start(user.id)
+    reviewQueue.start(user.id, client)
     startUpdateWatcher()
     // Systemeinstellung „Dunkel“ live übernehmen
     const mq = matchMedia('(prefers-color-scheme: dark)')
     const onChange = () => applyTheme((localStorage.getItem('noted:theme') as Theme | null) ?? 'system')
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
-  }, [user.id])
+  }, [user.id, client])
 
   return (
     <UserContext.Provider value={user}>

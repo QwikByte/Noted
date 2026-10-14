@@ -1,8 +1,9 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Copy, Download, ExternalLink, File, FileAudio, FileText, FileVideo, Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
+import { BookOpenText, Copy, Download, ExternalLink, File, FileAudio, FileText, FileVideo, Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
 import { Page, PageHeader } from './views'
+import { useApp } from './context'
 import { Button } from '../ui/button'
 import { ConfirmModal } from '../ui/modal'
 import { useToast } from '../ui/toast'
@@ -21,6 +22,7 @@ function FileIcon({ mime }: { mime: string }) {
 }
 
 export function FilesView() {
+  const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
   const input = useRef<HTMLInputElement>(null)
@@ -90,14 +92,26 @@ export function FilesView() {
             const url = `/api/attachments/${f.id}`
             return (
               <div key={f.id} className="group overflow-hidden rounded-xl border border-border bg-elevated">
-                <a href={url} target="_blank" rel="noopener" className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint">
-                  {f.mime.startsWith('image/') && f.mime !== 'image/heic' ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt={f.filename} loading="lazy" className="size-full object-cover" />
-                  ) : (
+                {f.mime === 'application/pdf' ? (
+                  // PDFs im eingebauten Viewer (neben der aktuellen Ansicht) statt in einem neuen Tab
+                  <button
+                    type="button"
+                    onClick={() => app.openPdf(f.filename)}
+                    className="flex aspect-[4/3] w-full items-center justify-center bg-subtle text-faint hover:text-muted"
+                    aria-label={`${f.filename} öffnen`}
+                  >
                     <FileIcon mime={f.mime} />
-                  )}
-                </a>
+                  </button>
+                ) : (
+                  <a href={url} target="_blank" rel="noopener" className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint">
+                    {f.mime.startsWith('image/') && f.mime !== 'image/heic' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt={f.filename} loading="lazy" className="size-full object-cover" />
+                    ) : (
+                      <FileIcon mime={f.mime} />
+                    )}
+                  </a>
+                )}
                 <div className="p-2.5">
                   <p className="truncate text-sm font-medium" title={f.filename}>
                     {f.filename}
@@ -118,9 +132,15 @@ export function FilesView() {
                     >
                       <Copy className="size-4" />
                     </Button>
-                    <a href={url} target="_blank" rel="noopener" title="Öffnen" aria-label="Öffnen" className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg">
-                      <ExternalLink className="size-4" />
-                    </a>
+                    {f.mime === 'application/pdf' ? (
+                      <Button size="icon-sm" variant="ghost" title="Im PDF-Viewer öffnen" aria-label="Im PDF-Viewer öffnen" onClick={() => app.openPdf(f.filename)}>
+                        <BookOpenText className="size-4" />
+                      </Button>
+                    ) : (
+                      <a href={url} target="_blank" rel="noopener" title="Öffnen" aria-label="Öffnen" className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg">
+                        <ExternalLink className="size-4" />
+                      </a>
+                    )}
                     <a href={`${url}?download=1`} title="Herunterladen" aria-label="Herunterladen" className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg">
                       <Download className="size-4" />
                     </a>
