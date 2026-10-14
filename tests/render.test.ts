@@ -34,6 +34,15 @@ describe('Obsidian-Vorschau', () => {
     expect(html).toContain('data-pdf="skript.pdf" data-page="3"><span class="embed-file-icon"></span><span>skript.pdf · Seite 3</span>')
   })
 
+  it('behandelt Notiztitel mit Punkt nicht als Datei', () => {
+    const resolve = (t: string) => (t === 'Kapitel 3.1' ? { id: 'k31', title: 'Kapitel 3.1' } : null)
+    const { html } = renderMarkdown('[[Kapitel 3.1]] [[Übung 2.3]] [[Woche 2.Semester]]', { resolveNote: resolve })
+    expect(html).toContain('<a class="wikilink" href="/?n=k31" data-note-id="k31" data-target="Kapitel 3.1">Kapitel 3.1</a>')
+    expect(html).toContain('<a class="wikilink unresolved" href="#" data-target="Übung 2.3"')
+    expect(html).toContain('data-target="Woche 2.Semester"')
+    expect(html).not.toContain('file-link')
+  })
+
   it('rendert Tags, Markierungen und Fußnoten', () => {
     const { html } = renderMarkdown('Text #uni/mathe und ==wichtig== #123 Fußnote[^1]\n\n[^1]: Quelle')
     expect(html).toContain('<a class="tag" href="/?t=uni%2Fmathe" data-tag="uni/mathe">#uni/mathe</a>')

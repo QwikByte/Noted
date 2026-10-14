@@ -49,8 +49,11 @@ export type DeckCounts = {
 
 type Plan = { fresh: StudyItem[]; learning: StudyItem[]; review: StudyItem[]; counts: DeckCounts }
 
-/** Ermittelt für einen Stapel, was heute zu lernen ist. */
-function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap, now: number): Plan {
+/**
+ * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
+ * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel.
+ */
+function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
   const today = startOfDay(now)
   const eod = endOfDay(now)
   const eot = eod + 86_400_000
@@ -65,9 +68,12 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
   const candidates: StudyItem[] = []
 
   for (const card of [...cards].sort(byPosition)) {
+    const counted = !inScope || inScope(card)
     for (const side of sidesOf(card)) {
-      total++
       const state = states.get(reviewKey(card.id, side))
+      if (state && state.introducedAt >= today) introducedToday++
+      if (!counted) continue
+      total++
       if (!state) {
         newTotal++
         // Rückseite einer beidseitigen Karte erst, wenn die Vorderseite nicht mehr ganz neu ist
@@ -78,7 +84,6 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
         candidates.push({ card, side, kind: 'new' })
         continue
       }
-      if (state.introducedAt >= today) introducedToday++
       if (state.reviewedAt >= today) reviewedToday++
       if (state.due <= eod) {
         if (state.phase === 'review') review.push({ card, side, kind: 'review' })
@@ -136,7 +141,14 @@ export class LearnSession {
   private main: StudyItem[]
   private learning: { item: StudyItem; due: number }[]
 
-  constructor(decks: Pick<Deck, 'id' | 'newPerDay'>[], cards: Card[], states: StateMap, now: number) {
+  /** `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden */
+  constructor(
+    decks: Pick<Deck, 'id' | 'newPerDay'>[],
+    cards: Card[],
+    states: StateMap,
+    now: number,
+    inScope?: (card: Card) => boolean,
+  ) {
     const byDeck = new Map<string, Card[]>()
     for (const c of cards) {
       const list = byDeck.get(c.deckId)
@@ -147,7 +159,7 @@ export class LearnSession {
     const fresh: StudyItem[] = []
     const learning: { item: StudyItem; due: number }[] = []
     for (const deck of decks) {
-      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now)
+      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now, inScope)
       review.push(...plan.review)
       fresh.push(...plan.fresh)
       for (const item of plan.learning) learning.push({ item, due: states.get(itemKey(item))?.due ?? now })

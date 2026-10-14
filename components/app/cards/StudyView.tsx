@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, CheckCircle2, Dumbbell, FileText, Loader2, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
 import { useApp } from '../context'
 import { CardMarkdown } from './CardMarkdown'
@@ -24,15 +24,17 @@ import {
 } from '@/lib/shared/study'
 import type { Card, Deck } from '@/lib/shared/types'
 
-type Scope = { title: string; decks: Deck[]; cards: Card[]; back: View }
+/** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
+type Scope = { title: string; decks: Deck[]; cards: Card[]; pool: Card[]; back: View }
 
 function resolveScope(data: Flashcards, scope: StudyScope, noteTitle: (id: string) => string | undefined): Scope | null {
-  if (scope === 'all') return { title: 'Alle Stapel', decks: data.decks, cards: data.cards, back: { kind: 'cards' } }
+  if (scope === 'all') return { title: 'Alle Stapel', decks: data.decks, cards: data.cards, pool: data.cards, back: { kind: 'cards' } }
   const [kind, id] = scope.split(':') as ['deck' | 'note', string]
   if (kind === 'deck') {
     const deck = data.decks.find((d) => d.id === id)
     if (!deck) return null
-    return { title: deck.name, decks: [deck], cards: data.cards.filter((c) => c.deckId === id), back: { kind: 'deck', id } }
+    const cards = data.cards.filter((c) => c.deckId === id)
+    return { title: deck.name, decks: [deck], cards, pool: cards, back: { kind: 'deck', id } }
   }
   const cards = data.cards.filter((c) => c.noteId === id)
   const deckIds = new Set(cards.map((c) => c.deckId))
@@ -40,6 +42,7 @@ function resolveScope(data: Flashcards, scope: StudyScope, noteTitle: (id: strin
     title: noteTitle(id) ?? 'Notiz',
     decks: data.decks.filter((d) => deckIds.has(d.id)),
     cards,
+    pool: data.cards.filter((c) => deckIds.has(c.deckId)),
     back: { kind: 'note', id },
   }
 }
@@ -74,15 +77,25 @@ export function StudyView({ scope, mode }: { scope: StudyScope; mode: StudyMode 
   return <StudySession key={`${scope}:${mode}`} mode={mode} scope={scope} snapshot={snapshot} live={data ?? snapshot.data} />
 }
 
-type Answer = { selected: Set<number>; checked: boolean; order: number[] }
+function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
+  if (scope.pool === scope.cards) return undefined
+  const ids = new Set(scope.cards.map((c) => c.id))
+  return (card) => ids.has(card.id)
+}
+
+/** `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt */
+type Answer = { key: string; selected: Set<number>; checked: boolean; order: number[] }
 
 const take = (s: LearnSession | PracticeSession) => (s instanceof LearnSession ? s.next(Date.now()) : s.next())
 
+const answerKey = (item: StudyItem | null, card: Card | null) => (item && card ? `${itemKey(item)}@${card.updatedAt}` : '')
+
 /** Neue Antwort: Reihenfolge der Multiple-Choice-Antworten jedes Mal neu mischen */
-const freshAnswer = (item: StudyItem | null): Answer => ({
+const freshAnswer = (item: StudyItem | null, card: Card | null = item?.card ?? null): Answer => ({
+  key: answerKey(item, card),
   selected: new Set(),
   checked: false,
-  order: item ? shuffle(item.card.options.map((_, i) => i)) : [],
+  order: card ? shuffle(card.options.map((_, i) => i)) : [],
 })
 
 function StudySession({
@@ -103,7 +116,7 @@ function StudySession({
   const create = useCallback(
     (items?: StudyItem[]): LearnSession | PracticeSession =>
       mode === 'learn'
-        ? new LearnSession(snapshot.scope.decks, snapshot.scope.cards, snapshot.data.states, Date.now())
+        ? new LearnSession(snapshot.scope.decks, snapshot.scope.pool, snapshot.data.states, Date.now(), inScope(snapshot.scope))
         : new PracticeSession(items ?? allItems(snapshot.scope.cards)),
     [mode, snapshot],
   )
@@ -137,8 +150,12 @@ function StudySession({
     advance(s)
   }
 
-  // Immer die aktuelle Fassung der Karte anzeigen (falls sie gerade bearbeitet wurde)
+  // Immer die aktuelle Fassung der Karte anzeigen (falls sie gerade bearbeitet wurde) – dann die Antwort neu beginnen
   const card = current ? (live.cards.find((c) => c.id === current.card.id) ?? current.card) : null
+  if (answer.key !== answerKey(current, card)) {
+    setAnswer(freshAnswer(current, card))
+    setRevealed(false)
+  }
   const side = current?.side ?? 0
   const state = current ? (live.states.get(itemKey(current)) ?? null) : null
   const isMc = card?.type === 'mc' && card.options.length >= 2
@@ -190,12 +207,18 @@ function StudySession({
   }, [isMc, answer.selected.size])
 
   // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen
+  const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!current || e.metaKey || e.ctrlKey || e.altKey) return
+      const root = rootRef.current
+      if (!current || !root || e.metaKey || e.ctrlKey || e.altKey) return
+      // Nur, wenn die Lernansicht sichtbar ist und der Fokus nicht woanders liegt (z. B. im PDF daneben)
       const t = e.target as HTMLElement
+      if (!root.offsetParent || (t !== document.body && !root.contains(t))) return
       if (t.closest('input, textarea, select, [contenteditable="true"], dialog[open], [role="menu"]')) return
       const primary = e.key === ' ' || e.key === 'Enter'
+      // Leertaste/Enter auf einem Knopf lösen diesen Knopf aus (z. B. „Schwer“ per Tab angewählt)
+      if (primary && t.closest('button, a')) return
       const digit = /^[1-9]$/.test(e.key) ? Number(e.key) : null
       let handled = true
       if (isMc && !answer.checked) {
@@ -237,7 +260,7 @@ function StudySession({
   const solution = !card ? '' : isMc ? card.back : side === 1 ? card.front : card.back
 
   return (
-    <div className="flex h-full flex-col" data-testid="study">
+    <div ref={rootRef} className="flex h-full flex-col" data-testid="study">
       <header className="pt-safe border-b border-border">
         <div className="flex items-center gap-2 px-2 py-1.5 sm:px-3">
           <Button variant="ghost" size="icon" onClick={close} aria-label="Lernen beenden" title="Beenden">
@@ -308,6 +331,7 @@ function StudySession({
                   <ul className="mt-5 space-y-2" role={singleChoice ? 'radiogroup' : 'group'} aria-label="Antworten">
                     {answer.order.map((optIndex, pos) => {
                       const option = card.options[optIndex]
+                      if (!option) return null
                       const selected = answer.selected.has(optIndex)
                       const state = !answer.checked
                         ? selected
@@ -327,6 +351,8 @@ function StudySession({
                             role={singleChoice ? 'radio' : 'checkbox'}
                             aria-checked={selected}
                             disabled={answer.checked}
+                            // Klick nimmt keinen Fokus – Enter prüft danach die Auswahl, statt die Antwort umzuschalten
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => toggleOption(optIndex)}
                             className={cn(
                               'flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors disabled:cursor-default',

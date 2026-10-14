@@ -30,6 +30,8 @@ const AUDIO_EXT = /\.(mp3|m4a|wav|ogg|flac)$/i
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i
 const PDF_PAGE_RE = /^page=(\d{1,5})\b/i
+const ATTACHMENT_EXT =
+  /\.(pdf|png|jpe?g|gif|webp|avif|bmp|svg|heic|heif|mp3|m4a|wav|ogg|flac|mp4|webm|mov|mkv|txt|csv|json|zip|docx?|xlsx?|pptx?|odt|ods|odp|epub)$/i
 
 export function defaultFileUrl(name: string) {
   return '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
@@ -69,8 +71,11 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     alias: string | null
   }
   const fileUrl = env.fileUrl ?? defaultFileUrl
+  // Links ([[…]]) auf Dateien nur bei typischen Anhang-Endungen – sonst sind es Notizen wie [[Kapitel 3.1]]
+  const linkedNote = !embed && target ? (env.resolveNote?.(target) ?? null) : null
+  const isFile = embed ? isFileTarget(target) : !linkedNote && ATTACHMENT_EXT.test(target)
 
-  if (target && isFileTarget(target)) {
+  if (target && isFile) {
     const url = escapeHtml(fileUrl(target))
     const name = escapeHtml(target.split('/').pop() ?? target)
     // PDFs öffnen im eingebauten Viewer – auch direkt auf einer Seite: [[Skript.pdf#page=12]]
@@ -95,7 +100,7 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}><span class="embed-file-icon"></span><span>${label}</span></a>`
   }
 
-  const note = target ? (env.resolveNote?.(target) ?? null) : null
+  const note = linkedNote ?? (target ? (env.resolveNote?.(target) ?? null) : null)
   const label = escapeHtml(alias ?? (target ? (heading ? `${target} › ${heading}` : target) : (heading ?? '')))
   const anchor = heading ? `#${encodeURIComponent(slugify(heading))}` : ''
   if (!target && heading) {

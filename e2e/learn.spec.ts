@@ -154,12 +154,18 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await page.getByTestId('deck-learn').click()
   await page.keyboard.press('Space')
   await page.getByTestId('rate-3').click()
-  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('noted:reviews:')))).toBe(true)
+  const pendingReviews = () =>
+    page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('noted:reviews:'))
+      return key ? (JSON.parse(localStorage.getItem(key)!).pending?.length ?? 0) : 0
+    })
+  await expect.poll(pendingReviews).toBe(1)
   await context.setOffline(false)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect
     .poll(async () => (await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))).reviews.length, { timeout: 15_000 })
     .toBe(1)
+  await expect.poll(pendingReviews).toBe(0)
 })
 
 test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {

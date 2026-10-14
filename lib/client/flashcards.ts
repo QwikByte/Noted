@@ -13,9 +13,32 @@ export const flashcardsKey = ['flashcards'] as const
 const FLUSH_DELAY = 1500
 const RETRY_INTERVAL = 30_000
 
-class ReviewQueue {
+type Stored = { pending: CardReview[]; acked: CardReview[] }
+
+/** Jüngere Bewertung einer Kartenseite übernehmen */
+function upsert(map: Map<string, CardReview>, r: CardReview): boolean {
+  const key = reviewKey(r.cardId, r.side)
+  const cur = map.get(key)
+  if (cur && cur.reviewedAt >= r.reviewedAt) return false
+  map.set(key, r)
+  return true
+}
+
+/**
+ * Warteschlange für Bewertungen:
+ *  - pending: noch nicht gesendet
+ *  - acked:   gesendet, aber evtl. noch nicht in den Daten, die der Service Worker für offline zwischengespeichert
+ *             hat – bleiben deshalb als Überlagerung, bis eine Antwort vom Server sie enthält
+ * Mehrere Tabs teilen sich den Speicher und führen ihren Stand zusammen.
+ */
+export class ReviewQueue {
   private storageKey = ''
   private pending = new Map<string, CardReview>()
+  private acked = new Map<string, CardReview>()
+  /** In dieser Sitzung verworfene Karten (gelöscht, Lernstand zurückgesetzt) – nicht aus anderen Tabs zurückholen */
+  private dropped = new Set<string>()
+  /** Erledigte Einträge je Kartenseite (bis zu diesem Zeitpunkt) – nicht aus dem Speicher zurückholen */
+  private forgotten = new Map<string, number>()
   private listeners = new Set<() => void>()
   private snapshot: CardReview[] = []
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -28,13 +51,13 @@ class ReviewQueue {
     if (this.started) return
     this.started = true
     this.storageKey = `noted:reviews:${userId}`
-    try {
-      const list: CardReview[] = JSON.parse(localStorage.getItem(this.storageKey) ?? '[]')
-      for (const r of list) this.pending.set(reviewKey(r.cardId, r.side), r)
-    } catch {
-      /* defekter Speicher – ignorieren */
-    }
+    this.load()
     this.emit()
+    window.addEventListener('storage', (e) => {
+      if (e.key !== this.storageKey) return
+      this.load()
+      this.emit()
+    })
     window.addEventListener('online', () => void this.flush())
     document.addEventListener('visibilitychange', () => void this.flush())
     setInterval(() => void this.flush(), RETRY_INTERVAL)
@@ -48,57 +71,104 @@ class ReviewQueue {
     }
   }
 
+  /** Alle lokal bekannten Bewertungen (gesendet und ungesendet) */
   getSnapshot = () => this.snapshot
 
   private emit() {
-    this.snapshot = [...this.pending.values()]
+    this.snapshot = [...this.acked.values(), ...this.pending.values()]
     for (const fn of this.listeners) fn()
+  }
+
+  private read(): Stored {
+    try {
+      const raw = JSON.parse(localStorage.getItem(this.storageKey) ?? 'null')
+      if (Array.isArray(raw)) return { pending: raw, acked: [] } // älteres Format
+      return { pending: raw?.pending ?? [], acked: raw?.acked ?? [] }
+    } catch {
+      return { pending: [], acked: [] }
+    }
+  }
+
+  /** Stand aus dem Speicher (z. B. von einem anderen Tab) übernehmen – pro Kartenseite gewinnt die jüngste Bewertung. */
+  private load() {
+    const stored = this.read()
+    const keep = (r: CardReview) =>
+      !this.dropped.has(r.cardId) && (this.forgotten.get(reviewKey(r.cardId, r.side)) ?? -1) < r.reviewedAt
+    for (const r of stored.acked) if (keep(r)) upsert(this.acked, r)
+    for (const r of stored.pending) if (keep(r)) upsert(this.pending, r)
+    // Was ein anderer Tab schon gesendet hat, nicht noch einmal senden
+    for (const [key, r] of this.pending) {
+      const sent = this.acked.get(key)
+      if (sent && sent.reviewedAt >= r.reviewedAt) this.pending.delete(key)
+    }
   }
 
   private persist() {
     if (!this.storageKey) return
+    this.load()
     try {
-      if (this.pending.size === 0) localStorage.removeItem(this.storageKey)
-      else localStorage.setItem(this.storageKey, JSON.stringify(this.snapshot))
+      if (this.pending.size === 0 && this.acked.size === 0) localStorage.removeItem(this.storageKey)
+      else {
+        const stored: Stored = { pending: [...this.pending.values()], acked: [...this.acked.values()] }
+        localStorage.setItem(this.storageKey, JSON.stringify(stored))
+      }
     } catch {
       /* voll – bleibt im Arbeitsspeicher und wird beim nächsten Versuch gesendet */
     }
   }
 
   add(review: CardReview) {
+    this.dropped.delete(review.cardId)
     this.pending.set(reviewKey(review.cardId, review.side), review)
-    this.emit()
     this.persist()
+    this.emit()
     clearTimeout(this.timer)
     this.timer = setTimeout(() => void this.flush(), FLUSH_DELAY)
   }
 
   /** Bewertungen bestimmter Karten verwerfen (Karte gelöscht, Lernstand zurückgesetzt) */
   drop(cardIds: Set<string>) {
+    for (const id of cardIds) this.dropped.add(id)
+    for (const map of [this.pending, this.acked]) {
+      for (const [key, r] of map) if (cardIds.has(r.cardId)) map.delete(key)
+    }
+    this.persist()
+    this.emit()
+  }
+
+  /**
+   * Nach dem Laden vom Server: gesendete Bewertungen, die der Server schon kennt (oder die zu gelöschten Karten
+   * gehören), werden als Überlagerung nicht mehr gebraucht. Kommt die Antwort aus dem Offline-Cache, ist sie älter
+   * und es bleibt alles stehen.
+   */
+  prune(data: FlashcardData) {
+    if (this.acked.size === 0) return
+    const server = new Map(data.reviews.map((r) => [reviewKey(r.cardId, r.side), r]))
+    const types = new Map(data.cards.map((c) => [c.id, c.type]))
     let changed = false
-    for (const [key, r] of this.pending) {
-      if (cardIds.has(r.cardId)) {
-        this.pending.delete(key)
+    for (const [key, r] of this.acked) {
+      const known = server.get(key)
+      const type = types.get(r.cardId)
+      if (!type || (r.side === 1 && type !== 'reversed') || (known && known.reviewedAt >= r.reviewedAt)) {
+        this.forget(this.acked, key, r)
         changed = true
       }
     }
     if (changed) {
-      this.emit()
       this.persist()
+      this.emit()
     }
   }
 
-  get size() {
-    return this.pending.size
-  }
-
   async flush(): Promise<void> {
-    if (this.flushing || this.pending.size === 0) return
+    if (!this.storageKey || this.flushing) return
+    this.load()
+    if (this.pending.size === 0) return
     this.flushing = true
     const batch = [...this.pending.values()]
     try {
       await api('/api/reviews', { method: 'POST', body: { reviews: batch } })
-      this.settle(batch)
+      this.settle(batch, true)
       // Während des Sendens neu bewertete Karten gleich hinterherschicken
       if (this.pending.size > 0) {
         clearTimeout(this.timer)
@@ -107,31 +177,38 @@ class ReviewQueue {
     } catch (err) {
       // Offline oder Serverfehler: später erneut. Als ungültig abgelehnt: verwerfen, sonst hinge es ewig fest.
       if (!(err instanceof NetworkError) && err instanceof ApiError && (err.status === 400 || err.status === 413)) {
-        this.remove(batch)
+        this.settle(batch, false)
       }
     } finally {
       this.flushing = false
     }
   }
 
-  /** Gesendete Bewertungen in den Cache übernehmen und aus der Warteschlange nehmen. */
-  private settle(batch: CardReview[]) {
-    this.qc?.setQueryData<FlashcardData>(flashcardsKey, (d) => (d ? { ...d, reviews: mergeReviews(d.reviews, batch) } : d))
-    this.remove(batch)
-  }
-
-  /** Nur entfernen, was seitdem nicht erneut bewertet wurde */
-  private remove(batch: CardReview[]) {
+  /** Gesendete Bewertungen aus der Warteschlange nehmen (nur, was seitdem nicht erneut bewertet wurde). */
+  private settle(batch: CardReview[], sent: boolean) {
+    if (sent) {
+      this.qc?.setQueryData<FlashcardData>(flashcardsKey, (d) => (d ? { ...d, reviews: mergeReviews(d.reviews, batch) } : d))
+    }
     for (const r of batch) {
       const key = reviewKey(r.cardId, r.side)
-      if (this.pending.get(key) === r) this.pending.delete(key)
+      if (this.pending.get(key) !== r) continue
+      if (sent) {
+        this.pending.delete(key)
+        upsert(this.acked, r)
+      } else this.forget(this.pending, key, r)
     }
-    this.emit()
     this.persist()
+    this.emit()
+  }
+
+  private forget(map: Map<string, CardReview>, key: string, r: CardReview) {
+    map.delete(key)
+    this.forgotten.set(key, Math.max(this.forgotten.get(key) ?? -1, r.reviewedAt))
   }
 
   clearAll() {
     this.pending.clear()
+    this.acked.clear()
     if (this.storageKey) localStorage.removeItem(this.storageKey)
     this.emit()
   }
@@ -157,7 +234,11 @@ const NO_PENDING: CardReview[] = []
 export function useFlashcards() {
   const query = useQuery({
     queryKey: flashcardsKey,
-    queryFn: () => api<FlashcardData>('/api/flashcards'),
+    queryFn: async () => {
+      const data = await api<FlashcardData>('/api/flashcards')
+      reviewQueue.prune(data)
+      return data
+    },
   })
   const pending = useSyncExternalStore(reviewQueue.subscribe, reviewQueue.getSnapshot, () => NO_PENDING)
   const data = useMemo<Flashcards | null>(() => {

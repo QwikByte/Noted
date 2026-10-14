@@ -121,6 +121,19 @@ describe('Lernsitzung', () => {
     expect(deckCounts(deck, cards, stateMap(reviews), NOW).newToday).toBe(1)
   })
 
+  it('hält das Tageslimit auch beim Lernen der Karten einer Notiz ein', () => {
+    const cards = Array.from({ length: 8 }, (_, i) => card(`c${i}`, { noteId: i >= 4 ? 'n1' : null }))
+    const reviews: CardReview[] = [0, 1, 2].map((i) => ({ cardId: `c${i}`, side: 0 as const, ...schedule(null, 4, NOW - 60 * MINUTE) }))
+    const fromNote = (c: Card) => c.noteId === 'n1'
+    const session = new LearnSession([deck], cards, stateMap(reviews), NOW, fromNote)
+    const seen: string[] = []
+    for (let item = session.next(NOW); item; item = session.next(NOW)) seen.push(item.card.id)
+    // Limit 3, davon heute schon 3 im Stapel eingeführt → keine weiteren neuen Karten
+    expect(seen).toEqual([])
+    const fresh = new LearnSession([deck], cards, new Map(), NOW, fromNote)
+    expect(fresh.remaining()).toEqual({ new: 3, learning: 0, review: 0 })
+  })
+
   it('wiederholt Karten in der Lernphase innerhalb der Sitzung', () => {
     const cards = [card('c1'), card('c2')]
     const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
