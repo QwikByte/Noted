@@ -142,6 +142,7 @@ export function RichTextToolbar({
       <Divider />
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <button
             type="button"
@@ -164,6 +165,7 @@ export function RichTextToolbar({
       </Menu>
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <ToolButton label="Schriftgröße" {...p}>
             <span className="text-[13px] font-semibold">
@@ -196,6 +198,7 @@ export function RichTextToolbar({
       </ToolButton>
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <ToolButton label="Schriftfarbe" {...p}>
             <Baseline style={state.color ? { color: state.color } : undefined} />
@@ -213,6 +216,7 @@ export function RichTextToolbar({
       </Menu>
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <ToolButton label="Hervorheben" active={state.highlight} {...p}>
             <Highlighter />
@@ -231,6 +235,7 @@ export function RichTextToolbar({
       <Divider />
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <ToolButton label="Ausrichtung" {...p}>
             <AlignIcon />
@@ -265,6 +270,7 @@ export function RichTextToolbar({
       </ToolButton>
       <Menu
         align="left"
+        keepFocus
         trigger={(p) => (
           <ToolButton label="Einfügen" active={state.blockquote || state.codeBlock} {...p}>
             <Plus />
@@ -287,6 +293,7 @@ export function RichTextToolbar({
       {state.table ? (
         <Menu
           align="left"
+          keepFocus
           trigger={(p) => (
             <ToolButton label="Tabelle bearbeiten" active {...p}>
               <Table />

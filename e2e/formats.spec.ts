@@ -61,6 +61,10 @@ test('Formatierter Text: schreiben wie in Word, Seitenlink aus dem PDF, Lesemodu
 
   // Überschrift über das Absatzformat, dann Text mit Fett und Farbe
   await editor.click()
+  // Die Werkzeugleiste nimmt dem Editor den Fokus nie weg – auch nicht beim Auswählen im Menü. Sonst geht verloren,
+  // was direkt danach getippt wird, bis TipTap den Fokus im nächsten Frame zurückholt.
+  type Watched = { __editorBlurred?: boolean }
+  await editor.evaluate((el) => el.addEventListener('blur', () => ((window as Watched).__editorBlurred = true)))
   await page.getByRole('button', { name: 'Absatzformat' }).click()
   await page.getByRole('menuitem', { name: 'Überschrift 2' }).click()
   await page.keyboard.type('Sitzung vom Montag')
@@ -73,6 +77,7 @@ test('Formatierter Text: schreiben wie in Word, Seitenlink aus dem PDF, Lesemodu
   await page.getByRole('button', { name: 'Schriftfarbe' }).click()
   await page.getByRole('menuitem', { name: 'Rot' }).click()
   await page.keyboard.type('rot')
+  expect(await page.evaluate(() => (window as Watched).__editorBlurred), 'Editor hat den Fokus verloren').toBeUndefined()
   await expect(editor.locator('h2')).toHaveText('Sitzung vom Montag')
   await expect(editor.locator('strong')).toHaveText('wichtig')
   await expect(editor.locator('span[style*="color"]')).toHaveText('rot')
