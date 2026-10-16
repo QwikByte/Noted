@@ -1,21 +1,25 @@
 'use client'
 import { useId } from 'react'
-import { GripVertical, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { Button } from '@/shared/ui/button'
 import { useFloating } from '../client/use-floating'
 
-/** Verschiebbares Fenster über der App – nicht modal: daneben lässt sich weiterarbeiten */
+/** Verschiebbares Fenster über der App – nicht modal: daneben lässt sich weiterarbeiten. Gezogen wird am Kopf. */
 export function FloatingWindow({
   id,
   title,
+  actions,
   onClose,
   children,
 }: {
   id: string
   title: string
+  /** Weitere Knöpfe im Kopf links neben „Schließen“ – mit `data-no-drag`, damit der Klick nicht als Ziehen zählt */
+  actions?: React.ReactNode
   onClose: () => void
   children: React.ReactNode
 }) {
-  const { style, dragHandlers, onKeyDown } = useFloating(`noted:window:${id}:pos`, { x: 1, y: 0.15 })
+  const { style, dragHandlers } = useFloating(`noted:window:${id}:pos`, { x: 1, y: 0.15 })
   const titleId = useId()
   return (
     <div data-floating className="pointer-events-auto absolute w-72 max-w-full" style={style}>
@@ -33,31 +37,16 @@ export function FloatingWindow({
         }}
       >
         <header
-          className="flex h-10 cursor-grab touch-none items-center gap-1 border-b border-border px-1 select-none active:cursor-grabbing"
+          className="flex h-10 cursor-grab touch-none items-center gap-0.5 border-b border-border pr-1 pl-3 select-none active:cursor-grabbing"
           {...dragHandlers}
         >
-          <button
-            type="button"
-            onKeyDown={onKeyDown}
-            aria-label="Fenster verschieben"
-            title="Verschieben (auch mit den Pfeiltasten)"
-            className="flex size-8 cursor-grab items-center justify-center rounded-md text-faint hover:bg-hover hover:text-fg"
-          >
-            <GripVertical className="size-4" />
-          </button>
           <h2 id={titleId} className="flex-1 truncate text-sm font-semibold">
             {title}
           </h2>
-          <button
-            type="button"
-            data-no-drag
-            onClick={onClose}
-            aria-label="Schließen"
-            title="Schließen"
-            className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
-          >
+          {actions}
+          <Button variant="ghost" size="icon-sm" data-no-drag onClick={onClose} aria-label="Schließen" title="Schließen">
             <X className="size-4" />
-          </button>
+          </Button>
         </header>
         {children}
       </section>

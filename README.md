@@ -55,12 +55,14 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
 
 **Werkzeugleiste und Fokus-Timer**
-- Eine kleine Werkzeugleiste schwebt über der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Sie lässt sich einklappen und an jede Stelle ziehen – am Griff oder mit den Pfeiltasten. Position und Zustand merkt sich das Gerät.
-- Werkzeuge öffnen sich als kleine Fenster, die sich ebenfalls verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
+- Eine kleine Werkzeugleiste schwebt über der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Sie lässt sich einklappen und am Griff verschieben: seitlich frei, beim Loslassen rastet sie oben oder unten ein (mit der Tastatur: ←/→ seitlich, ↑/↓ an den oberen bzw. unteren Rand). Am Anfang sitzt sie am Desktop oben mittig, auf dem Handy unten links. Position und Zustand merkt sich das Gerät.
+- Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
+- Feste Leisten am unteren Rand, z. B. die Bewertungsknöpfe beim Lernen, verdecken Werkzeugleiste und Mini-Timer nicht: Beide rutschen darüber.
 - **Fokus-Timer:**
   - *Pomodoro*: 25 Minuten Fokus, 5 Minuten Pause, nach 4 Runden eine lange Pause von 15 Minuten. Alle Zeiten sind einstellbar, Fokus und Pausen wechseln automatisch.
   - *Countdown*: 5 bis 90 Minuten oder eine eigene Dauer.
-  - Die Restzeit steht auch an der eingeklappten Leiste.
+  - Die Einstellungen öffnest du über das Symbol im Fensterkopf neben „Schließen“.
+  - Schließt du das Fenster, während der Timer läuft, bleibt er klein unten mittig sichtbar. Ein Klick darauf öffnet ihn wieder.
   - Am Ende einer Phase gibt es einen Ton und eine Meldung. Auf Wunsch kommt zusätzlich eine Systembenachrichtigung, wenn du gerade nicht in Noted bist.
   - Der Timer läuft beim Seitenwechsel und nach dem Neuladen weiter und gilt für alle offenen Tabs. Er wird nur auf dem Gerät gespeichert, nicht auf dem Server.
 
@@ -329,8 +331,8 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   settings/             Einstellungsseite
   updates/              Version, Update-Erkennung im Browser, Status der automatischen Updates
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
-  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst
-  client/               API-Client, Zwischenablage, lokale Einstellungen
+  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, untere Leisten
+  client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries
   server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
   markdown/             Obsidian-Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
   lib/                  Namensregeln, Formatierung, HTML-Hilfen
