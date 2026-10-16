@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/shared/ui/toast'
 import { UpdateBanner } from '@/features/updates/components/UpdateBanner'
+import { GlobalToolbar } from './GlobalToolbar'
 import { NetworkError, setApiUser } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
@@ -41,7 +42,10 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
   return (
     <UserProvider user={user}>
       <QueryClientProvider client={client}>
-        <ToastProvider sticky={<UpdateBanner />}>{children}</ToastProvider>
+        <ToastProvider sticky={<UpdateBanner />}>
+          {children}
+          <GlobalToolbar />
+        </ToastProvider>
       </QueryClientProvider>
     </UserProvider>
   )

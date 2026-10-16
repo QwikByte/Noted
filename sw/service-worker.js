@@ -61,6 +61,17 @@ self.addEventListener('message', (event) => {
   }
 })
 
+// Benachrichtigung des Fokus-Timers (auf Android nur über den Service Worker möglich): Antippen holt Noted nach vorn
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => new URL(w.url).origin === self.location.origin)
+      return open ? open.focus() : self.clients.openWindow('/')
+    }),
+  )
+})
+
 function offlineJson() {
   return new Response(JSON.stringify({ error: 'offline', message: 'Keine Verbindung zum Server.' }), {
     status: 503,
