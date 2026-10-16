@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { cardSchema, deleteCard, updateCard } from '@/lib/server/flashcards'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { cardSchema, deleteCard, updateCard } from '@/features/flashcards/server/flashcards'
 
 const schema = cardSchema.partial().extend({ deckId: z.string().uuid().optional() })
 

@@ -1,5 +1,6 @@
-import { json, route } from '@/lib/server/http'
-import { adminRevokeSessions } from '@/lib/server/admin'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { adminRevokeSessions } from '@/features/admin/server/admin'
 
 /** Alle Sitzungen eines Benutzers beenden */
 export const DELETE = route<{ id: string }>('admin', ({ user, ip, params }) => {

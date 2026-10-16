@@ -1,10 +1,11 @@
 /** Wird einmal beim Serverstart ausgeführt: Datenbank öffnen, migrieren und ggf. den ersten Admin anlegen. */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
-  const { getDb } = await import('./lib/server/db')
-  const { purgeExpiredSessions } = await import('./lib/server/session')
-  const { purgeTrash } = await import('./lib/server/notes')
-  getDb()
+  const { getDb } = await import('@/shared/server/db')
+  const { bootstrapAdmin } = await import('@/features/auth/server/bootstrap')
+  const { purgeExpiredSessions } = await import('@/features/auth/server/session')
+  const { purgeTrash } = await import('@/features/notes/server/notes')
+  bootstrapAdmin(getDb())
   const cleanup = () => {
     try {
       purgeExpiredSessions()

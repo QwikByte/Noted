@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { ApiError, json, parseJson, route } from '@/lib/server/http'
-import { audit } from '@/lib/server/audit'
-import { canRequestUpdate, readUpdateRequest, requestUpdate } from '@/lib/server/update-status'
+import { ApiError, json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { audit } from '@/shared/server/audit'
+import { canRequestUpdate, readUpdateRequest, requestUpdate } from '@/features/updates/server/update-status'
 
 const schema = z.object({ retry: z.boolean().optional() })
 

@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { getPageSession } from '@/lib/server/page-auth'
-import { isMfaRequired, pendingSetup } from '@/lib/server/users'
-import { AuthShell } from '@/components/auth/AuthShell'
-import { SetupFlow } from '@/components/auth/SetupFlow'
+import { getPageSession } from '@/features/auth/server/page-auth'
+import { isMfaRequired, pendingSetup } from '@/features/auth/server/users'
+import { AuthShell } from '@/features/auth/components/AuthShell'
+import { SetupFlow } from '@/features/auth/components/SetupFlow'
 
 export const metadata: Metadata = { title: 'Konto einrichten' }
 

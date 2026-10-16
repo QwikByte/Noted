@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { listUsersForAdmin, toPublicUser } from '@/lib/server/users'
-import { adminCreateUser } from '@/lib/server/admin'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { toPublicUser } from '@/features/auth/server/users'
+import { adminCreateUser, listUsersForAdmin } from '@/features/admin/server/admin'
 
 export const GET = route('admin', () => {
   return json({ users: listUsersForAdmin() })

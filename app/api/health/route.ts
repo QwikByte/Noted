@@ -1,4 +1,4 @@
-import { getDb } from '@/lib/server/db'
+import { getDb } from '@/shared/server/db'
 
 export function GET() {
   try {

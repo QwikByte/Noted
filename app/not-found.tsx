@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Logo } from '@/components/Logo'
+import { Logo } from '@/shared/ui/logo'
 
 export default function NotFound() {
   return (

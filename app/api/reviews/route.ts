@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { reviewSchema, saveReviews } from '@/lib/server/flashcards'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { reviewSchema, saveReviews } from '@/features/flashcards/server/flashcards'
 
 const schema = z.object({ reviews: z.array(reviewSchema).max(5000) })
 

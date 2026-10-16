@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { deleteNotePermanently, getNote, trashNote, updateNote } from '@/lib/server/notes'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { deleteNotePermanently, getNote, trashNote, updateNote } from '@/features/notes/server/notes'
 
 export const GET = route<{ id: string }>('user', ({ user, params }) => json({ note: getNote(user.id, params.id) }))
 

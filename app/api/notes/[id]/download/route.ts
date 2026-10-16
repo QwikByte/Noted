@@ -1,5 +1,5 @@
-import { route } from '@/lib/server/http'
-import { getNote } from '@/lib/server/notes'
+import { route } from '@/features/auth/server/route'
+import { getNote } from '@/features/notes/server/notes'
 
 /** Notiz als .md-Datei herunterladen */
 export const GET = route<{ id: string }>('user', ({ user, params }) => {

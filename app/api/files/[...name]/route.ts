@@ -1,5 +1,5 @@
-import { route } from '@/lib/server/http'
-import { attachmentResponse, getAttachmentByName } from '@/lib/server/attachments'
+import { route } from '@/features/auth/server/route'
+import { attachmentResponse, getAttachmentByName } from '@/features/attachments/server/attachments'
 
 /** Anhang über den Dateinamen abrufen – so lassen sich Obsidian-Einbettungen wie ![[foto.jpg]] auflösen. */
 export const GET = route<{ name: string[] }>('user', ({ req, user, params }) => {

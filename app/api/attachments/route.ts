@@ -1,6 +1,7 @@
-import { badRequest, json, readForm, route } from '@/lib/server/http'
-import { getConfig } from '@/lib/server/config'
-import { listAttachments, saveAttachment } from '@/lib/server/attachments'
+import { badRequest, json, readForm } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { getConfig } from '@/shared/server/config'
+import { listAttachments, saveAttachment } from '@/features/attachments/server/attachments'
 
 export const GET = route('user', ({ user }) => json({ attachments: listAttachments(user.id) }))
 

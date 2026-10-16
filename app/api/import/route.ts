@@ -1,7 +1,8 @@
-import { badRequest, json, readForm, route } from '@/lib/server/http'
-import { getConfig } from '@/lib/server/config'
-import { importFiles } from '@/lib/server/vault'
-import { isValidId } from '@/lib/server/notes'
+import { badRequest, json, readForm } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { getConfig } from '@/shared/server/config'
+import { importFiles } from '@/features/vault/server/vault'
+import { isValidId } from '@/shared/server/crypto'
 
 /** Import von .md-Dateien, ZIP-Archiven (Obsidian-Vault) und sonstigen Dateien (als Anhänge) */
 export const POST = route('user', async ({ req, user }) => {

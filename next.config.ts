@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Versionswechsel erkennen: Next.js hängt die ID an seine Dateien an und lädt bei Abweichung komplett neu
   deploymentId: build.buildId === 'dev' ? undefined : build.buildId,
-  // Werden beim Build fest eingesetzt (Server und Browser), siehe lib/shared/build.ts
+  // Werden beim Build fest eingesetzt (Server und Browser), siehe features/updates/build.ts
   env: {
     NOTED_VERSION: build.version,
     NOTED_COMMIT: build.commit,
