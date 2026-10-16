@@ -1,6 +1,7 @@
 'use client'
 import { useId, useState } from 'react'
-import { ChevronRight, Pause, Play, RotateCcw, SkipForward } from 'lucide-react'
+import { Pause, Play, RotateCcw, Settings2, SkipForward } from 'lucide-react'
+import { usePref } from '@/shared/client/prefs'
 import { Button } from '@/shared/ui/button'
 import { Input, Switch } from '@/shared/ui/input'
 import { cn } from '@/shared/ui/cn'
@@ -26,10 +27,13 @@ const COUNTDOWN_PRESETS = [5, 15, 25, 45, 60, 90]
 
 const isBreak = (phase: Phase) => phase === 'shortBreak' || phase === 'longBreak'
 
+// Geteilt zwischen dem Knopf im Fensterkopf und dem Fensterinhalt
+const useSettingsOpen = () => usePref<'0' | '1'>('noted:focus:settings-open', '0')
+
 /** Inhalt des Fensters „Fokus-Timer“: Pomodoro oder einfacher Countdown */
 export function FocusTimer() {
   const { state, settings, notify, now } = useFocusTimer()
-  const [showSettings, setShowSettings] = useState(false)
+  const [settingsOpen] = useSettingsOpen()
   const running = isRunning(state)
   const fresh = isFresh(state, settings)
   const left = remainingMs(state, now)
@@ -122,32 +126,21 @@ export function FocusTimer() {
         </div>
       ) : null}
 
-      <div className="border-t border-border pt-3">
-        <button
-          type="button"
-          aria-expanded={showSettings}
-          onClick={() => setShowSettings((v) => !v)}
-          className="flex w-full items-center gap-1.5 text-sm font-medium text-muted hover:text-fg"
-        >
-          <ChevronRight className={cn('size-4 transition-transform', showSettings && 'rotate-90')} />
-          Einstellungen
-        </button>
-        {showSettings ? (
-          <div className="mt-3 space-y-4">
-            {state.mode === 'pomodoro' ? (
-              <div className="grid grid-cols-3 gap-2">
-                <NumberSetting label="Fokus (min)" field="focus" settings={settings} />
-                <NumberSetting label="Pause (min)" field="shortBreak" settings={settings} />
-                <NumberSetting label="Lange (min)" field="longBreak" settings={settings} />
-                <NumberSetting label="Runden bis zur langen Pause" field="rounds" settings={settings} className="col-span-3" />
-              </div>
-            ) : (
-              <NumberSetting label="Eigene Dauer (min)" field="countdown" settings={settings} />
-            )}
-            <NotifySetting on={notify} />
-          </div>
-        ) : null}
-      </div>
+      {settingsOpen === '1' ? (
+        <div className="space-y-4 border-t border-border pt-4" id="focus-settings" aria-label="Einstellungen" role="group">
+          {state.mode === 'pomodoro' ? (
+            <div className="grid grid-cols-3 gap-2">
+              <NumberSetting label="Fokus (min)" field="focus" settings={settings} />
+              <NumberSetting label="Pause (min)" field="shortBreak" settings={settings} />
+              <NumberSetting label="Lange (min)" field="longBreak" settings={settings} />
+              <NumberSetting label="Runden bis zur langen Pause" field="rounds" settings={settings} className="col-span-3" />
+            </div>
+          ) : (
+            <NumberSetting label="Eigene Dauer (min)" field="countdown" settings={settings} />
+          )}
+          <NotifySetting on={notify} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -216,19 +209,47 @@ function NotifySetting({ on }: { on: boolean }) {
   )
 }
 
-/** Restzeit für die Werkzeugleiste – nur, wenn der Timer läuft oder angehalten ist */
-export function FocusTimerBadge() {
-  const { state, settings, now } = useFocusTimer()
-  if (isFresh(state, settings)) return null
+/** Knopf im Fensterkopf: Einstellungen ein- und ausblenden */
+export function FocusTimerSettingsToggle() {
+  const [open, setOpen] = useSettingsOpen()
   return (
-    <span
-      className={cn(
-        'text-xs font-semibold tabular-nums',
-        !isRunning(state) ? 'text-muted' : isBreak(state.phase) ? 'text-success' : 'text-accent-text',
-      )}
-      data-testid="focus-badge"
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      data-no-drag
+      aria-label="Einstellungen"
+      title="Einstellungen"
+      aria-expanded={open === '1'}
+      aria-controls="focus-settings"
+      onClick={() => setOpen(open === '1' ? '0' : '1')}
+      className={cn(open === '1' && 'bg-active text-fg')}
     >
-      {formatClock(remainingMs(state, now))}
-    </span>
+      <Settings2 className="size-4" />
+    </Button>
+  )
+}
+
+/** Kleine Anzeige unten mittig, solange der Timer läuft – ein Klick öffnet wieder das Fenster */
+export function FocusMiniTimer({ onOpen }: { onOpen: () => void }) {
+  const { state, now } = useFocusTimer()
+  if (!isRunning(state)) return null
+  return (
+    // Außen zentrieren, innen animieren: Beides über transform ginge nicht zusammen
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center">
+      <button
+        type="button"
+        onClick={onOpen}
+        // Fokus bleibt im Editor
+        onMouseDown={(e) => e.preventDefault()}
+        aria-label="Fokus-Timer öffnen"
+        title="Fokus-Timer öffnen"
+        data-testid="focus-mini"
+        className="pointer-events-auto flex h-8 animate-pop-in items-center gap-2 rounded-full border border-border bg-elevated px-3 text-xs shadow-pop hover:bg-hover"
+      >
+        <span className={cn('size-2 rounded-full', isBreak(state.phase) ? 'bg-success' : 'bg-accent')} />
+        <span className="text-muted">{PHASE_LABELS[state.phase]}</span>
+        <span className="font-semibold text-fg tabular-nums">{formatClock(remainingMs(state, now))}</span>
+      </button>
+    </div>
   )
 }

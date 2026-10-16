@@ -1,20 +1,9 @@
 'use client'
-import { useRef, useSyncExternalStore } from 'react'
+import { useRef } from 'react'
+import { useMediaQuery } from '@/shared/client/media'
 import { cn } from '@/shared/ui/cn'
 
 const WIDE = '(min-width: 1024px)'
-
-function useMediaQuery(query: string) {
-  return useSyncExternalStore(
-    (fn) => {
-      const mq = matchMedia(query)
-      mq.addEventListener('change', fn)
-      return () => mq.removeEventListener('change', fn)
-    },
-    () => matchMedia(query).matches,
-    () => false,
-  )
-}
 
 /**
  * Hauptansicht und Seitenpanel (PDF) nebeneinander – auf schmalen Bildschirmen übereinander.

@@ -5,6 +5,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from './common'
 import { Button } from '@/shared/ui/button'
+import { useBottomBar } from '@/shared/ui/bottom-bar'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
 import { reviewQueue, useFlashcards, type Flashcards } from '../client/flashcards'
@@ -205,6 +206,9 @@ function StudySession({
     setAnswer((a) => ({ ...a, checked: true }))
     setRevealed(true)
   }, [isMc, answer.selected.size])
+
+  // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
+  const bottomBar = useBottomBar<HTMLDivElement>()
 
   // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen
   const rootRef = useRef<HTMLDivElement>(null)
@@ -422,7 +426,7 @@ function StudySession({
             </div>
           </div>
 
-          <div className="pb-safe border-t border-border bg-bg">
+          <div ref={bottomBar} className="pb-safe border-t border-border bg-bg">
             <div className="mx-auto flex w-full max-w-2xl gap-2 px-4 py-3">
               {isMc && !answer.checked ? (
                 <Button variant="primary" size="lg" className="flex-1" onClick={check} disabled={answer.selected.size === 0}>

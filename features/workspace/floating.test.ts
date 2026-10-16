@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dragPoint, formatPoint, nudgePoint, parsePoint, pointStyle } from './floating'
+import { dragPoint, formatPoint, nudgePoint, parsePoint, pointStyle, snapPoint } from './floating'
 
 const FALLBACK = { x: 1, y: 0.5 }
 
@@ -31,8 +31,17 @@ describe('Position schwebender Elemente', () => {
   })
 
   it('verschiebt mit den Pfeiltasten', () => {
-    expect(nudgePoint({ x: 0.5, y: 0.5 }, 'ArrowLeft', false)).toEqual({ x: 0.45, y: 0.5 })
-    expect(nudgePoint({ x: 0.5, y: 0.9 }, 'ArrowDown', true)).toEqual({ x: 0.5, y: 1 })
-    expect(nudgePoint({ x: 0.5, y: 0.5 }, 'Enter', false)).toBeNull()
+    expect(nudgePoint({ x: 0.5, y: 0.5 }, 'ArrowLeft')).toEqual({ x: 0.45, y: 0.5 })
+    expect(nudgePoint({ x: 0.5, y: 0.9 }, 'ArrowDown', { big: true })).toEqual({ x: 0.5, y: 1 })
+    expect(nudgePoint({ x: 0.5, y: 0.5 }, 'Enter')).toBeNull()
+  })
+
+  it('rastet oben oder unten ein – je nachdem, was näher liegt', () => {
+    expect(snapPoint({ x: 0.3, y: 0.49 })).toEqual({ x: 0.3, y: 0 })
+    expect(snapPoint({ x: 0.3, y: 0.5 })).toEqual({ x: 0.3, y: 1 })
+    // ↑/↓ springen beim Einrasten direkt an den anderen Rand, ←/→ bleiben schrittweise
+    expect(nudgePoint({ x: 0.5, y: 1 }, 'ArrowUp', { snap: true })).toEqual({ x: 0.5, y: 0 })
+    expect(nudgePoint({ x: 0.5, y: 0 }, 'ArrowDown', { snap: true })).toEqual({ x: 0.5, y: 1 })
+    expect(nudgePoint({ x: 0.5, y: 0 }, 'ArrowRight', { snap: true })).toEqual({ x: 0.55, y: 0 })
   })
 })
