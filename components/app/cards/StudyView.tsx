@@ -262,7 +262,7 @@ function StudySession({
   return (
     <div ref={rootRef} className="flex h-full flex-col" data-testid="study">
       <header className="pt-safe border-b border-border">
-        <div className="flex items-center gap-2 px-2 py-1.5 sm:px-3">
+        <div className="flex h-12 items-center gap-2 px-2 sm:px-3">
           <Button variant="ghost" size="icon" onClick={close} aria-label="Lernen beenden" title="Beenden">
             <X className="size-5" />
           </Button>
@@ -319,97 +319,105 @@ function StudySession({
         <>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
-              <div className="rounded-2xl border border-border bg-elevated p-5 shadow-card sm:p-7" data-testid="study-card">
-                <div className="mb-3 flex items-center gap-2 text-xs text-faint">
-                  {current.kind === 'new' ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent-text">Neu</span> : null}
-                  {card.type === 'reversed' ? <span>{side === 1 ? 'Rückseite → Vorderseite' : 'Vorderseite → Rückseite'}</span> : null}
-                  {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
-                </div>
-                <CardMarkdown text={question} className="study-question" />
-
-                {isMc ? (
-                  <ul className="mt-5 space-y-2" role={singleChoice ? 'radiogroup' : 'group'} aria-label="Antworten">
-                    {answer.order.map((optIndex, pos) => {
-                      const option = card.options[optIndex]
-                      if (!option) return null
-                      const selected = answer.selected.has(optIndex)
-                      const state = !answer.checked
-                        ? selected
-                          ? 'selected'
-                          : 'idle'
-                        : option.correct
-                          ? selected
-                            ? 'right'
-                            : 'missed'
-                          : selected
-                            ? 'wrong'
-                            : 'idle'
-                      return (
-                        <li key={optIndex}>
-                          <button
-                            type="button"
-                            role={singleChoice ? 'radio' : 'checkbox'}
-                            aria-checked={selected}
-                            disabled={answer.checked}
-                            // Klick nimmt keinen Fokus – Enter prüft danach die Auswahl, statt die Antwort umzuschalten
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => toggleOption(optIndex)}
-                            className={cn(
-                              'flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors disabled:cursor-default',
-                              state === 'idle' && 'border-border hover:border-border-strong hover:bg-hover',
-                              state === 'selected' && 'border-accent bg-accent-soft',
-                              state === 'right' && 'border-success bg-success-soft',
-                              state === 'missed' && 'border-success border-dashed',
-                              state === 'wrong' && 'border-danger bg-danger-soft',
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border text-xs font-semibold',
-                                singleChoice && 'rounded-full',
-                                state === 'selected' ? 'border-accent bg-accent text-white' : 'border-border-strong text-muted',
-                                state === 'right' && 'border-success bg-success text-white',
-                                state === 'wrong' && 'border-danger bg-danger text-white',
-                                state === 'missed' && 'border-success text-success',
-                              )}
-                              aria-hidden
-                            >
-                              {state === 'right' || state === 'missed' ? (
-                                <Check className="size-3.5" />
-                              ) : state === 'wrong' ? (
-                                <X className="size-3.5" />
-                              ) : (
-                                pos + 1
-                              )}
-                            </span>
-                            <CardMarkdown text={option.text} className="min-w-0 flex-1" />
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : null}
-
-                {revealed ? (
-                  <div className="mt-5 border-t border-border pt-5" data-testid="study-answer">
-                    {isMc ? (
-                      <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
-                        {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
-                        {correct ? 'Richtig!' : 'Leider falsch.'}
-                      </p>
-                    ) : null}
-                    {solution.trim() ? <CardMarkdown text={solution} /> : null}
-                    {note ? (
-                      <button
-                        type="button"
-                        onClick={() => app.go({ kind: 'note', id: note.id })}
-                        className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"
-                      >
-                        <FileText className="size-4" /> {note.title}
-                      </button>
-                    ) : null}
+              {/* Karteikarte: Frage über dem roten Kopfstrich, darunter Antwortfeld (leer liniert bis zum Aufdecken) */}
+              <div className="index-card" data-testid="study-card">
+                <div className="px-5 pt-4 pb-5 sm:px-7 sm:pt-5">
+                  <div className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-faint">
+                    {current.kind === 'new' ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-text">Neu</span> : null}
+                    {card.type === 'reversed' ? <span>{side === 1 ? 'Rückseite → Vorderseite' : 'Vorderseite → Rückseite'}</span> : null}
+                    {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
                   </div>
-                ) : null}
+                  <CardMarkdown text={question} className="study-question" />
+                </div>
+                <div className="index-card-rule" />
+                <div className={cn('px-5 py-5 text-[1.0625rem] sm:px-7 sm:py-6', !isMc && !revealed && 'index-card-lines min-h-36')}>
+
+                  {isMc ? (
+                    <ul className="space-y-2" role={singleChoice ? 'radiogroup' : 'group'} aria-label="Antworten">
+                      {answer.order.map((optIndex, pos) => {
+                        const option = card.options[optIndex]
+                        if (!option) return null
+                        const selected = answer.selected.has(optIndex)
+                        const state = !answer.checked
+                          ? selected
+                            ? 'selected'
+                            : 'idle'
+                          : option.correct
+                            ? selected
+                              ? 'right'
+                              : 'missed'
+                            : selected
+                              ? 'wrong'
+                              : 'idle'
+                        return (
+                          <li key={optIndex}>
+                            <button
+                              type="button"
+                              role={singleChoice ? 'radio' : 'checkbox'}
+                              aria-checked={selected}
+                              disabled={answer.checked}
+                              // Klick nimmt keinen Fokus – Enter prüft danach die Auswahl, statt die Antwort umzuschalten
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => toggleOption(optIndex)}
+                              className={cn(
+                                'flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors disabled:cursor-default',
+                                state === 'idle' && 'border-border hover:border-border-strong hover:bg-hover',
+                                state === 'selected' && 'border-accent bg-accent-soft',
+                                state === 'right' && 'border-success bg-success-soft',
+                                state === 'missed' && 'border-success border-dashed',
+                                state === 'wrong' && 'border-danger bg-danger-soft',
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border text-xs font-semibold',
+                                  singleChoice && 'rounded-full',
+                                  // Je Zustand genau eine Text- und Rahmenfarbe – sonst entscheidet die CSS-Reihenfolge
+                                  state === 'idle' && 'border-border-strong text-muted',
+                                  state === 'selected' && 'border-accent bg-accent text-on-accent',
+                                  state === 'right' && 'border-success bg-success text-bg',
+                                  state === 'wrong' && 'border-danger bg-danger text-bg',
+                                  state === 'missed' && 'border-success text-success',
+                                )}
+                                aria-hidden
+                              >
+                                {state === 'right' || state === 'missed' ? (
+                                  <Check className="size-3.5" />
+                                ) : state === 'wrong' ? (
+                                  <X className="size-3.5" />
+                                ) : (
+                                  pos + 1
+                                )}
+                              </span>
+                              <CardMarkdown text={option.text} className="min-w-0 flex-1" />
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : null}
+
+                  {revealed ? (
+                    <div className={cn(isMc && 'mt-5 border-t border-border pt-5')} data-testid="study-answer">
+                      {isMc ? (
+                        <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
+                          {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
+                          {correct ? 'Richtig!' : 'Leider falsch.'}
+                        </p>
+                      ) : null}
+                      {solution.trim() ? <CardMarkdown text={solution} /> : null}
+                      {note ? (
+                        <button
+                          type="button"
+                          onClick={() => app.go({ kind: 'note', id: note.id })}
+                          className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"
+                        >
+                          <FileText className="size-4" /> {note.title}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -438,11 +446,12 @@ function StudySession({
                 </Button>
               ) : (
                 <>
-                  <Button size="lg" className="flex-1 text-danger" onClick={() => practiceAnswer(false)}>
-                    <X className="size-4" /> Nicht gewusst
+                  {/* Farbe nur am Symbol: text-* im className kollidiert mit der Textfarbe der Button-Variante */}
+                  <Button size="lg" className="flex-1" onClick={() => practiceAnswer(false)}>
+                    <X className="size-4 text-danger" /> Nicht gewusst
                   </Button>
-                  <Button size="lg" className="flex-1 text-success" onClick={() => practiceAnswer(true)}>
-                    <Check className="size-4" /> Gewusst
+                  <Button size="lg" className="flex-1" onClick={() => practiceAnswer(true)}>
+                    <Check className="size-4 text-success" /> Gewusst
                   </Button>
                 </>
               )}
@@ -529,9 +538,7 @@ function Finished({
     const pct = session.total ? Math.round((session.correctFirstTry / session.total) * 100) : 0
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-accent-soft text-accent-text">
-          <Dumbbell className="size-8" />
-        </div>
+        <Dumbbell className="size-10 stroke-[1.5] text-accent-text" />
         <div>
           <h2 className="text-2xl font-bold">{session.total === 0 ? 'Keine Karten' : 'Übung beendet'}</h2>
           {session.total > 0 ? (
@@ -558,9 +565,7 @@ function Finished({
   const nothingToDo = reviewed === 0
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center" data-testid="study-done">
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-success-soft text-success">
-        <CheckCircle2 className="size-8" />
-      </div>
+      <CheckCircle2 className="size-10 stroke-[1.5] text-success" />
       <div className="max-w-md">
         <h2 className="text-2xl font-bold">{nothingToDo ? 'Für heute ist alles gelernt' : 'Geschafft!'}</h2>
         <p className="mt-1 text-muted">

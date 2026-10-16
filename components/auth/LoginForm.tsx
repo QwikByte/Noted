@@ -58,14 +58,11 @@ export function LoginForm({ next, mfaPending }: { next: string; mfaPending: bool
   if (step === 'mfa') {
     return (
       <form onSubmit={submitCode} className="space-y-5">
-        <div className="flex items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
-            <ShieldCheck className="size-5" />
-          </div>
-          <div>
-            <h2 className="font-semibold">Bestätigungscode</h2>
-            <p className="text-sm text-muted">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
-          </div>
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <ShieldCheck className="size-5 text-accent-text" /> Bestätigungscode
+          </h2>
+          <p className="mt-1 text-sm text-muted">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
         </div>
         <ErrorText>{error}</ErrorText>
         <Field label="Code">

@@ -77,7 +77,7 @@ export function FilesView() {
         <Loader2 className="mx-auto size-6 animate-spin text-faint" />
       ) : files.length === 0 ? (
         <div
-          className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-muted"
+          className="rounded-xl border border-dashed border-border-strong px-6 py-12 text-center text-muted"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault()

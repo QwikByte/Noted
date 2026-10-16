@@ -25,7 +25,7 @@ export function Properties({
 }) {
   if (error) {
     return (
-      <div className="mb-6 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning">
+      <div className="mb-6 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 font-sans text-sm text-warning">
         <AlertTriangle className="size-4" /> Die Properties (YAML) enthalten einen Fehler.
       </div>
     )
@@ -33,8 +33,8 @@ export function Properties({
   const entries = Object.entries(data ?? {})
   if (entries.length === 0) return null
   return (
-    <div className="not-prose mb-6 rounded-xl border border-border bg-subtle/60 px-3 py-2 text-sm">
-      <div className="mb-1 text-xs font-medium tracking-wide text-faint uppercase">Properties</div>
+    <div className="not-prose mb-6 rounded-lg border border-border bg-subtle/60 px-3 py-2 font-sans text-sm">
+      <div className="mb-1 text-xs font-semibold text-faint">Properties</div>
       <dl className="grid grid-cols-[minmax(0,9rem)_1fr] gap-x-3 gap-y-1.5">
         {entries.map(([key, value]) => {
           const isTags = ['tags', 'tag'].includes(key.toLowerCase())

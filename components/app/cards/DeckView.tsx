@@ -150,7 +150,7 @@ export function DeckView({ id }: { id: string }) {
         }
       />
 
-      <div className="mb-6 rounded-2xl border border-border bg-elevated p-4">
+      <div className="mb-6 rounded-xl border border-border bg-elevated p-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div>
             <p className="text-3xl font-bold tabular-nums">{counts.due}</p>
@@ -201,7 +201,7 @@ export function DeckView({ id }: { id: string }) {
             }}
             placeholder="Karten durchsuchen …"
             aria-label="Karten durchsuchen"
-            className="h-9 w-full rounded-lg border border-border bg-elevated pr-3 pl-9 text-sm outline-none placeholder:text-faint focus:border-accent"
+            className="h-9 w-full rounded-md border border-border bg-elevated pr-3 pl-9 text-sm outline-none placeholder:text-faint focus:border-accent focus:ring-3 focus:ring-accent/20"
           />
         </div>
         <Button variant="primary" size="sm" onClick={() => app.openCardEditor({ deckId: deck.id })} data-testid="add-card">
@@ -210,7 +210,7 @@ export function DeckView({ id }: { id: string }) {
       </div>
 
       {cards.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted">
+        <div className="rounded-xl border border-dashed border-border-strong px-6 py-10 text-center text-sm text-muted">
           <p className="font-medium text-fg">Noch keine Karten in diesem Stapel</p>
           <p className="mx-auto mt-1 max-w-md">
             Lege Karten einzeln an, importiere eine Liste – oder öffne eine Notiz und wähle im Menü ⋮ „Karteikarten aus Notiz“.

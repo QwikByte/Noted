@@ -124,10 +124,12 @@ export function NoteView({ id, onOpenSidebar }: { id: string; onOpenSidebar: () 
     const notFound = query.error instanceof ApiError && query.error.status === 404
     return (
       <div className="flex h-full flex-col">
-        <div className="pt-safe flex items-center gap-1 border-b border-border px-2 py-2 lg:hidden">
-          <Button variant="ghost" size="icon" onClick={onOpenSidebar} aria-label="Menü öffnen">
-            <MenuIcon className="size-5" />
-          </Button>
+        <div className="pt-safe border-b border-border lg:hidden">
+          <div className="flex h-12 items-center px-2">
+            <Button variant="ghost" size="icon" onClick={onOpenSidebar} aria-label="Menü öffnen">
+              <MenuIcon className="size-5" />
+            </Button>
+          </div>
         </div>
         <div className="flex flex-1 items-center justify-center p-8 text-center text-muted">
           {query.isLoading ? (
@@ -427,132 +429,135 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   return (
     <div ref={rootRef} className="@container flex h-full flex-col">
       {/* Kopfzeile */}
-      <header className="pt-safe flex items-center gap-1 border-b border-border px-2 py-1.5 sm:px-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          onClick={() => app.go(folderId ? { kind: 'folder', id: folderId } : { kind: 'home' })}
-          aria-label="Zurück"
-        >
-          <ArrowLeft className="size-5" />
-        </Button>
-        <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
-          {path.map((f) => (
-            <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
-              <button type="button" onClick={() => app.go({ kind: 'folder', id: f.id })} className="truncate hover:text-fg">
-                {f.name}
+      {/* Safe-Area-Abstand außen, Zeilenhöhe innen: sonst überschreibt pt-safe das obere Padding */}
+      <header className="pt-safe border-b border-border">
+        <div className="flex h-12 items-center gap-1 px-2 sm:px-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => app.go(folderId ? { kind: 'folder', id: folderId } : { kind: 'home' })}
+            aria-label="Zurück"
+          >
+            <ArrowLeft className="size-5" />
+          </Button>
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
+            {path.map((f) => (
+              <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
+                <button type="button" onClick={() => app.go({ kind: 'folder', id: f.id })} className="truncate hover:text-fg">
+                  {f.name}
+                </button>
+                <ChevronRight className="size-3.5 shrink-0 text-faint" />
+              </span>
+            ))}
+            <span className="truncate font-medium text-fg">{title || 'Unbenannt'}</span>
+          </nav>
+          <StatusIndicator status={status} />
+          <Menu
+            className="max-h-[60vh] w-72 overflow-y-auto"
+            trigger={(p) => (
+              <Button variant="ghost" size="sm" className="ml-1 px-2" title="PDF daneben öffnen" aria-label="PDF daneben öffnen" {...p}>
+                <FileText className="size-4" />
+                <span className="@max-2xl:hidden">PDF</span>
+              </Button>
+            )}
+          >
+            {notePdfs.length > 0 ? <MenuLabel>In dieser Notiz</MenuLabel> : null}
+            {notePdfs.map((f) => (
+              <MenuItem key={f} icon={<FileText />} onSelect={() => app.openPdf(f)}>
+                <span className="block truncate">{f}</span>
+              </MenuItem>
+            ))}
+            {otherPdfs.length > 0 ? <MenuLabel>{notePdfs.length > 0 ? 'Weitere PDFs' : 'PDFs'}</MenuLabel> : null}
+            {otherPdfs.slice(0, 30).map((a) => (
+              <MenuItem key={a.id} icon={<FileText />} onSelect={() => app.openPdf(a.filename)}>
+                <span className="block truncate">{a.filename}</span>
+              </MenuItem>
+            ))}
+            {notePdfs.length + otherPdfs.length > 0 ? <MenuSeparator /> : null}
+            <MenuItem icon={<Upload />} onSelect={() => pdfInput.current?.click()}>
+              PDF hochladen und öffnen …
+            </MenuItem>
+          </Menu>
+          <div className="ml-1 flex items-center rounded-lg bg-hover p-0.5" role="radiogroup" aria-label="Ansicht">
+            {(
+              [
+                ['edit', <PenLine key="e" className="size-4" />, 'Bearbeiten'],
+                ['read', <BookOpen key="r" className="size-4" />, 'Lesen'],
+                ...(isWide ? [['split', <Columns2 key="s" className="size-4" />, 'Geteilt'] as const] : []),
+              ] as const
+            ).map(([m, icon, label]) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={effectiveMode === m}
+                title={label}
+                aria-label={label}
+                onClick={() => setMode(m as EditorMode)}
+                className={cn(
+                  'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors',
+                  effectiveMode === m ? 'bg-elevated text-fg shadow-sm' : 'text-muted hover:text-fg',
+                )}
+              >
+                {icon}
+                <span className="hidden @2xl:inline">{label}</span>
               </button>
-              <ChevronRight className="size-3.5 shrink-0 text-faint" />
-            </span>
-          ))}
-          <span className="truncate font-medium text-fg">{title || 'Unbenannt'}</span>
-        </nav>
-        <StatusIndicator status={status} />
-        <Menu
-          className="max-h-[60vh] w-72 overflow-y-auto"
-          trigger={(p) => (
-            <Button variant="ghost" size="sm" className="ml-1 px-2" title="PDF daneben öffnen" aria-label="PDF daneben öffnen" {...p}>
-              <FileText className="size-4" />
-              <span className="@max-2xl:hidden">PDF</span>
-            </Button>
-          )}
-        >
-          {notePdfs.length > 0 ? <MenuLabel>In dieser Notiz</MenuLabel> : null}
-          {notePdfs.map((f) => (
-            <MenuItem key={f} icon={<FileText />} onSelect={() => app.openPdf(f)}>
-              <span className="block truncate">{f}</span>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => copy('markdown')} className="ml-1 @max-xl:hidden" title="Markdown kopieren">
+            <Copy className="size-4" /> Kopieren
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => copy('markdown')} className="@xl:hidden" aria-label="Markdown kopieren">
+            <Copy className="size-4" />
+          </Button>
+          <Menu
+            trigger={(p) => (
+              <Button variant="ghost" size="icon-sm" aria-label="Weitere Aktionen" {...p}>
+                <MoreVertical className="size-4" />
+              </Button>
+            )}
+          >
+            <MenuItem icon={<Copy />} onSelect={() => copy('markdown')}>
+              Markdown kopieren
             </MenuItem>
-          ))}
-          {otherPdfs.length > 0 ? <MenuLabel>{notePdfs.length > 0 ? 'Weitere PDFs' : 'PDFs'}</MenuLabel> : null}
-          {otherPdfs.slice(0, 30).map((a) => (
-            <MenuItem key={a.id} icon={<FileText />} onSelect={() => app.openPdf(a.filename)}>
-              <span className="block truncate">{a.filename}</span>
+            <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
+              Ohne Properties kopieren
             </MenuItem>
-          ))}
-          {notePdfs.length + otherPdfs.length > 0 ? <MenuSeparator /> : null}
-          <MenuItem icon={<Upload />} onSelect={() => pdfInput.current?.click()}>
-            PDF hochladen und öffnen …
-          </MenuItem>
-        </Menu>
-        <div className="ml-1 flex items-center rounded-lg bg-subtle p-0.5" role="radiogroup" aria-label="Ansicht">
-          {(
-            [
-              ['edit', <PenLine key="e" className="size-4" />, 'Bearbeiten'],
-              ['read', <BookOpen key="r" className="size-4" />, 'Lesen'],
-              ...(isWide ? [['split', <Columns2 key="s" className="size-4" />, 'Geteilt'] as const] : []),
-            ] as const
-          ).map(([m, icon, label]) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={effectiveMode === m}
-              title={label}
-              aria-label={label}
-              onClick={() => setMode(m as EditorMode)}
-              className={cn(
-                'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
-                effectiveMode === m ? 'bg-elevated text-fg shadow-sm' : 'text-muted hover:text-fg',
-              )}
-            >
-              {icon}
-              <span className="hidden @2xl:inline">{label}</span>
-            </button>
-          ))}
+            <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
+              Als [[Wikilink]] kopieren
+            </MenuItem>
+            <MenuItem icon={<Download />} onSelect={download}>
+              Als .md herunterladen
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
+              {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
+            </MenuItem>
+            <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
+              Verschieben …
+            </MenuItem>
+            <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
+              Informationen
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<Layers />} onSelect={createCard}>
+              Karteikarte erstellen
+            </MenuItem>
+            <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content })}>
+              Karteikarten aus Notiz …
+            </MenuItem>
+            {linkedCards > 0 ? (
+              <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
+                {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
+              </MenuItem>
+            ) : null}
+            <MenuSeparator />
+            <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
+              In den Papierkorb
+            </MenuItem>
+          </Menu>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => copy('markdown')} className="ml-1 @max-xl:hidden" title="Markdown kopieren">
-          <Copy className="size-4" /> Kopieren
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => copy('markdown')} className="@xl:hidden" aria-label="Markdown kopieren">
-          <Copy className="size-4" />
-        </Button>
-        <Menu
-          trigger={(p) => (
-            <Button variant="ghost" size="icon-sm" aria-label="Weitere Aktionen" {...p}>
-              <MoreVertical className="size-4" />
-            </Button>
-          )}
-        >
-          <MenuItem icon={<Copy />} onSelect={() => copy('markdown')}>
-            Markdown kopieren
-          </MenuItem>
-          <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
-            Ohne Properties kopieren
-          </MenuItem>
-          <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
-            Als [[Wikilink]] kopieren
-          </MenuItem>
-          <MenuItem icon={<Download />} onSelect={download}>
-            Als .md herunterladen
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
-            {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
-          </MenuItem>
-          <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
-            Verschieben …
-          </MenuItem>
-          <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
-            Informationen
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={<Layers />} onSelect={createCard}>
-            Karteikarte erstellen
-          </MenuItem>
-          <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content })}>
-            Karteikarten aus Notiz …
-          </MenuItem>
-          {linkedCards > 0 ? (
-            <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
-              {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
-            </MenuItem>
-          ) : null}
-          <MenuSeparator />
-          <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
-            In den Papierkorb
-          </MenuItem>
-        </Menu>
       </header>
 
       {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} editorRef={editorRef} onResolved={(c, t) => {
@@ -576,7 +581,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
 
       {effectiveMode !== 'read' ? (
         <div className="border-b border-border">
-          <div className="mx-auto max-w-[800px]">
+          <div className="mx-auto max-w-[50rem]">
             <EditorToolbar getView={() => editorRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
           </div>
         </div>
@@ -585,7 +590,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       <div className={cn('min-h-0 flex-1', effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col')}>
         {effectiveMode !== 'read' ? (
           <div className="flex min-h-0 flex-col overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-[800px] flex-1 flex-col">
+            <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
               <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorRef.current?.focus()} />
               <div className="min-h-0 flex-1">{editor}</div>
             </div>
@@ -594,7 +599,12 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         {effectiveMode !== 'edit' ? (
           <div className="min-h-0 overflow-y-auto">
             {effectiveMode === 'read' ? (
-              <h1 className="mx-auto max-w-[760px] px-5 pt-8 pb-2 text-[1.9em] leading-tight font-bold break-words">{title}</h1>
+              <h1
+                className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
+                style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+              >
+                {title}
+              </h1>
             ) : (
               <div className="pt-6" />
             )}
@@ -674,7 +684,7 @@ function TitleInput({
         placeholder="Titel"
         aria-label="Titel"
         aria-invalid={!!error}
-        className="w-full bg-transparent text-[1.9em] leading-tight font-bold outline-none placeholder:text-faint"
+        className="w-full bg-transparent leading-tight font-bold tracking-tight outline-none placeholder:text-faint"
         style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
         data-testid="note-title"
       />
@@ -686,8 +696,8 @@ function TitleInput({
 /** Lesemodus: Karteikarten aus dieser Notiz */
 function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
   return (
-    <div className="mx-auto max-w-[760px] px-5 pb-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3 text-sm">
+    <div className="mx-auto max-w-[44rem] px-5 pb-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
         <Layers className="size-4 text-muted" />
         <span className="flex-1 text-muted">
           {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
@@ -717,8 +727,8 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
     return compact ? <p className="text-sm text-muted">Keine anderen Notizen verlinken hierher.</p> : null
   }
   return (
-    <div className={cn(compact ? '' : 'mx-auto max-w-[760px] px-5 pb-16')}>
-      <div className={cn('rounded-xl border border-border', compact ? 'p-3' : 'p-4')}>
+    <div className={cn(compact ? '' : 'mx-auto max-w-[44rem] px-5 pb-16')}>
+      <div className={cn('rounded-lg border border-border', compact ? 'p-3' : 'p-4')}>
         <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted">
           <Link2 className="size-4" /> Verlinkt in {data.length} {data.length === 1 ? 'Notiz' : 'Notizen'}
         </h3>

@@ -44,14 +44,15 @@ export function ToastProvider({ children, sticky }: { children: React.ReactNode;
     <ToastContext.Provider value={api}>
       {children}
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-col items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+        // Oben unter der Kopfzeile (wie Obsidian): unten lägen sie über Bewertungsknöpfen, Tastatur und Neu-Knopf
+        className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[100] flex flex-col items-center gap-2 px-3 sm:left-auto sm:right-4 sm:w-[24rem] sm:items-stretch sm:px-0"
         aria-live="polite"
       >
         {sticky}
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="pointer-events-auto flex w-full max-w-md animate-pop-in items-center gap-3 rounded-xl border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
+            className="pointer-events-auto flex w-full max-w-md animate-drop-in items-center gap-3 rounded-lg border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
             role={t.tone === 'error' ? 'alert' : 'status'}
           >
             {t.tone === 'success' ? (
@@ -93,7 +94,7 @@ export function useToast(): ToastApi {
 export function ErrorText({ children, className }: { children: React.ReactNode; className?: string }) {
   if (!children) return null
   return (
-    <div className={cn('flex items-start gap-2 rounded-xl bg-danger-soft px-3.5 py-2.5 text-sm text-danger', className)} role="alert">
+    <div className={cn('flex items-start gap-2 rounded-lg bg-danger-soft px-3.5 py-2.5 text-sm text-danger', className)} role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
     </div>
