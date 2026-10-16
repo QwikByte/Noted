@@ -48,9 +48,9 @@ export function Section({
   id?: string
 }) {
   return (
-    <section id={id} className="scroll-mt-6 rounded-2xl border border-border bg-elevated p-5 sm:p-6">
+    <section id={id} className="scroll-mt-6 rounded-xl border border-border bg-elevated p-5 sm:p-6">
       <div className="mb-5 flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent-text [&>svg]:size-[18px]">{icon}</div>
+        <div className="mt-0.5 shrink-0 text-faint [&>svg]:size-[18px]">{icon}</div>
         <div>
           <h2 className="font-semibold">{title}</h2>
           {description ? <p className="mt-0.5 text-sm text-muted">{description}</p> : null}
@@ -412,7 +412,7 @@ function DataSection() {
           </p>
           <a
             href="/api/export"
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-medium text-white shadow-sm hover:bg-accent-hover"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent shadow-sm hover:bg-accent-hover"
           >
             <Download className="size-4" /> ZIP herunterladen
           </a>

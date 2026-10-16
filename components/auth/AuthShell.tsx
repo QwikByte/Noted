@@ -1,21 +1,19 @@
 import { Logo } from '../Logo'
 
+/** Anmeldung als Karteikarte auf Karopapier: oben der Absender, unter dem roten Strich das Formular */
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-subtle px-4 py-10">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-40 left-1/2 h-96 w-[48rem] -translate-x-1/2 rounded-full bg-accent/20 blur-3xl"
-      />
-      <div className="relative w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <Logo className="size-14 drop-shadow-lg" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Noted</h1>
+    <main className="paper-grid flex min-h-dvh items-center justify-center px-4 py-10">
+      <div className="index-card w-full max-w-md overflow-hidden">
+        <div className="flex items-center gap-3 px-6 pt-6 pb-5 sm:px-8">
+          <Logo className="size-10" />
+          <div className="min-w-0">
+            <h1 className="text-xl leading-tight font-bold tracking-tight">Noted</h1>
             <p className="text-sm text-muted">Notizen für die Uni – im Obsidian-Format</p>
           </div>
         </div>
-        <div className="rounded-2xl border border-border bg-elevated p-6 shadow-card sm:p-8">{children}</div>
+        <div className="index-card-rule" />
+        <div className="p-6 sm:p-8">{children}</div>
       </div>
     </main>
   )

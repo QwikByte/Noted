@@ -44,19 +44,17 @@ export function PageHeader({
   breadcrumb?: React.ReactNode
 }) {
   return (
-    <div className="mb-6">
+    <div className="mb-7">
       {breadcrumb}
       <div className="flex items-start gap-3">
-        {icon ? (
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-text [&>svg]:size-5">
-            {icon}
-          </div>
-        ) : null}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight">{title}</h1>
-          {subtitle ? <p className="mt-0.5 text-sm text-muted">{subtitle}</p> : null}
+          <h1 className="flex min-w-0 items-center gap-2.5 text-[1.75rem] leading-tight font-bold tracking-tight">
+            {icon ? <span className="shrink-0 text-faint [&>svg]:size-6">{icon}</span> : null}
+            <span className="truncate">{title}</span>
+          </h1>
+          {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
         </div>
-        {actions ? <div className="flex shrink-0 gap-2">{actions}</div> : null}
+        {actions ? <div className="flex shrink-0 gap-2 pt-1">{actions}</div> : null}
       </div>
     </div>
   )
@@ -65,9 +63,14 @@ export function PageHeader({
 export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className={cn('mx-auto w-full max-w-4xl px-4 pt-6 pb-28 sm:px-8 sm:pt-10', className)}>{children}</div>
+      <div className={cn('mx-auto w-full max-w-3xl px-4 pt-6 pb-28 sm:px-8 sm:pt-10', className)}>{children}</div>
     </div>
   )
+}
+
+/** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
+export function NoteList({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">{children}</div>
 }
 
 export function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
@@ -78,23 +81,22 @@ export function NoteCard({ note, folders, snippet }: { note: NoteSummary | Searc
     <button
       type="button"
       onClick={() => app.go({ kind: 'note', id: note.id })}
-      className="group flex w-full flex-col gap-1 rounded-xl border border-border bg-elevated p-4 text-left transition hover:border-border-strong hover:shadow-card"
+      className="group flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors hover:bg-subtle focus-visible:-outline-offset-2"
     >
-      <div className="flex items-center gap-2">
-        <FileText className="size-4 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate font-semibold">{note.title}</span>
-        {'pinned' in note && note.pinned ? <Pin className="size-3.5 shrink-0 text-accent-text" /> : null}
-        <span className="shrink-0 text-xs text-faint">{formatRelative(note.updatedAt)}</span>
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate font-semibold group-hover:text-accent-text">{note.title}</span>
+        {'pinned' in note && note.pinned ? <Pin className="size-3.5 shrink-0 self-center text-faint" aria-label="Angeheftet" /> : null}
+        <span className="shrink-0 text-xs text-faint tabular-nums">{formatRelative(note.updatedAt)}</span>
       </div>
       {snippet !== undefined ? (
         <p className="search-snippet line-clamp-2 text-sm text-muted" dangerouslySetInnerHTML={{ __html: snippet }} />
       ) : 'excerpt' in note && note.excerpt ? (
-        <p className="line-clamp-2 text-sm text-muted">{note.excerpt}</p>
+        <p className="line-clamp-1 text-sm text-muted">{note.excerpt}</p>
       ) : (
-        <p className="text-sm text-faint italic">Leer</p>
+        <p className="text-sm text-faint">Noch leer</p>
       )}
       {path.length > 0 || tags.length > 0 ? (
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-faint">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
           {path.length > 0 ? (
             <span className="inline-flex items-center gap-1">
               <FolderIcon className="size-3" />
@@ -102,7 +104,7 @@ export function NoteCard({ note, folders, snippet }: { note: NoteSummary | Searc
             </span>
           ) : null}
           {tags.slice(0, 4).map((t) => (
-            <span key={t} className="rounded-full bg-accent-soft px-1.5 text-accent-text">
+            <span key={t} className="text-accent-text">
               #{t}
             </span>
           ))}
@@ -114,11 +116,11 @@ export function NoteCard({ note, folders, snippet }: { note: NoteSummary | Searc
 
 function EmptyState({ icon, title, text, action }: { icon: React.ReactNode; title: string; text?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12 text-center">
-      <div className="mb-3 text-faint [&>svg]:size-10">{icon}</div>
-      <p className="font-medium">{title}</p>
+    <div className="flex flex-col items-center rounded-xl border border-dashed border-border-strong px-6 py-12 text-center">
+      <div className="mb-3 text-faint [&>svg]:size-9 [&>svg]:stroke-[1.5]">{icon}</div>
+      <p className="font-semibold">{title}</p>
       {text ? <p className="mt-1 max-w-sm text-sm text-muted">{text}</p> : null}
-      {action ? <div className="mt-4">{action}</div> : null}
+      {action ? <div className="mt-5">{action}</div> : null}
     </div>
   )
 }
@@ -141,51 +143,51 @@ export function HomeView() {
   const recent = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12)
 
   const quick = [
-    { id: 'lecture', label: 'Vorlesung', icon: <GraduationCap className="size-5" /> },
-    { id: 'exercise', label: 'Übung', icon: <NotebookPen className="size-5" /> },
-    { id: 'cheatsheet', label: 'Lernzettel', icon: <BookOpen className="size-5" /> },
-    { id: 'empty', label: 'Leere Notiz', icon: <Plus className="size-5" /> },
+    { id: 'lecture', label: 'Vorlesung', icon: <GraduationCap className="size-4.5" /> },
+    { id: 'exercise', label: 'Übung', icon: <NotebookPen className="size-4.5" /> },
+    { id: 'cheatsheet', label: 'Lernzettel', icon: <BookOpen className="size-4.5" /> },
+    { id: 'empty', label: 'Leere Notiz', icon: <Plus className="size-4.5" /> },
   ]
 
   return (
     <Page>
       <PageHeader title={`${greeting()}, ${user.displayName.split(' ')[0]}!`} subtitle="Was möchtest du heute festhalten?" />
 
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-10 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Neue Notiz aus Vorlage" role="group">
         {quick.map((q) => (
           <button
             key={q.id}
             type="button"
             onClick={() => app.openNewNote({ templateId: q.id })}
-            className="flex flex-col items-start gap-3 rounded-xl border border-border bg-elevated p-4 text-left transition hover:border-accent/50 hover:shadow-card"
+            className="flex h-11 items-center gap-2.5 rounded-lg border border-border bg-elevated px-3.5 text-left text-sm font-medium transition-colors hover:border-accent hover:text-accent-text [&>svg]:text-faint hover:[&>svg]:text-accent-text"
           >
-            <span className="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent-text">{q.icon}</span>
-            <span className="text-sm font-medium">{q.label}</span>
+            {q.icon}
+            {q.label}
           </button>
         ))}
       </div>
 
       {error instanceof NetworkError ? (
-        <div className="mb-6 flex items-center gap-2 rounded-xl bg-warning-soft px-4 py-3 text-sm text-warning">
+        <div className="mb-6 flex items-center gap-2 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
           <CloudOff className="size-4" /> Du bist offline. Zuletzt geladene Notizen sind weiterhin verfügbar.
         </div>
       ) : null}
 
       {pinned.length > 0 ? (
         <section className="mb-8">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted">
-            <Pin className="size-4" /> Angeheftet
+          <h2 className="mb-2.5 flex items-center gap-1.5 text-sm font-semibold text-muted">
+            <Pin className="size-3.5" /> Angeheftet
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <NoteList>
             {pinned.map((n) => (
               <NoteCard key={n.id} note={n} folders={folders} />
             ))}
-          </div>
+          </NoteList>
         </section>
       ) : null}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-muted">Zuletzt bearbeitet</h2>
+        <h2 className="mb-2.5 text-sm font-semibold text-muted">Zuletzt bearbeitet</h2>
         {isLoading && notes.length === 0 ? (
           <div className="flex justify-center py-10 text-faint">
             <Loader2 className="size-6 animate-spin" />
@@ -202,11 +204,11 @@ export function HomeView() {
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <NoteList>
             {recent.map((n) => (
               <NoteCard key={n.id} note={n} folders={folders} />
             ))}
-          </div>
+          </NoteList>
         )}
       </section>
     </Page>
@@ -287,9 +289,9 @@ export function FolderView({ id }: { id: string }) {
               key={f.id}
               type="button"
               onClick={() => app.go({ kind: 'folder', id: f.id })}
-              className="flex items-center gap-2.5 rounded-xl border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition hover:border-border-strong"
+              className="flex items-center gap-2.5 rounded-lg border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition-colors hover:border-border-strong hover:bg-subtle"
             >
-              <FolderIcon className="size-4 text-accent-text" />
+              <FolderIcon className="size-4 text-muted" />
               <span className="truncate">{f.name}</span>
               <span className="ml-auto text-xs text-faint">{notes.filter((n) => n.folderId === f.id).length}</span>
             </button>
@@ -307,11 +309,11 @@ export function FolderView({ id }: { id: string }) {
           }
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <NoteList>
           {items.map((n) => (
             <NoteCard key={n.id} note={n} folders={folders} />
           ))}
-        </div>
+        </NoteList>
       )}
     </Page>
   )
@@ -329,11 +331,11 @@ export function TagView({ tag }: { tag: string }) {
       {items.length === 0 ? (
         <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <NoteList>
           {items.map((n) => (
             <NoteCard key={n.id} note={n} folders={folders} />
           ))}
-        </div>
+        </NoteList>
       )}
     </Page>
   )
@@ -389,7 +391,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Notizen durchsuchen … (z. B. „Eigenwert“ oder „#mathe“)"
-          className="h-13 w-full rounded-2xl border border-border bg-elevated pr-4 pl-12 text-base shadow-card outline-none focus:border-accent"
+          className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
           aria-label="Suchbegriff"
         />
       </div>
@@ -400,11 +402,11 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           <p className="mb-3 flex items-center gap-2 text-sm text-warning">
             <CloudOff className="size-4" /> Offline – es werden nur Titel und Auszüge durchsucht.
           </p>
-          <div className="grid gap-3">
+          <NoteList>
             {offlineResults.map((n) => (
               <NoteCard key={n.id} note={n} folders={folders} />
             ))}
-          </div>
+          </NoteList>
         </>
       ) : search.isLoading ? (
         <div className="flex justify-center py-10 text-faint">
@@ -417,11 +419,11 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           <p className="mb-3 text-sm text-muted">
             {search.data!.length} {search.data!.length === 1 ? 'Treffer' : 'Treffer'}
           </p>
-          <div className="grid gap-3">
+          <NoteList>
             {search.data!.map((r) => (
               <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
             ))}
-          </div>
+          </NoteList>
         </>
       )}
     </Page>

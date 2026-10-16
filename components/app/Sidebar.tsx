@@ -41,13 +41,15 @@ function NavItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
-        active ? 'bg-active font-medium text-fg' : 'text-muted hover:bg-hover hover:text-fg',
+        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+        active ? 'bg-active font-semibold text-fg' : 'text-muted hover:bg-hover hover:text-fg',
       )}
     >
-      <span className="flex size-4 items-center justify-center [&>svg]:size-4">{icon}</span>
+      <span className={cn('flex size-4 items-center justify-center [&>svg]:size-4', active && 'text-accent-text')}>{icon}</span>
       <span className="flex-1 text-left">{label}</span>
-      {count ? <span className="text-xs text-faint">{count}</span> : null}
+      {count ? (
+        <span className="rounded-full bg-accent-soft px-1.5 text-[11px] leading-[18px] font-semibold text-accent-text tabular-nums">{count}</span>
+      ) : null}
     </button>
   )
 }
@@ -68,13 +70,14 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-        <Logo className="size-7" />
-        <span className="flex-1 text-[17px] font-bold tracking-tight">Noted</span>
+      {/* Gleiche Höhe wie die Kopfzeile daneben, damit die Linien durchlaufen */}
+      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
+        <Logo className="size-6" />
+        <span className="flex-1 text-base font-bold tracking-tight">Noted</span>
         <SyncBadge />
       </div>
 
-      <div className="space-y-2 px-3">
+      <div className="space-y-2 px-3 pt-3">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -89,7 +92,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Suchen …"
             aria-label="Notizen durchsuchen"
-            className="h-9 w-full rounded-lg border border-border bg-elevated pr-14 pl-9 text-sm outline-none placeholder:text-faint focus:border-accent"
+            className="h-9 w-full rounded-md border border-border bg-elevated pr-14 pl-9 text-sm outline-none placeholder:text-faint focus:border-accent focus:ring-3 focus:ring-accent/20"
           />
           <kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-border px-1.5 text-[10px] text-faint sm:block">
             Ctrl K
@@ -105,7 +108,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
         </div>
       </div>
 
-      <nav className="mt-3 space-y-0.5 px-2">
+      <nav className="mt-3 space-y-px px-2">
         <NavItem icon={<Home />} label="Start" active={view.kind === 'home'} onClick={() => app.go({ kind: 'home' })} />
         <NavItem
           icon={<Layers />}
@@ -118,8 +121,8 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
         <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} onClick={() => app.go({ kind: 'trash' })} />
       </nav>
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-        <div className="mb-1 px-2.5 text-xs font-semibold tracking-wide text-faint uppercase">Notizen</div>
+      <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        <div className="mb-1 px-2.5 text-xs font-semibold text-faint">Notizen</div>
         <FolderTree />
 
         {tags.length > 0 ? (
@@ -127,7 +130,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
             <button
               type="button"
               onClick={() => setTagsOpen(tagsOpen === '1' ? '0' : '1')}
-              className="flex w-full items-center gap-1 px-2.5 pb-1 text-xs font-semibold tracking-wide text-faint uppercase hover:text-muted"
+              className="flex w-full items-center gap-1 px-2.5 pb-1 text-xs font-semibold text-faint hover:text-muted"
             >
               {tagsOpen === '1' ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
               Tags
@@ -140,9 +143,9 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
                     type="button"
                     onClick={() => app.go({ kind: 'tag', tag: t.tag })}
                     className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors',
+                      'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs transition-colors',
                       view.kind === 'tag' && view.tag === t.tag
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-accent-soft text-accent-text hover:bg-active',
                     )}
                   >
@@ -157,8 +160,10 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
         ) : null}
       </div>
 
-      <div className="pb-safe border-t border-border p-2">
-        <UserMenu />
+      <div className="pb-safe border-t border-border">
+        <div className="p-2">
+          <UserMenu />
+        </div>
       </div>
     </div>
   )

@@ -110,7 +110,7 @@ export function FolderTree() {
           e.dataTransfer.effectAllowed = 'move'
         }}
         className={cn(
-          'group flex items-center rounded-lg pr-1 transition-colors',
+          'group flex items-center rounded-md pr-1 transition-colors',
           active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
@@ -143,7 +143,7 @@ export function FolderTree() {
           }}
           {...dropProps(node.id)}
           className={cn(
-            'group flex items-center rounded-lg pr-1 transition-colors',
+            'group flex items-center rounded-md pr-1 transition-colors',
             activeFolderId === node.id ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
             dropTarget === node.id && 'ring-2 ring-accent ring-inset',
           )}
@@ -156,7 +156,7 @@ export function FolderTree() {
             aria-expanded={open}
           >
             <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
-            {open ? <FolderOpen className="size-4 shrink-0 text-accent-text" /> : <FolderIcon className="size-4 shrink-0 text-accent-text" />}
+            {open ? <FolderOpen className="size-4 shrink-0 text-muted" /> : <FolderIcon className="size-4 shrink-0 text-muted" />}
             <span className="ml-1 truncate font-medium text-fg/90">{node.name}</span>
             {!open && count > 0 ? <span className="ml-1 text-xs text-faint">{count}</span> : null}
           </button>

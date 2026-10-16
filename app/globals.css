@@ -1,66 +1,81 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
+/* Atkinson Hyperlegible: l, I, 1 und O, 0 bleiben unterscheidbar – wichtig in Formeln und Variablennamen */
+@import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+@import '@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css';
+@import '@fontsource-variable/atkinson-hyperlegible-mono/wght.css';
+/* Lesemodus: Serifenschrift, die zu den KaTeX-Formeln passt */
+@import '@fontsource-variable/source-serif-4/wght.css';
+@import '@fontsource-variable/source-serif-4/wght-italic.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ------------------------------------------------------------------ */
 /* Design-Tokens                                                       */
+/* Papier, Königsblau (Tinte), Textmarker, Rotstift der Karteikarte    */
 /* ------------------------------------------------------------------ */
 :root {
   --bg: #ffffff;
-  --bg-subtle: #f7f7f9;
-  --bg-sidebar: #f3f3f6;
-  --bg-hover: #ebebf0;
-  --bg-active: #e3e1f5;
+  --bg-subtle: #f5f6f9;
+  --bg-sidebar: #f1f2f6;
+  --bg-hover: #e8eaf1;
+  --bg-active: #e2e7f8;
   --bg-elevated: #ffffff;
-  --border: #e3e3ea;
-  --border-strong: #cfcfd9;
-  --text: #1c1c22;
-  --text-muted: #62626e;
-  --text-faint: #9a9aa6;
-  --accent: #7c4dff;
-  --accent-hover: #6a3cf0;
-  --accent-text: #6a3cf0;
-  --accent-soft: #efe9ff;
-  --danger: #dc2626;
-  --danger-soft: #fdecec;
-  --success: #15803d;
-  --success-soft: #e8f6ec;
-  --warning: #b45309;
-  --warning-soft: #fdf3e2;
-  --mark: #fff3a3;
-  --code-bg: #f4f4f7;
-  --shadow: 0 1px 2px rgb(16 16 24 / 0.06), 0 4px 16px rgb(16 16 24 / 0.08);
-  --shadow-lg: 0 8px 40px rgb(16 16 24 / 0.18);
+  --border: #e0e3eb;
+  --border-strong: #c8cdd9;
+  --text: #1a2030;
+  --text-muted: #5a6175;
+  --text-faint: #858b9e;
+  --accent: #2b44c2;
+  --accent-hover: #2236a3;
+  --accent-text: #2b44c2;
+  --accent-soft: #e8ecfb;
+  --on-accent: #ffffff;
+  --danger: #c8322b;
+  --danger-soft: #fcebea;
+  --success: #17794a;
+  --success-soft: #e4f3eb;
+  --warning: #9c5600;
+  --warning-soft: #fcf1df;
+  --mark: #ffe866;
+  --code-bg: #f2f3f7;
+  --rule: #d9483b;
+  --grid-line: #e1e6f0;
+  --card-line: #e4e9f5;
+  --shadow: 0 1px 2px rgb(26 32 48 / 0.05), 0 2px 8px rgb(26 32 48 / 0.05);
+  --shadow-lg: 0 2px 6px rgb(26 32 48 / 0.06), 0 14px 40px rgb(26 32 48 / 0.16);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #1b1b20;
-  --bg-subtle: #212127;
-  --bg-sidebar: #16161a;
-  --bg-hover: #2a2a31;
-  --bg-active: #332d4d;
-  --bg-elevated: #24242b;
-  --border: #2f2f37;
-  --border-strong: #42424c;
-  --text: #e6e6ec;
-  --text-muted: #a0a0ad;
-  --text-faint: #6f6f7c;
-  --accent: #9b7bff;
-  --accent-hover: #ab8fff;
-  --accent-text: #b39dff;
-  --accent-soft: #2e2747;
-  --danger: #f87171;
+  --bg: #151821;
+  --bg-subtle: #1a1e28;
+  --bg-sidebar: #11141b;
+  --bg-hover: #232835;
+  --bg-active: #262e4c;
+  --bg-elevated: #1c202b;
+  --border: #2a2f3c;
+  --border-strong: #3b4252;
+  --text: #e3e6ee;
+  --text-muted: #a0a6b8;
+  --text-faint: #717789;
+  --accent: #4a60dc;
+  --accent-hover: #5b70e6;
+  --accent-text: #a1aefe;
+  --accent-soft: #232b4d;
+  --on-accent: #ffffff;
+  --danger: #f0776e;
   --danger-soft: #3a1f22;
-  --success: #4ade80;
-  --success-soft: #1b3324;
-  --warning: #fbbf24;
-  --warning-soft: #3a2f17;
-  --mark: #6b5a12;
-  --code-bg: #26262d;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 8px 40px rgb(0 0 0 / 0.5);
+  --success: #5fd394;
+  --success-soft: #173026;
+  --warning: #f2b84b;
+  --warning-soft: #362c17;
+  --mark: #5e5214;
+  --code-bg: #1f2330;
+  --rule: #e2695e;
+  --grid-line: #212634;
+  --card-line: #232939;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 10px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.3), 0 14px 40px rgb(0 0 0 / 0.5);
   color-scheme: dark;
 }
 
@@ -80,52 +95,98 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-text: var(--accent-text);
   --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --color-rule: var(--rule);
+  --font-sans: 'Atkinson Hyperlegible Next Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Atkinson Hyperlegible Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  --font-serif: 'Source Serif 4 Variable', 'Iowan Old Style', Georgia, serif;
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-lg);
+  /* Radien nach Rang: Bedienelemente 6–8 px, Flächen 10 px, Dialoge 14 px */
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.875rem;
 }
 
-html,
-body {
-  height: 100%;
+/* In @layer base, damit Utilities (z. B. outline-none bei Eingabefeldern) Vorrang haben */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Eigenes Löschen-Kreuz statt des blauen Browser-Symbols */
+  input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-left: 6px;
+    cursor: pointer;
+    background: var(--text-faint);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+  input[type='search']::-webkit-search-cancel-button:hover {
+    background: var(--text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -webkit-tap-highlight-color: transparent;
-  font-feature-settings: 'cv11', 'ss01';
-}
-
-::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Sichere Bereiche (iPhone-Notch, Home-Indikator) */
+/*
+ * Sichere Bereiche (iPhone-Notch, Home-Indikator). Nur auf Elemente ohne eigenes Padding in dieser
+ * Richtung setzen – sonst überschreibt die Regel z. B. py-2 (ungeschichtetes CSS gewinnt gegen Utilities).
+ */
 .pt-safe {
   padding-top: env(safe-area-inset-top);
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Karopapier (5-mm-Kästchen) */
+.paper-grid {
+  background-color: var(--bg-subtle);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
 }
 
 @keyframes fade-in {
@@ -146,6 +207,16 @@ body {
     transform: none;
   }
 }
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @keyframes slide-in-left {
   from {
     transform: translateX(-100%);
@@ -159,6 +230,9 @@ body {
 }
 .animate-pop-in {
   animation: pop-in 0.16s ease-out;
+}
+.animate-drop-in {
+  animation: drop-in 0.16s ease-out;
 }
 .animate-slide-in-left {
   animation: slide-in-left 0.2s ease-out;
@@ -231,7 +305,7 @@ body {
 }
 .cm-md-highlight {
   background: var(--mark);
-  border-radius: 2px;
+  border-radius: 0.2em 0.35em 0.25em 0.4em;
 }
 .cm-md-math {
   font-family: var(--font-mono);
@@ -299,13 +373,18 @@ body {
 /* ------------------------------------------------------------------ */
 /* Vorschau (Obsidian-Stil)                                           */
 /* ------------------------------------------------------------------ */
+/* Fließtext in der Serifenschrift (Skript-Charakter, harmoniert mit KaTeX), Überschriften in der Grotesk */
 .markdown-body {
-  font-size: var(--editor-font-size, 16px);
-  line-height: 1.7;
-  max-width: 760px;
+  font-family: var(--font-serif);
+  line-height: 1.68;
+  overflow-wrap: anywhere;
+}
+/* Karteikarten (card-markdown) übernehmen Größe und Breite von außen, z. B. per text-sm */
+.markdown-body:not(.card-markdown) {
+  font-size: calc(var(--editor-font-size, 16px) * 1.0625);
+  max-width: 44rem;
   margin: 0 auto;
   padding: 8px 20px 30vh;
-  overflow-wrap: anywhere;
 }
 .markdown-body > *:first-child {
   margin-top: 0;
@@ -316,24 +395,26 @@ body {
 .markdown-body h4,
 .markdown-body h5,
 .markdown-body h6 {
+  font-family: var(--font-sans);
   font-weight: 700;
   line-height: 1.3;
-  margin: 1.4em 0 0.5em;
+  letter-spacing: -0.005em;
+  margin: 1.5em 0 0.5em;
   scroll-margin-top: 80px;
 }
 .markdown-body h1 {
-  font-size: 1.75em;
+  font-size: 1.65em;
 }
 .markdown-body h2 {
-  font-size: 1.4em;
-  padding-bottom: 0.2em;
+  font-size: 1.32em;
+  padding-bottom: 0.25em;
   border-bottom: 1px solid var(--border);
 }
 .markdown-body h3 {
-  font-size: 1.2em;
+  font-size: 1.14em;
 }
 .markdown-body h4 {
-  font-size: 1.05em;
+  font-size: 1em;
 }
 .markdown-body p,
 .markdown-body ul,
@@ -378,7 +459,7 @@ body {
 }
 .markdown-body a.wikilink {
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 550;
 }
 .markdown-body a.wikilink:hover {
   text-decoration: underline;
@@ -389,7 +470,8 @@ body {
 }
 .markdown-body a.tag {
   display: inline-block;
-  font-size: 0.85em;
+  font-family: var(--font-sans);
+  font-size: 0.8em;
   line-height: 1.5;
   padding: 0 0.55em;
   border-radius: 999px;
@@ -397,11 +479,16 @@ body {
   color: var(--accent-text);
   text-decoration: none;
 }
-.markdown-body mark {
+/* Textmarker: leicht unregelmäßige Kanten wie ein Strich mit dem Marker */
+.markdown-body mark,
+.search-snippet mark {
   background: var(--mark);
   color: inherit;
-  border-radius: 3px;
-  padding: 0 2px;
+  border-radius: 0.2em 0.35em 0.25em 0.4em;
+  padding: 0.05em 0.18em;
+  margin: 0 -0.05em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .markdown-body strong {
   font-weight: 650;
@@ -433,7 +520,7 @@ body {
   font-size: inherit;
 }
 .markdown-body blockquote {
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--border-strong);
   padding: 0.1em 0 0.1em 1em;
   color: var(--text-muted);
 }
@@ -448,9 +535,13 @@ body {
   border: 1px solid var(--border);
   padding: 6px 12px;
 }
+.markdown-body table {
+  font-size: 0.94em;
+}
 .markdown-body th {
+  font-family: var(--font-sans);
   background: var(--bg-subtle);
-  font-weight: 600;
+  font-weight: 650;
 }
 .markdown-body img {
   max-width: 100%;
@@ -481,9 +572,8 @@ body {
   content: '📄';
 }
 .markdown-body .embed-note-label {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-family: var(--font-sans);
+  font-size: 0.8em;
   color: var(--text-faint);
 }
 .markdown-body .embed-note.unresolved {
@@ -512,6 +602,7 @@ body {
 .markdown-body .task-list-item {
   display: block;
   position: relative;
+  min-height: 1.68em;
   padding-left: 1.7em;
 }
 .markdown-body .task-checkbox {
@@ -566,20 +657,13 @@ body {
   font-size: 0.85em;
 }
 
-/* Suchtreffer */
-.search-snippet mark {
-  background: var(--mark);
-  color: inherit;
-  border-radius: 3px;
-  padding: 0 2px;
-}
 
 /* Callouts */
 .markdown-body .callout {
   --callout: 68 138 255;
-  background: rgb(var(--callout) / 0.09);
+  background: rgb(var(--callout) / 0.08);
   border-left: 3px solid rgb(var(--callout));
-  border-radius: 8px;
+  border-radius: 3px 8px 8px 3px;
   padding: 10px 14px;
   overflow: hidden;
 }
@@ -587,7 +671,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-weight: 650;
   color: rgb(var(--callout));
 }
 .markdown-body summary.callout-title {
@@ -714,9 +799,7 @@ body {
 /* Karteikarten                                                         */
 /* ------------------------------------------------------------------ */
 .markdown-body.card-markdown {
-  max-width: none;
-  margin: 0;
-  padding: 0;
+  line-height: 1.55;
 }
 .markdown-body.card-markdown > :first-child {
   margin-top: 0;
@@ -728,8 +811,47 @@ body {
   margin: 0.4em 0;
 }
 .markdown-body.study-question {
-  font-size: calc(var(--editor-font-size, 16px) * 1.2);
+  font-size: calc(var(--editor-font-size, 16px) * 1.25);
+  line-height: 1.45;
   font-weight: 500;
+}
+
+/* Karteikarte im Lernmodus: kleiner Radius und roter Kopfstrich wie auf einer echten Karteikarte */
+.index-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow:
+    0 1px 1px rgb(26 32 48 / 0.04),
+    0 18px 36px -18px rgb(26 32 48 / 0.28);
+}
+.dark .index-card {
+  box-shadow: 0 18px 36px -18px rgb(0 0 0 / 0.7);
+}
+.index-card-rule {
+  height: 2px;
+  background: var(--rule);
+}
+.index-card-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    var(--card-line) 27px,
+    var(--card-line) 28px
+  );
+}
+
+/* Stapel: angedeutete zweite Karte dahinter */
+.deck-stack {
+  box-shadow:
+    4px 4px 0 -1px var(--bg),
+    4px 4px 0 0 var(--border);
+}
+.deck-stack:hover {
+  box-shadow:
+    4px 4px 0 -1px var(--bg),
+    4px 4px 0 0 var(--border-strong);
 }
 
 /* ------------------------------------------------------------------ */

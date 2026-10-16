@@ -48,7 +48,7 @@ export function MfaSetup({ onDone, onCancel }: { onDone: () => void; onCancel?: 
     return (
       <div className="space-y-4">
         <ErrorText>{error}</ErrorText>
-        <div className="flex items-start gap-3 rounded-xl bg-subtle p-4 text-sm text-muted">
+        <div className="flex items-start gap-3 rounded-lg bg-subtle p-4 text-sm text-muted">
           <Smartphone className="mt-0.5 size-5 shrink-0 text-accent" />
           <p>
             Du brauchst eine Authenticator-App auf deinem Handy, z.&nbsp;B. <strong className="text-fg">Aegis</strong>,{' '}
@@ -79,7 +79,7 @@ export function MfaSetup({ onDone, onCancel }: { onDone: () => void; onCancel?: 
           </p>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={data.qrDataUrl} alt="QR-Code für die Authenticator-App" width={200} height={200} className="rounded-xl border border-border bg-white p-2" />
+            <img src={data.qrDataUrl} alt="QR-Code für die Authenticator-App" width={200} height={200} className="rounded-lg border border-border bg-white p-2" />
             <div className="w-full min-w-0 space-y-2 text-muted">
               <p>Oder gib den Schlüssel manuell ein:</p>
               <div className="flex items-center gap-2">

@@ -269,7 +269,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
         {preview ? (
           <div className="space-y-3">
             <div className="rounded-xl border border-border p-4">
-              <p className="mb-2 text-xs font-medium tracking-wide text-faint uppercase">{type === 'mc' ? 'Frage' : 'Vorderseite'}</p>
+              <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Frage' : 'Vorderseite'}</p>
               {front.trim() ? <CardMarkdown text={front} /> : <p className="text-sm text-faint italic">Leer</p>}
             </div>
             {type === 'mc' ? (
@@ -285,7 +285,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
             ) : null}
             {back.trim() || type !== 'mc' ? (
               <div className="rounded-xl border border-border p-4">
-                <p className="mb-2 text-xs font-medium tracking-wide text-faint uppercase">{type === 'mc' ? 'Erklärung' : 'Rückseite'}</p>
+                <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Erklärung' : 'Rückseite'}</p>
                 {back.trim() ? <CardMarkdown text={back} /> : <p className="text-sm text-faint italic">Leer</p>}
               </div>
             ) : null}

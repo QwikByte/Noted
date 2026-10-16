@@ -362,7 +362,7 @@ export default function PdfPanel({
   return (
     <section className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-subtle" aria-label={`PDF: ${file}`} data-testid="pdf-panel">
       {/* Werkzeugleiste – passt sich der Breite des Panels an */}
-      <div className="flex min-w-0 items-center gap-0.5 border-b border-border bg-bg px-1.5 py-1">
+      <div className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border bg-bg px-1.5">
         <div className="min-w-0 flex-1">
           <Menu
             align="left"
@@ -412,7 +412,7 @@ export default function PdfPanel({
                 onBlur={() => setPageInput(String(current))}
                 inputMode="numeric"
                 aria-label="Seite"
-                className="h-7 w-9 rounded-md border border-border bg-elevated text-center text-xs text-fg outline-none focus:border-accent"
+                className="h-7 w-9 rounded-md border border-border bg-elevated text-center text-xs text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
               />
               <span className="whitespace-nowrap">/ {numPages || '–'}</span>
             </form>
@@ -543,7 +543,7 @@ export default function PdfPanel({
             }}
             placeholder="Im PDF suchen …"
             aria-label="Im PDF suchen"
-            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 text-sm outline-none focus:border-accent"
+            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
           <span className="w-16 text-center text-xs text-muted tabular-nums">
             {query && matches ? (matches.total ? `${matches.current} / ${matches.total}` : 'Keine') : ''}

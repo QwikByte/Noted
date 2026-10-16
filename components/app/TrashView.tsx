@@ -61,7 +61,7 @@ export function TrashView() {
       {isLoading ? (
         <Loader2 className="mx-auto size-6 animate-spin text-faint" />
       ) : notes.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-muted">Der Papierkorb ist leer.</div>
+        <div className="rounded-xl border border-dashed border-border-strong px-6 py-12 text-center text-muted">Der Papierkorb ist leer.</div>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
           {notes.map((n) => (

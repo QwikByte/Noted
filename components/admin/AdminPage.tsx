@@ -50,7 +50,7 @@ export function AdminPage() {
     <div className="min-h-dvh bg-subtle">
       <SubPageHeader title="Administration" />
       <main className="mx-auto max-w-3xl px-3 py-6 pb-24 sm:px-6">
-        <div className="mb-5 flex gap-1 rounded-xl bg-elevated p-1 shadow-sm" role="tablist">
+        <div className="mb-5 flex gap-1 rounded-lg bg-hover p-1" role="tablist">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -59,8 +59,8 @@ export function AdminPage() {
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3',
-                tab === t.id ? 'bg-accent text-white shadow-sm' : 'text-muted hover:bg-hover hover:text-fg',
+                'flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-2 py-2 text-sm font-medium transition-colors sm:px-3',
+                tab === t.id ? 'bg-elevated text-fg shadow-sm' : 'text-muted hover:text-fg',
               )}
             >
               <span className="max-sm:hidden">{t.icon}</span>
@@ -126,7 +126,7 @@ function UsersTab() {
       {isLoading ? (
         <p className="py-8 text-center text-sm text-muted">Lädt …</p>
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-elevated">
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
           {users.map((u) => {
             const isMe = u.id === me.id
             return (
@@ -740,7 +740,7 @@ function AuditTab() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">Sicherheitsrelevante Ereignisse der letzten 180 Tage.</p>
-      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-elevated">
+      <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
         {entries.map((e) => {
           const ev = EVENTS[e.event] ?? { label: e.event, tone: 'neutral' as const }
           let details = ''

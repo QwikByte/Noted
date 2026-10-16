@@ -7,19 +7,19 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'subtle'
 type Size = 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm'
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent-hover shadow-sm disabled:opacity-60',
+  primary: 'bg-accent text-on-accent hover:bg-accent-hover disabled:opacity-60',
   secondary: 'bg-elevated text-fg border border-border hover:bg-hover disabled:opacity-60',
   ghost: 'text-muted hover:text-fg hover:bg-hover disabled:opacity-50',
   subtle: 'bg-subtle text-fg hover:bg-hover disabled:opacity-50',
-  danger: 'bg-danger text-white hover:opacity-90 disabled:opacity-60',
+  danger: 'bg-danger text-bg hover:opacity-90 disabled:opacity-60',
 }
 
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-3 text-sm gap-1.5 rounded-lg',
-  md: 'h-10 px-4 text-sm gap-2 rounded-xl',
-  lg: 'h-12 px-5 text-base gap-2 rounded-xl',
-  icon: 'h-10 w-10 rounded-xl',
-  'icon-sm': 'h-8 w-8 rounded-lg',
+  sm: 'h-8 px-3 text-sm gap-1.5 rounded-md',
+  md: 'h-10 px-4 text-sm gap-2 rounded-lg',
+  lg: 'h-12 px-5 text-base gap-2 rounded-lg',
+  icon: 'h-10 w-10 rounded-lg',
+  'icon-sm': 'h-8 w-8 rounded-md',
 }
 
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {

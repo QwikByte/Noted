@@ -23,7 +23,7 @@ export function SetupFlow({
     <div className="space-y-5">
       <div>
         {steps.length > 1 ? (
-          <p className="mb-1 text-xs font-medium tracking-wide text-accent-text uppercase">
+          <p className="mb-1 text-sm font-medium text-accent-text">
             Schritt {index} von {steps.length}
           </p>
         ) : null}

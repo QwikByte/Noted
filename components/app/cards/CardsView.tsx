@@ -77,14 +77,14 @@ export function CardsView() {
       {isLoading ? (
         <Loader2 className="mx-auto size-6 animate-spin text-faint" />
       ) : !data ? (
-        <div className="flex items-center gap-2 rounded-xl border border-border p-4 text-sm text-muted">
+        <div className="flex items-center gap-2 rounded-lg border border-border p-4 text-sm text-muted">
           <CloudOff className="size-4" />
           {error instanceof NetworkError ? 'Offline – die Karteikarten wurden auf diesem Gerät noch nicht geladen.' : 'Die Karteikarten konnten nicht geladen werden.'}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12 text-center">
-          <Layers className="mb-3 size-10 text-faint" />
-          <p className="font-medium">Noch keine Karteikarten</p>
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-border-strong px-6 py-12 text-center">
+          <Layers className="mb-3 size-9 stroke-[1.5] text-faint" />
+          <p className="font-semibold">Noch keine Karteikarten</p>
           <p className="mt-1 max-w-md text-sm text-muted">
             Lege einen Stapel an, z. B. pro Fach. Karten kannst du direkt schreiben – als Frage/Antwort, beidseitig oder Multiple
             Choice – oder aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“).
@@ -94,7 +94,7 @@ export function CardsView() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2" data-testid="deck-list">
+        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2" data-testid="deck-list">
           {rows.map(({ deck, cards, counts, status }) => (
             <DeckTile
               key={deck.id}
@@ -138,12 +138,12 @@ function DeckTile({
   onPractice: () => void
 }) {
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-elevated transition hover:border-border-strong hover:shadow-card">
+    <div className="deck-stack flex flex-col rounded-lg border border-border bg-elevated transition-colors hover:border-border-strong">
       <button type="button" onClick={onOpen} className="flex flex-1 flex-col gap-1 p-4 pb-3 text-left">
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>
           {counts.due > 0 ? (
-            <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-white tabular-nums">{counts.due} fällig</span>
+            <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-on-accent tabular-nums">{counts.due} fällig</span>
           ) : cards > 0 ? (
             <span className="shrink-0 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Erledigt</span>
           ) : null}

@@ -21,7 +21,7 @@ export function UpdateBanner() {
   const version = update.version && update.version !== 'dev' ? ` (${update.version})` : ''
   return (
     <div
-      className="pointer-events-auto flex w-full max-w-md animate-pop-in items-center gap-3 rounded-xl border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
+      className="pointer-events-auto flex w-full max-w-md animate-drop-in items-center gap-3 rounded-lg border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
       role="status"
       data-testid="update-banner"
     >
