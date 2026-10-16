@@ -26,6 +26,7 @@ import { usePref } from '@/shared/client/prefs'
 import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/notes/client/queries'
 import { api, errorMessage } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
+import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { validateName } from '@/shared/lib/names'
 import type { Folder, NoteSummary } from '@/features/notes/types'
@@ -109,15 +110,26 @@ export default function NotesApp() {
     [go],
   )
 
+  const [defaultFormat] = useDefaultNoteFormat()
   const createNote = useCallback<AppActions['createNote']>(
-    async ({ title, folderId, content = '' }) => {
+    async ({ title, folderId, content = '', format = defaultFormat }) => {
       const id = crypto.randomUUID()
-      void sync.create({ id, title, folderId, content })
+      void sync.create({ id, title, folderId, content, format })
       navigate({ kind: 'note', id })
       return id
     },
-    [navigate],
+    [navigate, defaultFormat],
   )
+
+  // Editor für formatierten Text und die Formatumwandlung im Hintergrund laden – so cacht beide der Service Worker
+  // und sie funktionieren auch offline
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void import('@/features/notes/components/RichTextEditor').catch(() => {})
+      void import('@/features/notes/client/convert').catch(() => {})
+    }, 5_000)
+    return () => clearTimeout(timer)
+  }, [])
 
   const trashNote = useCallback<AppActions['trashNote']>(
     async (note) => {

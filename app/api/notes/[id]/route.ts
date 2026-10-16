@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { json, parseJson } from '@/shared/server/http'
 import { route } from '@/features/auth/server/route'
 import { deleteNotePermanently, getNote, trashNote, updateNote } from '@/features/notes/server/notes'
+import { NOTE_FORMAT_IDS } from '@/features/notes/format'
 
 export const GET = route<{ id: string }>('user', ({ user, params }) => json({ note: getNote(user.id, params.id) }))
 
@@ -9,6 +10,7 @@ const schema = z.object({
   title: z.string().max(300).optional(),
   folderId: z.string().uuid().nullable().optional(),
   content: z.string().optional(),
+  format: z.enum(NOTE_FORMAT_IDS).optional(),
   pinned: z.boolean().optional(),
   baseVersion: z.number().int().optional(),
   autoRename: z.boolean().optional(),

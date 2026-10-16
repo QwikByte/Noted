@@ -3,7 +3,8 @@ import MarkdownIt, { type PluginSimple } from 'markdown-it'
 import footnote from 'markdown-it-footnote'
 import katex from '@vscode/markdown-it-katex'
 import hljs from 'highlight.js/lib/common'
-import { escapeHtml, obsidianPlugin, stripComments, type RenderEnv } from './obsidian'
+import { obsidianPlugin, stripComments, type RenderEnv } from './obsidian'
+import { escapeHtml } from '@/shared/lib/html'
 import { splitFrontmatter } from './meta'
 
 function createMarkdownIt() {

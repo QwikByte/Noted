@@ -2,6 +2,7 @@
 // Callouts, Aufgabenlisten, Kommentare (%% %%) und Überschriften-Anker.
 import type { MarkdownIt, StateCore, StateInline, Token } from 'markdown-it'
 import { isFileTarget, parseWikiTarget } from './meta'
+import { escapeHtml } from '@/shared/lib/html'
 
 export type ResolvedNote = { id: string; title: string }
 
@@ -13,9 +14,6 @@ export type RenderEnv = {
   /** Zeilenversatz (z. B. durch entferntes Frontmatter) für Checkbox-Zeilennummern */
   lineOffset?: number
 }
-
-export const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 function slugify(text: string): string {
   return text

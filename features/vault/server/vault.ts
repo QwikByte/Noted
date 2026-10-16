@@ -8,6 +8,9 @@ import { listAttachments, readAttachmentData, saveAttachment } from '@/features/
 import { getFlashcardData } from '@/features/flashcards/server/flashcards'
 import { deckToMarkdown } from '@/features/flashcards/card-markdown'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
+import { htmlBody, htmlDocument } from '@/shared/lib/html'
+import { noteExtension } from '@/features/notes/format'
+import type { NoteFormat } from '@/features/notes/types'
 
 const EXPORT_ATTACHMENT_FOLDER = 'Anhänge'
 /** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
@@ -15,19 +18,36 @@ const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 
 type ExportEntry = { path: string; mtime: number; compress: boolean; data: () => Uint8Array }
 
+const ATTACHMENT_DIR_RE = new RegExp(`(\\ssrc=["'])(?:\\.\\./)*(?:${encodeURIComponent(EXPORT_ATTACHMENT_FOLDER)}|${EXPORT_ATTACHMENT_FOLDER})/`, 'gi')
+
+/** Bilder in formatiertem Text zeigen im Export auf den Ordner „Anhänge“ (relativ zur Datei) … */
+function exportImagePaths(html: string, depth: number): string {
+  const dir = '../'.repeat(depth) + encodeURIComponent(EXPORT_ATTACHMENT_FOLDER) + '/'
+  return html.replace(/(\ssrc=["'])\/api\/files\//gi, `$1${dir}`)
+}
+
+/** … und nach dem Import wieder auf die Anhänge in Noted */
+function importImagePaths(html: string): string {
+  return html.replace(ATTACHMENT_DIR_RE, '$1/api/files/')
+}
+
 /** Erstellt einen ZIP-Stream mit allen Notizen (Ordnerstruktur wie im Vault) und Anhängen. */
 export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
   const paths = folderPathMap(userId)
   const notes = getDb()
-    .prepare('SELECT id, folder_id, title, content, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL')
-    .all(userId) as { id: string; folder_id: string | null; title: string; content: string; updated_at: number }[]
+    .prepare('SELECT id, folder_id, title, content, format, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL')
+    .all(userId) as { id: string; folder_id: string | null; title: string; content: string; format: NoteFormat; updated_at: number }[]
 
-  const entries: ExportEntry[] = notes.map((n) => ({
-    path: [...(n.folder_id ? (paths.get(n.folder_id) ?? []) : []), `${n.title}.md`].join('/'),
-    mtime: n.updated_at,
-    compress: true,
-    data: () => strToU8(n.content),
-  }))
+  const entries: ExportEntry[] = notes.map((n) => {
+    const folders = n.folder_id ? (paths.get(n.folder_id) ?? []) : []
+    return {
+      path: [...folders, `${n.title}${noteExtension(n.format)}`].join('/'),
+      mtime: n.updated_at,
+      compress: true,
+      data: () =>
+        strToU8(n.format === 'richtext' ? htmlDocument(n.title, exportImagePaths(n.content, folders.length)) : n.content),
+    }
+  })
   // Leere Ordner trotzdem anlegen
   const usedDirs = new Set(entries.map((e) => e.path.split('/').slice(0, -1).join('/')))
   for (const folderPath of paths.values()) {
@@ -87,6 +107,8 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
 export type ImportResult = { notes: number; attachments: number; folders: number; skipped: string[] }
 
 const NOTE_EXT = /\.(md|markdown)$/i
+/** HTML-Dateien werden zu formatiertem Text (so lässt sich ein Export wieder importieren) */
+const HTML_EXT = /\.html?$/i
 
 function isHiddenPath(p: string) {
   return p.split('/').some((seg) => seg.startsWith('.') || seg === '__MACOSX')
@@ -121,10 +143,17 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
   const existingAttachments = new Map(listAttachments(userId).map((a) => [a.filename.toLowerCase(), a.size]))
 
   const importNote = (folderId: string | null, filename: string, data: Uint8Array) => {
-    const title = sanitizeName(filename.replace(NOTE_EXT, ''))
-    createNote(userId, { title, folderId, content: decodeText(data) })
+    if (HTML_EXT.test(filename)) {
+      const title = sanitizeName(filename.replace(HTML_EXT, ''))
+      createNote(userId, { title, folderId, format: 'richtext', content: importImagePaths(htmlBody(decodeText(data))) })
+    } else {
+      createNote(userId, { title: sanitizeName(filename.replace(NOTE_EXT, '')), folderId, content: decodeText(data) })
+    }
     result.notes++
   }
+  // HTML im Ordner „Anhänge“ eines Exports bleibt ein Anhang
+  const isNoteFile = (segments: string[], filename: string) =>
+    NOTE_EXT.test(filename) || (HTML_EXT.test(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER)
 
   const importAttachment = (filename: string, type: string | null, data: Uint8Array) => {
     if (data.byteLength > maxUploadBytes) {
@@ -157,7 +186,7 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
         entries = unzipSync(data, {
           filter: (f) => {
             if (f.name.endsWith('/') || isHiddenPath(f.name)) return false
-            const max = NOTE_EXT.test(f.name) ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
+            const max = NOTE_EXT.test(f.name) || HTML_EXT.test(f.name) ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
             if (f.originalSize > max) {
               result.skipped.push(`${f.name} (zu groß)`)
               return false
@@ -178,7 +207,7 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
         const segments = entryPath.split('/').filter(Boolean)
         const filename = segments.pop()!
         try {
-          if (NOTE_EXT.test(filename)) {
+          if (isNoteFile(segments, filename)) {
             let folderId = targetFolderId
             for (const seg of segments) folderId = ensureFolder(folderId, seg)
             importNote(folderId, filename, entryData)
@@ -189,7 +218,7 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
           result.skipped.push(`${entryPath} (${err instanceof Error ? err.message : 'Fehler'})`)
         }
       }
-    } else if (NOTE_EXT.test(name)) {
+    } else if (isNoteFile([], name)) {
       try {
         importNote(targetFolderId, name, data)
       } catch (err) {

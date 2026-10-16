@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -26,12 +27,15 @@ import {
   Pin,
   PinOff,
   Trash2,
+  Type,
   Upload,
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview } from './Preview'
+import { PlainTextView, RichTextView } from './ReadView'
+import { FormatDialog } from './FormatPicker'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
@@ -42,17 +46,32 @@ import { useBacklinks, useDrafts, useFolders, useNote, useNotes, useTags } from 
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
 import { sync, type NoteSyncStatus } from '../client/sync'
 import { usePref, type EditorMode } from '@/shared/client/prefs'
-import { copyText } from '@/shared/client/clipboard'
+import { copyHtml, copyText } from '@/shared/client/clipboard'
 import { folderPath } from '../tree'
 import { formatDateTime, formatRelative, wordCount } from '@/shared/lib/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
+import type { Attachment } from '@/features/attachments/types'
 import { errorMessage, ApiError } from '@/shared/client/api'
 import { useFlashcards } from '@/features/flashcards/client/flashcards'
-import { registerActiveEditor } from '../client/active-editor'
+import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
+import type { NoteEditorHandle } from '../client/editor-handle'
+import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
+import { NOTE_FORMAT_LABELS, noteExtension, noteText } from '../format'
+import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { findWikiLinks, splitFrontmatter } from '@/shared/markdown/meta'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { validateName } from '@/shared/lib/names'
-import type { Note } from '../types'
+import type { Note, NoteFormat } from '../types'
+
+// Editor für formatierten Text erst laden, wenn er gebraucht wird (TipTap ist groß)
+const RichTextEditor = dynamic(() => import('./RichTextEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 items-center justify-center text-muted">
+      <Loader2 className="size-5 animate-spin" />
+    </div>
+  ),
+})
 
 function useSyncStatus(id: string): NoteSyncStatus {
   return useSyncExternalStore(
@@ -108,6 +127,7 @@ export function NoteView({ id, onOpenSidebar }: { id: string; onOpenSidebar: () 
         title: draft.title ?? 'Unbenannt',
         folderId: draft.folderId ?? null,
         content: draft.content ?? '',
+        format: draft.format ?? 'markdown',
         pinned: false,
         version: 0,
         createdAt: draft.updatedAt,
@@ -153,7 +173,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
-  const editorRef = useRef<EditorHandle>(null)
+  // Markdown und einfacher Text: CodeMirror · formatierter Text: TipTap
+  const cmRef = useRef<EditorHandle>(null)
+  const richRef = useRef<NoteEditorHandle>(null)
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
   const { data: tags = [] } = useTags()
@@ -165,16 +187,21 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
 
   const initialDraft = sync.getDraft(note.id)
   const [content, setContent] = useState(initialDraft?.content ?? note.content)
+  const [format, setFormat] = useState<NoteFormat>(initialDraft?.format ?? note.format)
   const [title, setTitle] = useState(initialDraft?.title ?? note.title)
   const [titleError, setTitleError] = useState<string | null>(null)
   const [storedMode, setStoredMode] = usePref<EditorMode>('noted:mode', 'edit')
   const [mode, setModeState] = useState<EditorMode>(() => (note.content.trim() === '' ? 'edit' : storedMode))
   const [infoOpen, setInfoOpen] = useState(false)
+  const [formatOpen, setFormatOpen] = useState(false)
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
-  const effectiveMode: EditorMode = mode === 'split' && !isWide ? 'edit' : mode
+  // Die geteilte Ansicht gibt es nur für Markdown – bei den anderen Formaten sieht der Editor schon aus wie das Ergebnis
+  const canSplit = isWide && format === 'markdown'
+  const effectiveMode: EditorMode = mode === 'split' && !canSplit ? 'edit' : mode
+  const text = useMemo(() => noteText(format, content), [format, content])
 
   const setMode = (m: EditorMode) => {
     setModeState(m)
@@ -191,18 +218,44 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     }
   }, [note.id, note.version])
 
+  const version = serverNote?.version ?? note.version
+
+  const onChange = useCallback(
+    (doc: string) => {
+      setContent(doc)
+      sync.update(note.id, version, { content: doc, format })
+    },
+    [note.id, version, format],
+  )
+
+  // Für Aufrufe von außen (PDF-Viewer, Uploads): immer der aktuelle Stand
+  const latest = useRef({ content, format, title, onChange })
+  useEffect(() => {
+    latest.current = { content, format, title, onChange }
+  })
+  const editorHandle = (): NoteEditorHandle | null =>
+    latest.current.format === 'richtext' ? richRef.current : cmRef.current
+
+  /** Stand von einem anderen Gerät übernehmen; bei anderem Format wird der Editor neu aufgebaut */
+  function applyRemote(remote: Note) {
+    if (remote.format !== latest.current.format) {
+      setFormat(remote.format)
+      setContent(remote.content)
+    } else if (remote.content !== latest.current.content) {
+      editorHandle()?.setDoc(remote.content)
+      setContent(remote.content)
+    }
+    if (remote.title !== latest.current.title) setTitle(remote.title)
+  }
+
   // Neuere Version vom Server (z. B. anderes Gerät) übernehmen, wenn lokal nichts offen ist
   useEffect(() => {
     if (!serverNote || serverNote.version <= loadedVersion.current) return
     loadedVersion.current = serverNote.version
     sync.setKnownVersion(serverNote.id, serverNote.version)
     if (sync.getDraft(serverNote.id)) return
-    // Abgleich mit externen Systemen (Server-Daten → CodeMirror), daher bewusst im Effect
-    if (serverNote.content !== content) {
-      editorRef.current?.setDoc(serverNote.content)
-      setContent(serverNote.content) // eslint-disable-line react-hooks/set-state-in-effect
-    }
-    if (serverNote.title !== title) setTitle(serverNote.title)
+    // Abgleich mit externen Systemen (Server-Daten → Editor), daher bewusst im Effect
+    applyRemote(serverNote)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverNote?.version])
 
@@ -218,16 +271,6 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     [note.id, title, titleError],
   )
 
-  const version = serverNote?.version ?? note.version
-
-  const onChange = useCallback(
-    (doc: string) => {
-      setContent(doc)
-      sync.update(note.id, version, { content: doc })
-    },
-    [note.id, version],
-  )
-
   const onTitleChange = (value: string) => {
     setTitle(value)
     const err = validateName(value)
@@ -235,11 +278,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     if (!err) sync.update(note.id, version, { title: value.trim() })
   }
 
-  // Text aus dem PDF-Viewer (Seitenlinks, Zitate) an der Cursorposition einfügen
-  const latest = useRef({ content, title, onChange })
-  useEffect(() => {
-    latest.current = { content, title, onChange }
-  })
+  // Seitenlinks und Zitate aus dem PDF-Viewer an der Cursorposition einfügen – im Lesemodus ans Ende
   useEffect(
     () =>
       registerActiveEditor({
@@ -247,26 +286,26 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         get title() {
           return latest.current.title || 'Unbenannt'
         },
-        insert: (text) => {
-          const view = editorRef.current?.view()
-          if (!view) {
-            const cur = latest.current.content
-            const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
-            latest.current.onChange(cur + sep + text + '\n')
-            return
-          }
-          const doc = view.state.doc
-          let { from, to } = view.state.selection.main
-          // Cursor nie gesetzt (ganz am Anfang)? Dann ans Ende
-          if (from === 0 && to === 0 && doc.length > 0 && !view.hasFocus) from = to = doc.length
-          const before = doc.sliceString(Math.max(0, from - 2), from)
-          const prefix = from === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
-          const insert = prefix + text + (doc.sliceString(to, to + 1) === '\n' ? '\n' : '\n\n')
-          view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true })
+        insert: (insertion) => {
+          const handle = editorHandle()
+          if (handle) return handle.insert(insertion)
+          const { content: cur, format: f, onChange: change } = latest.current
+          if (f === 'richtext') return change(cur + insertionToHtml(insertion))
+          const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
+          change(cur + sep + insertionToMarkdown(insertion) + '\n')
         },
       }),
     [note.id],
   )
+
+  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
+  const addAttachment = useCallback((att: Attachment) => {
+    const handle = editorHandle()
+    if (handle) return handle.insertAttachment(att)
+    const { content: cur, format: f, onChange: change } = latest.current
+    if (f === 'richtext') change(cur + attachmentHtml(att))
+    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
+  }, [])
 
   const upload = useCallback(
     async (files: File[]) => {
@@ -275,17 +314,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         try {
           toast.show(`Lade „${name}“ hoch …`)
           const att = await uploadAttachment(file, name)
-          const view = editorRef.current?.view()
-          const md = attachmentMarkdown(att)
-          if (view) {
-            const { from, to } = view.state.selection.main
-            const line = view.state.doc.lineAt(from)
-            const prefix = from > line.from && line.text.trim() ? '\n' : ''
-            view.dispatch({ changes: { from, to, insert: prefix + md + '\n' }, selection: { anchor: from + prefix.length + md.length + 1 } })
-            view.focus()
-          } else {
-            onChange(content + (content.endsWith('\n') || !content ? '' : '\n') + md + '\n')
-          }
+          addAttachment(att)
           qc.invalidateQueries({ queryKey: attachmentsKey })
           toast.success(`„${att.filename}“ eingefügt.`)
         } catch (err) {
@@ -293,7 +322,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         }
       }
     },
-    [toast, qc, onChange, content],
+    [toast, qc, addAttachment],
   )
 
   const completionData = useMemo(
@@ -319,7 +348,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       if (line < 0 || line >= lines.length) return
       lines[line] = lines[line].replace(/\[([ xX/\-><!?*])\]/, checked ? '[x]' : '[ ]')
       const next = lines.join('\n')
-      editorRef.current?.setDoc(next)
+      cmRef.current?.setDoc(next)
       onChange(next)
     },
     [content, onChange],
@@ -327,17 +356,18 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
 
   /** Karteikarte aus der Markierung (Editor oder Lesemodus) */
   function createCard() {
-    const view = editorRef.current?.view()
-    const selected = view
-      ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
-      : (document.getSelection()?.toString() ?? '')
+    const handle = editorHandle()
+    const selected = handle ? handle.selectedText() : (document.getSelection()?.toString() ?? '')
     app.openCardEditor({ ...(selected.trim() ? cardFromSelection(selected) : {}), noteId: note.id, deckName: title })
   }
 
   // PDFs, die in dieser Notiz eingebettet oder verlinkt sind
   const notePdfs = useMemo(
-    () => [...new Set(findWikiLinks(content).map((l) => l.target).filter((t) => /\.pdf$/i.test(t)))],
-    [content],
+    () =>
+      format === 'richtext'
+        ? linkedPdfs(content)
+        : [...new Set(findWikiLinks(content).map((l) => l.target).filter((t) => /\.pdf$/i.test(t)))],
+    [format, content],
   )
   const otherPdfs = attachments.filter((a) => a.mime === 'application/pdf' && !notePdfs.includes(a.filename))
 
@@ -348,84 +378,94 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       toast.show(`Lade „${file.name}“ hoch …`)
       const att = await uploadAttachment(file, niceFileName(file))
       qc.invalidateQueries({ queryKey: attachmentsKey })
-      // In der Notiz einbetten, damit sie mit dem Skript verknüpft ist
-      insertLine(`![[${att.filename}]]`)
+      // In der Notiz einbetten, damit sie mit dem Skript verknüpft ist (einfacher Text kennt keine Einbettungen)
+      if (format !== 'text') addAttachment(att)
       app.openPdf(att.filename)
     } catch (err) {
       toast.error(`Upload fehlgeschlagen: ${errorMessage(err)}`)
     }
   }
-  function insertLine(text: string) {
-    const view = editorRef.current?.view()
-    if (view) {
-      const pos = view.state.selection.main.head || view.state.doc.length
-      const line = view.state.doc.lineAt(pos)
-      const prefix = pos > line.from && line.text.trim() ? '\n' : ''
-      view.dispatch({ changes: { from: pos, insert: prefix + text + '\n' } })
-    } else onChange(content + (content.endsWith('\n') || !content ? '' : '\n') + text + '\n')
-  }
 
-  async function copy(kind: 'markdown' | 'body' | 'link') {
-    const text =
-      kind === 'link'
-        ? `[[${title}]]`
-        : kind === 'body'
-          ? (splitFrontmatter(content)?.body ?? content).replace(/^\n+/, '')
-          : content
-    const ok = await copyText(text)
-    if (ok) {
-      toast.success(
-        kind === 'link'
-          ? 'Wikilink kopiert.'
-          : 'Markdown kopiert – einfach in Obsidian einfügen.',
-      )
-    } else toast.error('Kopieren nicht möglich.')
+  async function copy(kind: 'content' | 'body' | 'link') {
+    let ok: boolean
+    let message: string
+    if (kind === 'link') {
+      ok = await copyText(`[[${title}]]`)
+      message = 'Wikilink kopiert.'
+    } else if (format === 'richtext') {
+      ok = await copyHtml(content, htmlToText(content, { codeFences: false }))
+      message = 'Kopiert – mit Formatierung, z. B. zum Einfügen in Word.'
+    } else if (format === 'text') {
+      ok = await copyText(content)
+      message = 'Text kopiert.'
+    } else {
+      ok = await copyText(kind === 'body' ? (splitFrontmatter(content)?.body ?? content).replace(/^\n+/, '') : content)
+      message = 'Markdown kopiert – einfach in Obsidian einfügen.'
+    }
+    if (ok) toast.success(message)
+    else toast.error('Kopieren nicht möglich.')
   }
 
   function download() {
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const html = format === 'richtext'
+    const name = title || 'Notiz'
+    const blob = new Blob([html ? htmlDocument(name, content) : content], {
+      type: html ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
+    })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${title || 'Notiz'}.md`
+    a.download = `${name}${noteExtension(format)}`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function changeFormat(next: NoteFormat) {
+    try {
+      const { convertContent } = await import('../client/convert')
+      const converted = await convertContent(content, format, next)
+      setFormat(next)
+      setContent(converted)
+      sync.update(note.id, version, { content: converted, format: next }, { immediate: true })
+      setFormatOpen(false)
+      toast.success(`Umgewandelt in „${NOTE_FORMAT_LABELS[next].label}“.`)
+    } catch (err) {
+      toast.error(`Umwandeln fehlgeschlagen: ${errorMessage(err)}`)
+    }
   }
 
   const { data: flashcards } = useFlashcards()
   const linkedCards = useMemo(() => flashcards?.cards.filter((c) => c.noteId === note.id).length ?? 0, [flashcards, note.id])
   // Im Lesemodus auf Karten in der Notiz hinweisen (Frage::Antwort, Frage-Callouts …)
   const cardsInNote = useMemo(
-    () => mode === 'read' && parseCardsFromNote(content).some((c) => EXPLICIT_SOURCES.includes(c.source)),
-    [mode, content],
+    () => mode === 'read' && parseCardsFromNote(text).some((c) => EXPLICIT_SOURCES.includes(c.source)),
+    [mode, text],
   )
 
   const path = folderPath(folders, folderId)
   const summaryForActions = summary ?? { ...note, title }
+  const copyLabel = { markdown: 'Markdown kopieren', richtext: 'Kopieren', text: 'Text kopieren' }[format]
+  const autoFocus = note.content === '' && note.version === 0
 
-  const editor = (
-    <Editor
-      ref={editorRef}
-      initialDoc={content}
-      onChange={onChange}
-      onSave={() => void sync.flush(note.id)}
-      onPasteFiles={upload}
-      data={completionData}
-      autoFocus={note.content === '' && note.version === 0}
-      spellcheck={spellcheck === '1'}
-    />
+  const titleInput = (
+    <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
   )
-  const preview = (
-    <Preview
-      content={content}
-      resolveNote={resolveNote}
-      onOpenNote={(id) => app.go({ kind: 'note', id })}
-      onCreateNote={(t) => app.createNote({ title: t, folderId })}
-      onOpenTag={(tag) => app.go({ kind: 'tag', tag })}
-      onToggleTask={toggleTask}
-      onOpenPdf={app.openPdf}
-    />
-  )
+  const readView =
+    format === 'richtext' ? (
+      <RichTextView html={content} onOpenPdf={app.openPdf} />
+    ) : format === 'text' ? (
+      <PlainTextView text={content} />
+    ) : (
+      <Preview
+        content={content}
+        resolveNote={resolveNote}
+        onOpenNote={(id) => app.go({ kind: 'note', id })}
+        onCreateNote={(t) => app.createNote({ title: t, folderId })}
+        onOpenTag={(tag) => app.go({ kind: 'tag', tag })}
+        onToggleTask={toggleTask}
+        onOpenPdf={app.openPdf}
+      />
+    )
 
   return (
     <div ref={rootRef} className="@container flex h-full flex-col">
@@ -485,7 +525,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
               [
                 ['edit', <PenLine key="e" className="size-4" />, 'Bearbeiten'],
                 ['read', <BookOpen key="r" className="size-4" />, 'Lesen'],
-                ...(isWide ? [['split', <Columns2 key="s" className="size-4" />, 'Geteilt'] as const] : []),
+                ...(canSplit ? [['split', <Columns2 key="s" className="size-4" />, 'Geteilt'] as const] : []),
               ] as const
             ).map(([m, icon, label]) => (
               <button
@@ -506,10 +546,10 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => copy('markdown')} className="ml-1 @max-xl:hidden" title="Markdown kopieren">
+          <Button variant="ghost" size="sm" onClick={() => copy('content')} className="ml-1 @max-xl:hidden" title={copyLabel}>
             <Copy className="size-4" /> Kopieren
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => copy('markdown')} className="@xl:hidden" aria-label="Markdown kopieren">
+          <Button variant="ghost" size="icon-sm" onClick={() => copy('content')} className="@xl:hidden" aria-label={copyLabel}>
             <Copy className="size-4" />
           </Button>
           <Menu
@@ -519,17 +559,19 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
               </Button>
             )}
           >
-            <MenuItem icon={<Copy />} onSelect={() => copy('markdown')}>
-              Markdown kopieren
+            <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
+              {copyLabel}
             </MenuItem>
-            <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
-              Ohne Properties kopieren
-            </MenuItem>
+            {format === 'markdown' ? (
+              <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
+                Ohne Properties kopieren
+              </MenuItem>
+            ) : null}
             <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
               Als [[Wikilink]] kopieren
             </MenuItem>
             <MenuItem icon={<Download />} onSelect={download}>
-              Als .md herunterladen
+              Als {noteExtension(format)} herunterladen
             </MenuItem>
             <MenuSeparator />
             <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
@@ -538,6 +580,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
               Verschieben …
             </MenuItem>
+            <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
+              Format …
+            </MenuItem>
             <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
               Informationen
             </MenuItem>
@@ -545,7 +590,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             <MenuItem icon={<Layers />} onSelect={createCard}>
               Karteikarte erstellen
             </MenuItem>
-            <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content })}>
+            <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
               Karteikarten aus Notiz …
             </MenuItem>
             {linkedCards > 0 ? (
@@ -561,10 +606,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
         </div>
       </header>
 
-      {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} editorRef={editorRef} onResolved={(c, t) => {
-        setContent(c)
-        setTitle(t)
-      }} /> : null}
+      {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} onResolved={applyRemote} /> : null}
       {status.state === 'error' ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger">
           <AlertTriangle className="size-4 shrink-0" />
@@ -573,30 +615,55 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             Erneut versuchen
           </Button>
           {status.error?.includes('gelöscht') ? (
-            <Button size="sm" onClick={() => void sync.recreate(note.id, { title, folderId, content })}>
+            <Button size="sm" onClick={() => void sync.recreate(note.id, { title, folderId, content, format })}>
               Als neue Notiz speichern
             </Button>
           ) : null}
         </div>
       ) : null}
 
-      {effectiveMode !== 'read' ? (
+      {format === 'markdown' && effectiveMode !== 'read' ? (
         <div className="border-b border-border">
           <div className="mx-auto max-w-[50rem]">
-            <EditorToolbar getView={() => editorRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
+            <EditorToolbar getView={() => cmRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
           </div>
         </div>
       ) : null}
 
       <div className={cn('min-h-0 flex-1', effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col')}>
-        {effectiveMode !== 'read' ? (
+        {effectiveMode === 'read' ? null : format === 'richtext' ? (
+          <RichTextEditor
+            handleRef={richRef}
+            initialHtml={content}
+            onChange={onChange}
+            onSave={() => void sync.flush(note.id)}
+            onUpload={upload}
+            onCreateCard={createCard}
+            autoFocus={autoFocus}
+            spellcheck={spellcheck === '1'}
+            header={titleInput}
+          />
+        ) : (
           <div className="flex min-h-0 flex-col overflow-y-auto">
             <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
-              <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorRef.current?.focus()} />
-              <div className="min-h-0 flex-1">{editor}</div>
+              {titleInput}
+              <div className="min-h-0 flex-1">
+                <Editor
+                  key={format}
+                  ref={cmRef}
+                  initialDoc={content}
+                  onChange={onChange}
+                  onSave={() => void sync.flush(note.id)}
+                  onPasteFiles={upload}
+                  data={completionData}
+                  autoFocus={autoFocus}
+                  spellcheck={spellcheck === '1'}
+                  plain={format === 'text'}
+                />
+              </div>
             </div>
           </div>
-        ) : null}
+        )}
         {effectiveMode !== 'edit' ? (
           <div className="min-h-0 overflow-y-auto">
             {effectiveMode === 'read' ? (
@@ -609,14 +676,14 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             ) : (
               <div className="pt-6" />
             )}
-            {preview}
+            {readView}
             {effectiveMode === 'read' ? (
               <>
                 {linkedCards > 0 || cardsInNote ? (
                   <NoteCards
                     count={linkedCards}
                     onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
-                    onCreate={() => app.openCardsFromNote({ id: note.id, title, content })}
+                    onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                   />
                 ) : null}
                 <Backlinks id={note.id} />
@@ -637,18 +704,21 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
           void uploadPdf(files)
         }}
       />
+      <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
       <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Informationen" size="sm">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-muted">Erstellt</dt>
           <dd>{formatDateTime(note.createdAt)}</dd>
           <dt className="text-muted">Geändert</dt>
           <dd>{formatDateTime(summary?.updatedAt ?? note.updatedAt)}</dd>
+          <dt className="text-muted">Format</dt>
+          <dd>{NOTE_FORMAT_LABELS[format].label}</dd>
           <dt className="text-muted">Wörter</dt>
-          <dd>{wordCount(content).toLocaleString('de-DE')}</dd>
+          <dd>{wordCount(text).toLocaleString('de-DE')}</dd>
           <dt className="text-muted">Zeichen</dt>
-          <dd>{content.length.toLocaleString('de-DE')}</dd>
+          <dd>{text.length.toLocaleString('de-DE')}</dd>
           <dt className="text-muted">Dateiname</dt>
-          <dd className="break-all">{[...path.map((f) => f.name), `${title}.md`].join('/')}</dd>
+          <dd className="break-all">{[...path.map((f) => f.name), `${title}${noteExtension(format)}`].join('/')}</dd>
           <dt className="text-muted">Version</dt>
           <dd>{version}</dd>
         </dl>
@@ -750,13 +820,12 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
 function ConflictBanner({
   id,
   status,
-  editorRef,
   onResolved,
 }: {
   id: string
   status: NoteSyncStatus
-  editorRef: React.RefObject<EditorHandle | null>
-  onResolved: (content: string, title: string) => void
+  /** Version des anderen Geräts in den Editor übernehmen */
+  onResolved: (server: Note) => void
 }) {
   const server = status.serverNote
   return (
@@ -775,10 +844,7 @@ function ConflictBanner({
         <Button
           size="sm"
           onClick={() => {
-            if (server) {
-              editorRef.current?.setDoc(server.content)
-              onResolved(server.content, server.title)
-            }
+            if (server) onResolved(server)
             void sync.resolveConflict(id, 'theirs')
           }}
         >
@@ -787,10 +853,7 @@ function ConflictBanner({
         <Button
           size="sm"
           onClick={() => {
-            if (server) {
-              editorRef.current?.setDoc(server.content)
-              onResolved(server.content, server.title)
-            }
+            if (server) onResolved(server)
             void sync.resolveConflict(id, 'copy')
           }}
         >

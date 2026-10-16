@@ -167,6 +167,10 @@ const theme = EditorView.theme({
   '.cm-gutters': { display: 'none' },
 })
 
+/**
+ * Erweiterungen für Markdown – mit `plain` für einfachen Text: ohne Hervorhebung, Autovervollständigung,
+ * Formatierungskürzel und Anhänge.
+ */
 export function createExtensions(opts: {
   data: CompletionData
   onChange: (doc: string) => void
@@ -174,20 +178,14 @@ export function createExtensions(opts: {
   onPasteFiles: (files: File[]) => void
   placeholder?: string
   spellcheck?: boolean
+  plain?: boolean
 }): Extension[] {
-  return [
+  const common: Extension[] = [
     history(),
     EditorView.lineWrapping,
     EditorState.tabSize.of(4),
     indentUnit.of('    '),
     theme,
-    yamlFrontmatter({
-      content: markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
-    }),
-    syntaxHighlighting(highlightStyle),
-    obsidianHighlight,
-    closeBrackets(),
-    autocompletion({ override: [completions(opts.data)], icons: false, activateOnTyping: true }),
     search({ top: true }),
     highlightSelectionMatches(),
     placeholderExt(opts.placeholder ?? 'Schreib los …'),
@@ -196,8 +194,27 @@ export function createExtensions(opts: {
         ? { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'sentences', lang: 'de' }
         : { spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', lang: 'de' },
     ),
+    EditorView.updateListener.of((u) => {
+      if (u.docChanged && !u.transactions.some((tr) => tr.annotation(externalChange))) {
+        opts.onChange(u.state.doc.toString())
+      }
+    }),
+  ]
+  const save = { key: 'Mod-s', preventDefault: true, run: () => (opts.onSave(), true) }
+  if (opts.plain) {
+    return [...common, keymap.of([save, ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap])]
+  }
+  return [
+    ...common,
+    yamlFrontmatter({
+      content: markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
+    }),
+    syntaxHighlighting(highlightStyle),
+    obsidianHighlight,
+    closeBrackets(),
+    autocompletion({ override: [completions(opts.data)], icons: false, activateOnTyping: true }),
     keymap.of([
-      { key: 'Mod-s', preventDefault: true, run: () => (opts.onSave(), true) },
+      save,
       { key: 'Mod-b', preventDefault: true, run: (v) => (wrapSelection(v, '**', '**', 'fett'), true) },
       { key: 'Mod-i', preventDefault: true, run: (v) => (wrapSelection(v, '*', '*', 'kursiv'), true) },
       { key: 'Mod-Shift-h', preventDefault: true, run: (v) => (wrapSelection(v, '==', '==', 'wichtig'), true) },
@@ -208,11 +225,6 @@ export function createExtensions(opts: {
       indentWithTab,
       ...defaultKeymap,
     ]),
-    EditorView.updateListener.of((u) => {
-      if (u.docChanged && !u.transactions.some((tr) => tr.annotation(externalChange))) {
-        opts.onChange(u.state.doc.toString())
-      }
-    }),
     EditorView.domEventHandlers({
       paste(event) {
         const files = Array.from(event.clipboardData?.files ?? [])

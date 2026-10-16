@@ -32,7 +32,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { defaultFileUrl } from '@/shared/markdown/obsidian'
-import { getActiveEditor } from '@/features/notes/client/active-editor'
+import { getActiveEditor, insertionToMarkdown, pdfPageLink, type Insertion } from '@/features/notes/client/active-editor'
 import { copyText } from '@/shared/client/clipboard'
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
@@ -330,19 +330,23 @@ export default function PdfPanel({
   }
 
   /** Text in die geöffnete Notiz einfügen – ohne offene Notiz eine neue anlegen. */
-  function insert(text: string, what: string) {
+  function insert(insertion: Insertion, what: string) {
     const editor = getActiveEditor()
     if (editor) {
-      editor.insert(text)
+      editor.insert(insertion)
       toast.success(`${what} in „${editor.title}“ eingefügt.`)
       return
     }
     toast.show('Öffne zuerst eine Notiz, um etwas einzufügen.', {
-      action: { label: 'Neue Notiz', onClick: () => void app.createNote({ title: baseName(file), folderId: null, content: text + '\n' }) },
+      action: {
+        label: 'Neue Notiz',
+        onClick: () =>
+          void app.createNote({ title: baseName(file), folderId: null, format: 'markdown', content: insertionToMarkdown(insertion) + '\n' }),
+      },
     })
   }
 
-  const pageLink = (n: number, label?: string) => `[[${file}#page=${n}${label ? `|${label}` : ''}]]`
+  const pageLink = (n: number, label?: string) => pdfPageLink({ file, page: n }, label)
 
   async function upload(files: File[]) {
     const f = files[0]
@@ -454,7 +458,7 @@ export default function PdfPanel({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => insert(pageLink(current), `Link auf Seite ${current}`)}
+            onClick={() => insert({ kind: 'page-link', ref: { file, page: current } }, `Link auf Seite ${current}`)}
             disabled={!ready}
             aria-label="Seite in Notiz verlinken"
             title="Link auf diese Seite in die Notiz einfügen"
@@ -494,7 +498,7 @@ export default function PdfPanel({
               Ganze Seite
             </MenuItem>
             <MenuSeparator />
-            <MenuItem icon={<Link2 />} onSelect={() => insert(pageLink(current), `Link auf Seite ${current}`)} disabled={!ready}>
+            <MenuItem icon={<Link2 />} onSelect={() => insert({ kind: 'page-link', ref: { file, page: current } }, `Link auf Seite ${current}`)} disabled={!ready}>
               Seite {current} in Notiz verlinken
             </MenuItem>
             <MenuItem
@@ -593,13 +597,7 @@ export default function PdfPanel({
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() =>
-              insert(
-                `${selection.text
-                  .split('\n')
-                  .map((l) => `> ${l}`)
-                  .join('\n')}\n> ${pageLink(selection.page, `S. ${selection.page}`)}`,
-                'Zitat',
-              )
+              insert({ kind: 'quote', text: selection.text, ref: { file, page: selection.page } }, 'Zitat')
             }
           >
             <Quote className="size-4" /> <span className="@max-md:hidden">Zitieren</span>
