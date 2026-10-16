@@ -71,7 +71,9 @@ function update(args: string[] = [], env: Record<string, string> = {}) {
       PATH: `${path.join(fake, 'bin')}:${process.env.PATH}`,
       FAKE_DIR: fake,
       NOTED_HEALTH_INTERVAL: '0',
-      NOTED_HEALTH_TIMEOUT: '1',
+      // SECONDS zählt in ganzen Sekunden: Mit 1 s bliebe je nach Startzeitpunkt kaum Zeit für die zwei
+      // nötigen Prüfungen – unter Last schlug der Test dann sporadisch fehl
+      NOTED_HEALTH_TIMEOUT: '2',
       ...env,
     },
   })
