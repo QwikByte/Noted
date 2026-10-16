@@ -121,6 +121,8 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await expect(page.getByText('Lernstand zurückgesetzt.')).toBeVisible()
   await context.setOffline(true)
   await page.getByTestId('deck-learn').click()
+  // Erst tippen, wenn die Lernansicht da ist – sonst geht die Leertaste je nach Auslastung ins Leere
+  await expect(page.getByTestId('study')).toBeVisible()
   await page.keyboard.press('Space')
   await page.getByTestId('rate-3').click()
   const pendingReviews = () =>
