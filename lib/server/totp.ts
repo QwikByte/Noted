@@ -28,7 +28,7 @@ export async function totpQrDataUrl(uri: string): Promise<string> {
 }
 
 /** Nur Ziffern, Leerzeichen werden toleriert. */
-export function normalizeTotpCode(code: string): string {
+function normalizeTotpCode(code: string): string {
   return code.replace(/\s+/g, '')
 }
 

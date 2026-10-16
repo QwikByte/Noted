@@ -53,7 +53,7 @@ export const AutoTextarea = forwardRef<
   )
 })
 
-export function TypeSwitch({ value, onChange }: { value: CardType; onChange: (t: CardType) => void }) {
+function TypeSwitch({ value, onChange }: { value: CardType; onChange: (t: CardType) => void }) {
   return (
     <div className="flex rounded-xl bg-subtle p-1" role="radiogroup" aria-label="Kartentyp">
       {(['basic', 'reversed', 'mc'] as CardType[]).map((t) => (
@@ -84,7 +84,7 @@ function emptyOptions(): CardOption[] {
 }
 
 /** Prüft eine Karte wie der Server – liefert eine Fehlermeldung oder null. */
-export function validateCard(c: Pick<CardInput, 'type' | 'front' | 'back' | 'options'>): string | null {
+function validateCard(c: Pick<CardInput, 'type' | 'front' | 'back' | 'options'>): string | null {
   if (!c.front.trim()) return 'Bitte gib eine Frage bzw. Vorderseite ein.'
   if (c.type === 'mc') {
     const filled = c.options.filter((o) => o.text.trim())

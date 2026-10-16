@@ -19,7 +19,7 @@ export type StudyScope = 'all' | `deck:${string}` | `note:${string}`
 /** learn: Lernmodus mit Wiederholungsplan · practice: Üben ohne Einfluss auf den Plan */
 export type StudyMode = 'learn' | 'practice'
 
-export function viewFromParams(params: URLSearchParams): View {
+function viewFromParams(params: URLSearchParams): View {
   const n = params.get('n')
   if (n) return { kind: 'note', id: n }
   const f = params.get('f')
@@ -41,7 +41,7 @@ export function viewFromParams(params: URLSearchParams): View {
   return { kind: 'home' }
 }
 
-export function viewToUrl(view: View): string {
+function viewToUrl(view: View): string {
   switch (view.kind) {
     case 'note':
       return `/?n=${encodeURIComponent(view.id)}`

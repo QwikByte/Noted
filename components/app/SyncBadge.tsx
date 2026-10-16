@@ -13,7 +13,7 @@ function subscribeOnline(fn: () => void) {
   }
 }
 
-export function useOnline() {
+function useOnline() {
   return useSyncExternalStore(
     subscribeOnline,
     () => navigator.onLine,

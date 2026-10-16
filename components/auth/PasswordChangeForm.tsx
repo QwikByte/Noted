@@ -5,7 +5,7 @@ import { Button } from '../ui/button'
 import { Field, Input } from '../ui/input'
 import { ErrorText } from '../ui/toast'
 
-export function passwordHint(pw: string): { label: string; tone: 'danger' | 'warning' | 'success'; score: number } {
+function passwordHint(pw: string): { label: string; tone: 'danger' | 'warning' | 'success'; score: number } {
   let score = 0
   if (pw.length >= 10) score++
   if (pw.length >= 14) score++
@@ -17,7 +17,7 @@ export function passwordHint(pw: string): { label: string; tone: 'danger' | 'war
   return { label: 'Stark', tone: 'success', score }
 }
 
-export function PasswordStrength({ password }: { password: string }) {
+function PasswordStrength({ password }: { password: string }) {
   if (!password) return null
   const h = passwordHint(password)
   const color = h.tone === 'danger' ? 'bg-danger' : h.tone === 'warning' ? 'bg-warning' : 'bg-success'

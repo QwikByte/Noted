@@ -79,7 +79,7 @@ function handleAuthError(err: ApiError) {
   }
 }
 
-/** Vom Service Worker zwischengespeicherte Notizen und App-Seite löschen. */
+/** Vom Service Worker zwischengespeicherte Notizen und App-Seite löschen (beim Ab- und Anmelden, damit keine fremden Daten übrig bleiben). */
 export async function clearCachedData() {
   try {
     if ('caches' in window) {

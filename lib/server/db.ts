@@ -44,7 +44,3 @@ export function closeDb() {
   globalForDb.__notedDb = undefined
   globalForDb.__notedDbPath = undefined
 }
-
-export function now(): number {
-  return Date.now()
-}

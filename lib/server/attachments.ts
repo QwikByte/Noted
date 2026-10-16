@@ -73,7 +73,7 @@ const EXT_BY_MIME: Record<string, string> = {
 const INLINE_MIME = /^(image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)|application\/pdf|audio\/[\w.+-]+|video\/[\w.+-]+|text\/plain)$/
 
 /** MIME-Typ nur anhand bekannter Endungen – Angaben des Browsers werden nicht übernommen. */
-export function guessMime(filename: string): string {
+function guessMime(filename: string): string {
   const ext = splitExtension(filename).ext.toLowerCase()
   return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }

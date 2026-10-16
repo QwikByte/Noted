@@ -137,12 +137,6 @@ export type CardReview = SrsState & { cardId: string; side: 0 | 1 }
 
 export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[] }
 
-export type ApiErrorBody = {
-  error: string
-  message: string
-  [key: string]: unknown
-}
-
 /** Zustand des Server-Updates laut scripts/auto-update.sh (.update/status) */
 export type UpdateRunState = 'ok' | 'updating' | 'failed' | 'rolled_back' | 'error' | 'unknown'
 

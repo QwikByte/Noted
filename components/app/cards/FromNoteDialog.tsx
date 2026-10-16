@@ -18,7 +18,7 @@ const NEW_DECK = '__new__'
 const SOURCES: CandidateSource[] = ['syntax', 'question', 'definition', 'bold', 'heading']
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
-export function SyntaxHelp() {
+function SyntaxHelp() {
   return (
     <div className="space-y-2 text-sm text-muted">
       <p>Schreib Karten direkt in deine Notizen – kompatibel mit dem Obsidian-Plugin „Spaced Repetition“:</p>

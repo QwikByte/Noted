@@ -8,7 +8,7 @@ import { api, ApiError, NetworkError } from './api'
 import { reviewKey, stateMap, type StateMap } from '@/lib/shared/study'
 import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData } from '@/lib/shared/types'
 
-export const flashcardsKey = ['flashcards'] as const
+const flashcardsKey = ['flashcards'] as const
 
 const FLUSH_DELAY = 1500
 const RETRY_INTERVAL = 30_000

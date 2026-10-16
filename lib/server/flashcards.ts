@@ -10,8 +10,8 @@ import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData } from
 export const MAX_CARD_TEXT = 20_000
 export const MAX_OPTIONS = 12
 export const MAX_OPTION_TEXT = 2_000
-export const MAX_CARDS_PER_USER = 50_000
-export const MAX_DECK_NAME = 200
+const MAX_CARDS_PER_USER = 50_000
+const MAX_DECK_NAME = 200
 
 type DeckRow = {
   id: string

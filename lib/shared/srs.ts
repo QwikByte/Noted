@@ -19,20 +19,20 @@ export const MINUTE = 60_000
 export const DAY = 86_400_000
 
 /** Lernschritte für neue Karten (Minuten) */
-export const LEARNING_STEPS = [1, 10]
+const LEARNING_STEPS = [1, 10]
 /** Lernschritte nach dem Vergessen (Minuten) */
-export const RELEARNING_STEPS = [10]
-export const GRADUATING_INTERVAL = 1
-export const EASY_INTERVAL = 4
-export const START_EASE = 2.5
-export const MIN_EASE = 1.3
-export const EASY_BONUS = 1.3
-export const HARD_FACTOR = 1.2
+const RELEARNING_STEPS = [10]
+const GRADUATING_INTERVAL = 1
+const EASY_INTERVAL = 4
+const START_EASE = 2.5
+const MIN_EASE = 1.3
+const EASY_BONUS = 1.3
+const HARD_FACTOR = 1.2
 /** Anteil des bisherigen Abstands nach dem Vergessen */
-export const LAPSE_FACTOR = 0.5
-export const MAX_INTERVAL = 36_500
+const LAPSE_FACTOR = 0.5
+const MAX_INTERVAL = 36_500
 /** Ab diesem Abstand (Tage) gilt eine Karte als „sicher“ */
-export const MATURE_INTERVAL = 21
+const MATURE_INTERVAL = 21
 export const DEFAULT_NEW_PER_DAY = 20
 
 const clampEase = (e: number) => Math.max(MIN_EASE, Math.round(e * 100) / 100)
@@ -148,11 +148,6 @@ export function startOfDay(now: number): number {
   const d = new Date(now)
   d.setHours(0, 0, 0, 0)
   return d.getTime()
-}
-
-/** Ist die Karte heute noch dran? (Karten in der Lernphase zählen, sobald sie heute fällig werden.) */
-export function isDueToday(state: SrsState, now: number): boolean {
-  return state.due <= endOfDay(now)
 }
 
 export type CardStatus = 'new' | 'learning' | 'young' | 'mature'

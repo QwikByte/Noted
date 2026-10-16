@@ -47,7 +47,7 @@ export function stripCode(text: string): string {
 
 const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
 
-export function normalizeTag(tag: string): string | null {
+function normalizeTag(tag: string): string | null {
   const t = tag.trim().replace(/^#+/, '').replace(/\/+$/, '').toLowerCase()
   if (!t || !/^[\p{L}\p{N}_\-/]+$/u.test(t)) return null
   if (/^[\d/]+$/.test(t)) return null // rein numerisch ist kein Tag

@@ -39,5 +39,3 @@ export function getConfig() {
     ),
   }
 }
-
-export type AppConfig = ReturnType<typeof getConfig>
