@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { getUserById, toPublicUser, updateUser } from '@/lib/server/users'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { getUserById, toPublicUser, updateUser } from '@/features/auth/server/users'
 
 const schema = z.object({
   displayName: z.string().trim().max(80, 'Der Anzeigename ist zu lang.'),

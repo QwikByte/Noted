@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { createFolder, listFolders } from '@/lib/server/notes'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { createFolder, listFolders } from '@/features/notes/server/notes'
 
 export const GET = route('user', ({ user }) => json({ folders: listFolders(user.id) }))
 

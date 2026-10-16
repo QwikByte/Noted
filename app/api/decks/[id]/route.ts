@@ -1,5 +1,6 @@
-import { json, parseJson, route } from '@/lib/server/http'
-import { deckSchema, deleteDeck, updateDeck } from '@/lib/server/flashcards'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { deckSchema, deleteDeck, updateDeck } from '@/features/flashcards/server/flashcards'
 
 export const PATCH = route<{ id: string }>('user', async ({ req, user, params }) => {
   const body = await parseJson(req, deckSchema.partial())

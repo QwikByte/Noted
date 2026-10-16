@@ -1,5 +1,6 @@
-import { json, route } from '@/lib/server/http'
-import { listAudit } from '@/lib/server/audit'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { listAudit } from '@/shared/server/audit'
 
 export const GET = route('admin', ({ req }) => {
   const before = Number(req.nextUrl.searchParams.get('before')) || undefined

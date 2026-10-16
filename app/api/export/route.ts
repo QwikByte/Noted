@@ -1,5 +1,5 @@
-import { route } from '@/lib/server/http'
-import { exportVaultStream } from '@/lib/server/vault'
+import { route } from '@/features/auth/server/route'
+import { exportVaultStream } from '@/features/vault/server/vault'
 
 /** Alle Notizen + Anhänge als ZIP (direkt als Obsidian-Vault nutzbar) */
 export const GET = route('user', ({ user }) => {

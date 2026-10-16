@@ -290,23 +290,36 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 - Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, markdown-it, KaTeX, Mermaid, pdf.js
 - Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), @node-rs/argon2, otpauth
 
-**Aufbau:**
+**Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
 
 ```
-app/                  Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
-components/           UI: app/ (Notizen), auth/, admin/, settings/, ui/ (Bausteine)
-components/app/cards/  Karteikarten: Übersicht, Stapel, Karteneditor, Lernen/Üben, „Karten aus Notiz“
-components/app/pdf/   PDF-Viewer (pdf.js) und geteilte Ansicht
-lib/server/           Datenbank, Auth, Sessions, MFA, Notizen, Anhänge, Karteikarten, Export/Import
-lib/client/           API-Client, lokale Sicherung/Sync, Markdown-Rendering, Editor, Karteikarten (Offline-Bewertungen)
-lib/shared/           Gemeinsamer Code (Obsidian-Metadaten, Namensregeln, Vorlagen, Typen, Wiederholungsplan, Karten ↔ Markdown)
-sw/service-worker.js  Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
-proxy.ts              Content-Security-Policy und Login-Umleitung
-scripts/install.sh    Installer für Ubuntu/Debian
+app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
+features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
+  workspace/            App-Rahmen: Seitenleiste, Navigation, App-Kontext, Benutzermenü
+  notes/                Notizen, Ordner, Tags, Suche, Papierkorb, Editor, Vorschau, lokale Sicherung/Sync, Vorlagen
+  attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
+  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
+  pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
+  vault/                Export und Import als Obsidian-Vault (ZIP)
+  auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
+  admin/                Benutzerverwaltung (Administration)
+  settings/             Einstellungsseite
+  updates/              Version, Update-Erkennung im Browser, Status der automatischen Updates
+shared/                 Feature-unabhängiger Code (importiert nie aus features/)
+  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst
+  client/               API-Client, Zwischenablage, lokale Einstellungen
+  server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
+  markdown/             Obsidian-Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
+  lib/                  Namensregeln, Formatierung
+sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
+instrumentation.ts      Serverstart: Datenbank öffnen und migrieren, ersten Admin anlegen, regelmäßig aufräumen
+proxy.ts                Content-Security-Policy und Login-Umleitung
+scripts/install.sh      Installer für Ubuntu/Debian
 scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
-scripts/domain.sh     Domain anzeigen/ändern (sudo noted-domain)
+scripts/domain.sh       Domain anzeigen/ändern (sudo noted-domain)
 scripts/build-info.mjs  Versionsinfos für den Build (läuft vor `npm run build`)
 scripts/vendor-pdfjs.mjs  Kopiert Worker, Schriften und Decoder von pdf.js nach public/pdfjs (vor `build` und `dev`)
-scripts/admin-cli.mjs Notfall-Werkzeug für Admins (inkl. Sicherung/Wiederherstellung)
-tests/, e2e/          Vitest- und Playwright-Tests
+scripts/admin-cli.mjs   Notfall-Werkzeug für Admins (inkl. Sicherung/Wiederherstellung)
+tests/                  Testhelfer und Tests für die Skripte in scripts/
+e2e/                    Browser-Tests (Playwright)
 ```

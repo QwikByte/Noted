@@ -1,6 +1,7 @@
-import { json, route } from '@/lib/server/http'
-import { deleteUserSessions, listUserSessions } from '@/lib/server/session'
-import { audit } from '@/lib/server/audit'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { deleteUserSessions, listUserSessions } from '@/features/auth/server/session'
+import { audit } from '@/shared/server/audit'
 
 export const GET = route('setup', ({ user, session }) => {
   return json({ sessions: listUserSessions(user.id, session.id) })

@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { disableMfa } from '@/lib/server/auth'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { disableMfa } from '@/features/auth/server/auth'
 
 const schema = z.object({
   password: z.string().min(1, 'Bitte gib dein Passwort ein.').max(512),

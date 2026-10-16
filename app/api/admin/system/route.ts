@@ -1,7 +1,8 @@
-import { json, route } from '@/lib/server/http'
-import { canRequestUpdate, readUpdateRequest, readUpdateStatus } from '@/lib/server/update-status'
-import { BUILD } from '@/lib/shared/build'
-import type { SystemInfo } from '@/lib/shared/types'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { canRequestUpdate, readUpdateRequest, readUpdateStatus } from '@/features/updates/server/update-status'
+import { BUILD } from '@/features/updates/build'
+import type { SystemInfo } from '@/features/updates/types'
 
 export const GET = route('admin', () => {
   const system: SystemInfo = {

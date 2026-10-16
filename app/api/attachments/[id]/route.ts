@@ -1,5 +1,6 @@
-import { json, route } from '@/lib/server/http'
-import { attachmentResponse, deleteAttachment, getAttachment } from '@/lib/server/attachments'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { attachmentResponse, deleteAttachment, getAttachment } from '@/features/attachments/server/attachments'
 
 export const GET = route<{ id: string }>('user', ({ req, user, params }) => {
   const att = getAttachment(user.id, params.id)

@@ -1,5 +1,6 @@
-import { json, route } from '@/lib/server/http'
-import { startMfaSetup } from '@/lib/server/auth'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { startMfaSetup } from '@/features/auth/server/auth'
 
 /** Startet die MFA-Einrichtung: neues Geheimnis + QR-Code */
 export const POST = route('setup', async ({ user }) => {

@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { getSettings, updateSettings } from '@/lib/server/settings'
-import { audit } from '@/lib/server/audit'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { getSettings, updateSettings } from '@/features/auth/server/settings'
+import { audit } from '@/shared/server/audit'
 
 export const GET = route('admin', () => json({ settings: getSettings() }))
 

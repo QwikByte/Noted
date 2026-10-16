@@ -1,6 +1,7 @@
-import { json, notFound, route } from '@/lib/server/http'
-import { deleteUserSessionByPrefix } from '@/lib/server/session'
-import { audit } from '@/lib/server/audit'
+import { json, notFound } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { deleteUserSessionByPrefix } from '@/features/auth/server/session'
+import { audit } from '@/shared/server/audit'
 
 export const DELETE = route<{ id: string }>('setup', ({ user, params, ip }) => {
   if (!deleteUserSessionByPrefix(user.id, params.id)) throw notFound('Sitzung nicht gefunden.')

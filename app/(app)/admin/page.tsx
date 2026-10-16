@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import { requireAppUser } from '@/lib/server/page-auth'
-import { AdminPage } from '@/components/admin/AdminPage'
+import { requireAppUser } from '@/features/auth/server/page-auth'
+import { AdminPage } from '@/features/admin/components/AdminPage'
 
 export const metadata: Metadata = { title: 'Administration' }
 

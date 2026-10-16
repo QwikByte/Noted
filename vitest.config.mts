@@ -10,7 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['{features,shared,tests}/**/*.test.ts'],
     pool: 'forks',
     testTimeout: 20000,
     env: { NODE_ENV: 'test' },

@@ -1,8 +1,10 @@
 import { z } from 'zod'
-import { json, parseJson, route, setSessionCookie } from '@/lib/server/http'
-import { login } from '@/lib/server/auth'
-import { deleteSession, SESSION_COOKIE } from '@/lib/server/session'
-import { sha256 } from '@/lib/server/crypto'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { setSessionCookie } from '@/features/auth/server/cookies'
+import { login } from '@/features/auth/server/auth'
+import { deleteSession, SESSION_COOKIE } from '@/features/auth/server/session'
+import { sha256 } from '@/shared/server/crypto'
 
 const schema = z.object({
   username: z.string().trim().min(1, 'Bitte gib deinen Benutzernamen ein.').max(64),

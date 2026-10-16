@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { deleteFolder, updateFolder } from '@/lib/server/notes'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { deleteFolder, updateFolder } from '@/features/notes/server/notes'
 
 const schema = z.object({
   name: z.string().max(300).optional(),

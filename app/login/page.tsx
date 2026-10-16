@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { getPageSession } from '@/lib/server/page-auth'
-import { pendingSetup } from '@/lib/server/users'
-import { LoginForm } from '@/components/auth/LoginForm'
-import { AuthShell } from '@/components/auth/AuthShell'
-import { safeRedirectPath as safeNext } from '@/lib/shared/redirect'
+import { getPageSession } from '@/features/auth/server/page-auth'
+import { pendingSetup } from '@/features/auth/server/users'
+import { LoginForm } from '@/features/auth/components/LoginForm'
+import { AuthShell } from '@/features/auth/components/AuthShell'
+import { safeRedirectPath as safeNext } from '@/features/auth/redirect'
 
 export const metadata: Metadata = { title: 'Anmelden' }
 

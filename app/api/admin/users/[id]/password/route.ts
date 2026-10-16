@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { adminResetPassword } from '@/lib/server/admin'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { adminResetPassword } from '@/features/admin/server/admin'
 
 const schema = z.object({ password: z.string().max(256).optional() })
 

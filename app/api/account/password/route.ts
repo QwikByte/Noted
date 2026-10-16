@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { json, parseJson, route } from '@/lib/server/http'
-import { changePassword } from '@/lib/server/auth'
+import { json, parseJson } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { changePassword } from '@/features/auth/server/auth'
 
 const schema = z.object({
   currentPassword: z.string().min(1, 'Bitte gib dein aktuelles Passwort ein.').max(512),

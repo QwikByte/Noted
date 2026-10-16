@@ -12,11 +12,12 @@ export async function setupTestEnv() {
   process.env.ADMIN_USERNAME = 'admin'
   process.env.ADMIN_PASSWORD = ADMIN_PASSWORD
   process.env.SECRET_KEY = 'test-secret'
-  const { closeDb, getDb } = await import('@/lib/server/db')
-  const { clearAllRateLimits } = await import('@/lib/server/rate-limit')
+  const { closeDb, getDb } = await import('@/shared/server/db')
+  const { clearAllRateLimits } = await import('@/shared/server/rate-limit')
+  const { bootstrapAdmin } = await import('@/features/auth/server/bootstrap')
   closeDb()
   clearAllRateLimits()
-  getDb()
+  bootstrapAdmin(getDb())
   return {
     dir,
     cleanup() {

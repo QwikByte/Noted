@@ -1,6 +1,6 @@
-import { requireAppUser } from '@/lib/server/page-auth'
-import { toPublicUser } from '@/lib/server/users'
-import { AppProviders } from '@/components/app/AppProviders'
+import { requireAppUser } from '@/features/auth/server/page-auth'
+import { toPublicUser } from '@/features/auth/server/users'
+import { AppProviders } from '@/features/workspace/components/AppProviders'
 
 export default async function AppLayout({ children }: LayoutProps<'/'>) {
   const user = await requireAppUser()

@@ -1,5 +1,6 @@
-import { json, route } from '@/lib/server/http'
-import { adminResetMfa } from '@/lib/server/admin'
+import { json } from '@/shared/server/http'
+import { route } from '@/features/auth/server/route'
+import { adminResetMfa } from '@/features/admin/server/admin'
 
 /** MFA zurücksetzen (z. B. bei verlorenem Handy) */
 export const DELETE = route<{ id: string }>('admin', ({ user, ip, params }) => {

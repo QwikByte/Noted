@@ -12,7 +12,7 @@ const dest = path.join(root, 'public/pdfjs')
 const { version } = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8'))
 fs.rmSync(dest, { recursive: true, force: true })
 fs.mkdirSync(dest, { recursive: true })
-// „legacy“-Build wie im Viewer (components/app/pdf/PdfPanel.tsx) – läuft auch in älteren Browsern
+// „legacy“-Build wie im Viewer (features/pdf/components/PdfPanel.tsx) – läuft auch in älteren Browsern
 fs.copyFileSync(path.join(src, 'legacy/build/pdf.worker.min.mjs'), path.join(dest, 'pdf.worker.min.mjs'))
 for (const dir of ['cmaps', 'standard_fonts', 'iccs', 'wasm']) {
   // QuickJS dient nur für JavaScript in PDF-Formularen – das ist im Viewer abgeschaltet
