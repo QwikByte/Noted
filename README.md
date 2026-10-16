@@ -54,6 +54,16 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
 - Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
 
+**Werkzeugleiste und Fokus-Timer**
+- Eine kleine Werkzeugleiste schwebt über der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Sie lässt sich einklappen und an jede Stelle ziehen – am Griff oder mit den Pfeiltasten. Position und Zustand merkt sich das Gerät.
+- Werkzeuge öffnen sich als kleine Fenster, die sich ebenfalls verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
+- **Fokus-Timer:**
+  - *Pomodoro*: 25 Minuten Fokus, 5 Minuten Pause, nach 4 Runden eine lange Pause von 15 Minuten. Alle Zeiten sind einstellbar, Fokus und Pausen wechseln automatisch.
+  - *Countdown*: 5 bis 90 Minuten oder eine eigene Dauer.
+  - Die Restzeit steht auch an der eingeklappten Leiste.
+  - Am Ende einer Phase gibt es einen Ton und eine Meldung. Auf Wunsch kommt zusätzlich eine Systembenachrichtigung, wenn du gerade nicht in Noted bist.
+  - Der Timer läuft beim Seitenwechsel und nach dem Neuladen weiter und gilt für alle offenen Tabs. Er wird nur auf dem Gerät gespeichert, nicht auf dem Server.
+
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen. Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im Vault.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, `#flashcards/…`). Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
@@ -305,12 +315,13 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 ```
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
-  workspace/            App-Rahmen: Seitenleiste, Navigation, App-Kontext, Benutzermenü
+  workspace/            App-Rahmen: Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
   notes/                Notizen in fünf Formaten, Ordner, Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
+  focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
   vault/                Export und Import als Obsidian-Vault (ZIP)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
