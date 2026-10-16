@@ -114,7 +114,7 @@ test('Formatierter Text: schreiben wie in Word, Seitenlink aus dem PDF, Lesemodu
   await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
   await page.getByRole('menuitem', { name: /Format/ }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('radio', { name: /Markdown/ }).click()
+  await dialog.getByRole('radio', { name: /^Markdown/ }).click()
   await expect(dialog.getByTestId('format-hint')).toContainText('Schriftfarben')
   await shot(page, '42-format-dialog')
   await dialog.getByRole('button', { name: 'Umwandeln' }).click()

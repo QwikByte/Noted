@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { AlertTriangle, AlignLeft, Check, Hash, Info, Type } from 'lucide-react'
-import { NOTE_FORMAT_IDS, NOTE_FORMAT_LABELS } from '../format'
+import { AlertTriangle, AlignLeft, Check, Hash, Info, LayoutDashboard, Network, Type } from 'lucide-react'
+import { NOTE_FORMAT_IDS, NOTE_FORMAT_LABELS, isVisualFormat } from '../format'
 import type { NoteFormat } from '../types'
 import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
@@ -11,6 +11,8 @@ const ICONS: Record<NoteFormat, React.ReactNode> = {
   markdown: <Hash />,
   richtext: <Type />,
   text: <AlignLeft />,
+  mindmap: <Network />,
+  canvas: <LayoutDashboard />,
 }
 
 /** Auswahl des Formats einer Notiz */
@@ -25,7 +27,7 @@ export function FormatPicker({
   current?: NoteFormat
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Format">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Format">
       {NOTE_FORMAT_IDS.map((id) => (
         <button
           key={id}
@@ -51,9 +53,37 @@ export function FormatPicker({
   )
 }
 
+const CANVAS_TO_TEXT =
+  'Die Karten werden von oben nach unten hintereinander gestellt, Gruppen zu Überschriften. Anordnung, Pfeile und Farben entfallen.'
+
+/** Umwandlungen von und zu Mindmap und Canvas */
+function visualHint(from: NoteFormat, to: NoteFormat): { text: string; lossy: boolean } {
+  if (from === 'mindmap') {
+    if (to === 'canvas') return { text: 'Jeder Punkt wird eine Karte, die Äste werden Linien – danach frei anordnen.', lossy: true }
+    if (to === 'richtext') return { text: 'Die Gliederung wird zu Überschriften und Listen, Properties (YAML) entfallen.', lossy: true }
+    return { text: 'Die Gliederung bleibt als Überschriften und Liste erhalten.', lossy: false }
+  }
+  if (from === 'canvas') {
+    if (to === 'mindmap') return { text: 'Die Karten werden zu Punkten unter der Wurzel. Anordnung, Pfeile und Farben entfallen.', lossy: true }
+    return { text: CANVAS_TO_TEXT, lossy: true }
+  }
+  if (to === 'mindmap') {
+    if (from === 'text') return { text: 'Jede Zeile wird ein Punkt der Mindmap.', lossy: false }
+    return {
+      text: 'Überschriften und Listen werden zu Ästen, Absätze zu eigenen Punkten. Code-Blöcke, Tabellen und Formatierungen entfallen.',
+      lossy: true,
+    }
+  }
+  if (from === 'richtext') {
+    return { text: 'Der Text kommt als Markdown auf eine Karte. Schriftfarben, Schriftgrößen und Ausrichtung entfallen.', lossy: true }
+  }
+  return { text: 'Der Text kommt unverändert auf eine einzelne Karte.', lossy: false }
+}
+
 /** Was beim Umwandeln passiert; `lossy`: lässt sich nicht verlustfrei zurückwandeln */
 function conversionHint(from: NoteFormat, to: NoteFormat): { text: string; lossy: boolean } | null {
   if (from === to) return null
+  if (isVisualFormat(from) || isVisualFormat(to)) return visualHint(from, to)
   if (from === 'markdown' && to === 'richtext') {
     return {
       text: 'Properties (YAML) entfallen. Callouts, Formeln und [[Wikilinks]] bleiben als Text stehen, werden aber nicht mehr dargestellt.',

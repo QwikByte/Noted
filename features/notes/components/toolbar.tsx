@@ -10,6 +10,7 @@ export function ToolButton({
   children,
   className,
   active,
+  keepFocus = true,
   ...rest
 }: {
   label: string
@@ -18,6 +19,8 @@ export function ToolButton({
   className?: string
   /** Formatierung an der Cursorposition aktiv (z. B. fett) */
   active?: boolean
+  /** Fokus im Editor behalten – aus, wenn ein offenes Textfeld beim Klicken erst speichern soll (Mindmap, Canvas) */
+  keepFocus?: boolean
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'>) {
   return (
     <button
@@ -26,7 +29,7 @@ export function ToolButton({
       aria-label={label}
       aria-pressed={active}
       // Fokus im Editor behalten (wichtig auf dem Handy: Tastatur bleibt offen)
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
       onClick={onClick}
       className={cn(
         'flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg active:bg-active [&>svg]:size-[18px]',

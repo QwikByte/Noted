@@ -41,6 +41,14 @@
   --rule: #d9483b;
   --grid-line: #e1e6f0;
   --card-line: #e4e9f5;
+  /* Farben für Mindmap-Äste und Canvas-Karten (wie Obsidian: 1 Rot, 2 Orange, 3 Gelb, 4 Grün, 5 Türkis, 6 Lila) */
+  --swatch-1: #d4473a;
+  --swatch-2: #d27222;
+  --swatch-3: #b58d00;
+  --swatch-4: #2b9257;
+  --swatch-5: #178ea3;
+  --swatch-6: #8550cc;
+  --edge: #8a90a3;
   --shadow: 0 1px 2px rgb(26 32 48 / 0.05), 0 2px 8px rgb(26 32 48 / 0.05);
   --shadow-lg: 0 2px 6px rgb(26 32 48 / 0.06), 0 14px 40px rgb(26 32 48 / 0.16);
   color-scheme: light;
@@ -74,6 +82,13 @@
   --rule: #e2695e;
   --grid-line: #212634;
   --card-line: #232939;
+  --swatch-1: #f0776e;
+  --swatch-2: #f2a05b;
+  --swatch-3: #e3c24f;
+  --swatch-4: #5fd394;
+  --swatch-5: #57c4d6;
+  --swatch-6: #b892f2;
+  --edge: #6f768a;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 10px rgb(0 0 0 / 0.25);
   --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.3), 0 14px 40px rgb(0 0 0 / 0.5);
   color-scheme: dark;
@@ -943,4 +958,376 @@
 .dark .pdf-container .pdfViewer .page {
   /* Seiten bleiben weiß (Folien und Skripte sind so gestaltet), nur etwas gedämpft */
   filter: brightness(0.92);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mindmap und Canvas (React Flow)                                      */
+/* ------------------------------------------------------------------ */
+/* Karopapier wie in der übrigen App – wandert beim Verschieben und Zoomen mit */
+.flow-surface {
+  --xy-background-color: var(--bg-subtle);
+  --xy-background-pattern-color: var(--grid-line);
+  --xy-node-border-radius: 0;
+  --xy-node-boxshadow-selected: none;
+  --xy-handle-background-color: var(--accent);
+  --xy-handle-border-color: var(--bg-elevated);
+  --xy-edge-stroke: var(--edge);
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 2;
+  --xy-selection-background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  --xy-selection-border: 1px dashed var(--accent);
+  --xy-resize-background-color: var(--accent);
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+.flow-surface:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.flow-surface .react-flow__node {
+  cursor: default;
+}
+.flow-panel {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+/* Bis alles gemessen und eingepasst ist, nicht herumspringen lassen */
+.mindmap-flow .react-flow {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.mindmap-flow[data-ready] .react-flow {
+  opacity: 1;
+}
+
+/* ---- Mindmap ---- */
+/* Neu angeordnete Knoten gleiten an ihren Platz (nicht beim Ziehen) */
+.mindmap-flow .react-flow__node:not(.dragging):not(.is-moving) {
+  transition: transform 0.18s ease;
+}
+.mind-node {
+  position: relative;
+  max-width: 260px;
+  border: 1.5px solid transparent;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.mind-root {
+  max-width: 320px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+.mind-main {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border-color: var(--branch);
+  background: color-mix(in srgb, var(--branch) 12%, var(--bg-elevated));
+  font-weight: 600;
+}
+.mind-leaf {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border-color: var(--border);
+  background: var(--bg-elevated);
+}
+.mind-node.is-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+.mind-root.is-selected {
+  border-color: var(--on-accent);
+}
+.mind-node.is-drop {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}
+.mind-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.mind-text .task-checkbox {
+  flex-shrink: 0;
+  transform: translateY(1px);
+}
+.mind-md.markdown-body {
+  font-family: var(--font-sans);
+  line-height: inherit;
+}
+/* Preview bettet das HTML in ein eigenes div ein */
+.mind-md.markdown-body > div > * {
+  margin: 0;
+}
+.mind-md.markdown-body a {
+  color: inherit;
+}
+.mind-root .mind-md.markdown-body .wikilink,
+.mind-root .mind-md.markdown-body .tag {
+  color: var(--on-accent);
+}
+.mind-md.markdown-body img {
+  max-width: 220px;
+  border-radius: 6px;
+}
+.mind-empty {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.mind-input {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+.mind-toggle {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  transform: translateY(-50%);
+  border: 1.5px solid var(--branch);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.mind-toggle[data-side='right'] {
+  right: -11px;
+}
+.mind-toggle[data-side='left'] {
+  left: -11px;
+}
+/* Anschlüsse der Äste sind nur Ankerpunkte, keine Bedienelemente */
+.mindmap-flow .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Canvas ---- */
+.canvas-card {
+  --card: var(--border-strong);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--card);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+}
+.canvas-card.has-color {
+  background: color-mix(in srgb, var(--card) 9%, var(--bg-elevated));
+}
+.canvas-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.canvas-group {
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--card) 70%, transparent);
+  background: color-mix(in srgb, var(--card) 7%, transparent);
+  box-shadow: none;
+}
+.canvas-group.has-color {
+  background: color-mix(in srgb, var(--card) 12%, transparent);
+}
+.canvas-group-label {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 18%, var(--bg-elevated));
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-group-input {
+  width: 14rem;
+  background: transparent;
+  outline: none;
+}
+.canvas-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  border-radius: inherit;
+}
+.canvas-text .canvas-scroll > div {
+  padding: 10px 14px;
+}
+.canvas-scroll .markdown-body,
+.canvas-scroll .plain-text {
+  max-width: none;
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+.canvas-text .canvas-scroll .markdown-body {
+  padding: 0;
+}
+.canvas-scroll .markdown-body > div > :first-child {
+  margin-top: 0;
+}
+.canvas-scroll .markdown-body > div > :last-child {
+  margin-bottom: 0;
+}
+.canvas-empty {
+  color: var(--text-faint);
+}
+.canvas-input {
+  flex: 1;
+  width: 100%;
+  padding: 10px 14px;
+  resize: none;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+.canvas-note {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.canvas-note-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: left;
+}
+.canvas-note-title:hover {
+  text-decoration: underline;
+}
+/* Zeile einer Datei- oder Link-Karte */
+.canvas-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.canvas-row.is-missing {
+  color: var(--text-muted);
+  border-radius: inherit;
+  outline: 1.5px dashed var(--border-strong);
+  outline-offset: -6px;
+}
+.canvas-file-open {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  font-size: 12px;
+  font-weight: 600;
+}
+.canvas-file-open:hover {
+  background: var(--bg-active);
+}
+.canvas-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.canvas-handle.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.canvas-card:hover .canvas-handle,
+.canvas-card.is-selected .canvas-handle,
+.react-flow__node.connectingto .canvas-handle,
+.react-flow.connecting .canvas-handle {
+  opacity: 1;
+}
+/* Auf dem Handy größere Anschlüsse, damit man sie mit dem Finger trifft; Textfelder ab 16 px, sonst zoomt iOS hinein */
+@media (pointer: coarse) {
+  .mind-input,
+  .canvas-input,
+  .canvas-group-input,
+  .canvas-edge-input {
+    font-size: 16px;
+  }
+  .canvas-handle.react-flow__handle {
+    width: 18px;
+    height: 18px;
+  }
+  .canvas-card.is-selected .canvas-handle {
+    opacity: 1;
+  }
+}
+.canvas-edge-label {
+  position: absolute;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12.5px;
+  pointer-events: all;
+}
+.canvas-edge-label.is-selected {
+  border-color: var(--accent);
+}
+.canvas-edge-input {
+  width: 10rem;
+  background: transparent;
+  outline: none;
+}
+.canvas-hint {
+  max-width: min(32rem, calc(100% - 2rem));
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.canvas-swatch {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 999px;
 }

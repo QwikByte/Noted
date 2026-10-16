@@ -289,3 +289,79 @@ describe('Formate', () => {
     expect(after.data.note.content).toBe('<p>Siehe [[Katz &amp; Maus]] und [[Katz &amp; Maus|die beiden]]</p>')
   })
 })
+
+describe('Mindmap und Canvas', () => {
+  async function create(title: string, content: string, format: string) {
+    return call(notes.POST, '/api/notes', { cookie: token, body: { title, content, format } })
+  }
+  const canvas = (nodes: object[], edges: object[] = []) => JSON.stringify({ nodes, edges })
+  const box = { x: 0, y: 0, width: 200, height: 100 }
+
+  it('speichert Mindmaps als Markdown und indiziert sie wie Markdown', async () => {
+    const r = await create('Lernplan', '---\nmindmap-plugin: basic\n---\n\n# Lernplan\n\n## Analysis #mathe\n- [[Grenzwerte]]\n', 'mindmap')
+    expect(r.status).toBe(201)
+    expect(r.data.note).toMatchObject({ format: 'mindmap', tags: ['mathe'], excerpt: 'Lernplan Analysis #mathe Grenzwerte' })
+    const bl = await call(backlinks.GET, '/', { cookie: token, params: { id: (await newNote('Grenzwerte')).id } })
+    expect(bl.data.backlinks.map((b: { id: string }) => b.id)).toContain(r.data.note.id)
+  })
+
+  it('indiziert den Text der Karten eines Canvas und lehnt kaputte Canvas-Dateien ab', async () => {
+    const content = canvas([
+      { id: 'a', type: 'text', text: 'Thermodynamik #physik', ...box },
+      { id: 'b', type: 'file', file: 'Wärmelehre', ...box, x: 300 },
+      { id: 'c', type: 'group', label: 'Kapitel 1', ...box, width: 1000, height: 400 },
+    ])
+    const r = await create('Übersicht', content, 'canvas')
+    expect(r.status).toBe(201)
+    expect(r.data.note).toMatchObject({ format: 'canvas', tags: ['physik'] })
+    expect(r.data.note.content).toBe(content)
+    const found = await call(search.GET, '/', { cookie: token, query: { q: 'thermodynamik' } })
+    expect(found.data.results.map((x: { id: string }) => x.id)).toContain(r.data.note.id)
+    // JSON-Bestandteile sind nicht durchsuchbar
+    const json = await call(search.GET, '/', { cookie: token, query: { q: 'width' } })
+    expect(json.data.results.map((x: { id: string }) => x.id)).not.toContain(r.data.note.id)
+    const bl = await call(backlinks.GET, '/', { cookie: token, params: { id: (await newNote('Wärmelehre')).id } })
+    expect(bl.data.backlinks.map((b: { id: string }) => b.id)).toContain(r.data.note.id)
+
+    expect((await create('Kaputt', '{"nodes": [', 'canvas')).status).toBe(400)
+    // Format wechseln ohne umgewandelten Inhalt: Markdown ist kein Canvas
+    const md = await newNote('Text', '# Hallo')
+    const change = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: md.id }, body: { format: 'canvas' } })
+    expect(change.status).toBe(400)
+    expect((await create('Leer', '', 'canvas')).status).toBe(201)
+  })
+
+  it('passt Textkarten und Notiz-Karten im Canvas beim Umbenennen an', async () => {
+    const target = await newNote('Optik Grundlagen')
+    const r = await create(
+      'Pinnwand',
+      canvas([
+        { id: 'a', type: 'text', text: 'Siehe [[Optik Grundlagen|Optik]]', ...box },
+        { id: 'b', type: 'file', file: 'Optik Grundlagen', subpath: '#Linsen', ...box, x: 300 },
+        { id: 'c', type: 'file', file: 'Folie.png', ...box, x: 600 },
+      ]),
+      'canvas',
+    )
+    const ren = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: target.id }, body: { title: 'Wellenoptik' } })
+    expect(ren.data.linksUpdated).toBe(2)
+    const after = await call(note.GET, '/', { cookie: token, params: { id: r.data.note.id } })
+    const nodes = JSON.parse(after.data.note.content).nodes
+    expect(nodes.map((n: { text?: string; file?: string }) => n.text ?? n.file)).toEqual([
+      'Siehe [[Wellenoptik|Optik]]',
+      'Wellenoptik',
+      'Folie.png',
+    ])
+    expect(nodes[1].subpath).toBe('#Linsen')
+  })
+
+  it('bietet ein Canvas als .canvas mit Pfaden wie im Vault zum Download an', async () => {
+    const dir = await newFolder('Physik')
+    await newNote('Impuls', '', dir.id)
+    const r = await create('Mechanik', canvas([{ id: 'a', type: 'file', file: 'Impuls', ...box }]), 'canvas')
+    const d = await call(download.GET, '/', { cookie: token, params: { id: r.data.note.id } })
+    expect(d.res.headers.get('content-type')).toMatch(/application\/json/)
+    expect(d.res.headers.get('content-disposition')).toContain(encodeURIComponent('Mechanik.canvas'))
+    // Der Testhelfer liest JSON-Antworten bereits aus
+    expect(d.data.nodes[0].file).toBe('Physik/Impuls.md')
+  })
+})

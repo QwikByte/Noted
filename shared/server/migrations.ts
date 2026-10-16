@@ -180,4 +180,13 @@ export const migrations: string[] = [
   /* 4: Format einer Notiz – markdown (Obsidian), richtext (HTML aus dem Editor), text (ohne Formatierung) */ `
   ALTER TABLE notes ADD COLUMN format TEXT NOT NULL DEFAULT 'markdown' CHECK (format IN ('markdown', 'richtext', 'text'));
   `,
+
+  /* 5: Formate Mindmap und Canvas. SQLite kann eine CHECK-Bedingung nicht ändern – daher die Spalte über eine
+     neue ersetzen (DROP COLUMN statt Tabelle neu anlegen: so greifen die Fremdschlüssel von Tags und Links nicht) */ `
+  ALTER TABLE notes ADD COLUMN format_new TEXT NOT NULL DEFAULT 'markdown'
+    CHECK (format_new IN ('markdown', 'richtext', 'text', 'mindmap', 'canvas'));
+  UPDATE notes SET format_new = format;
+  ALTER TABLE notes DROP COLUMN format;
+  ALTER TABLE notes RENAME COLUMN format_new TO format;
+  `,
 ]

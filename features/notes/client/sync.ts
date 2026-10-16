@@ -54,6 +54,8 @@ class SyncStore {
   private snapshot: Draft[] = []
   private retryTimer: ReturnType<typeof setInterval> | null = null
   private started = false
+  /** In dieser Sitzung angelegte Notizen – auch wenn sie schon gespeichert sind, bevor der Editor erscheint */
+  private created = new Set<string>()
   /** Notiz, die gerade im Editor offen ist (Konflikte dort nicht automatisch lösen) */
   activeId: string | null = null
 
@@ -115,6 +117,10 @@ class SyncStore {
     return this.status.get(id) ?? SAVED
   }
 
+  wasCreatedHere(id: string) {
+    return this.created.has(id)
+  }
+
   hasPending() {
     return this.drafts.size > 0
   }
@@ -147,6 +153,7 @@ class SyncStore {
   create(input: { id: string; title: string; folderId: string | null; content: string; format: NoteFormat }) {
     const draft: Draft = { ...input, isNew: true, baseVersion: null, rev: 1, updatedAt: Date.now() }
     this.drafts.set(input.id, draft)
+    this.created.add(input.id)
     this.setStatus(input.id, { state: 'pending' })
     this.persist()
     this.emit()
