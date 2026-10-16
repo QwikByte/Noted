@@ -1,8 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { ArrowLeft, KeyRound, ShieldCheck } from 'lucide-react'
-import { api, errorMessage, ApiError } from '@/lib/client/api'
-import { clearOfflineCaches } from '@/lib/client/session'
+import { api, clearCachedData, errorMessage, ApiError } from '@/lib/client/api'
 import { Button } from '../ui/button'
 import { Field, Input } from '../ui/input'
 import { ErrorText } from '../ui/toast'
@@ -18,7 +17,7 @@ export function LoginForm({ next, mfaPending }: { next: string; mfaPending: bool
   const [loading, setLoading] = useState(false)
 
   async function finish(res: LoginResponse) {
-    await clearOfflineCaches()
+    await clearCachedData()
     location.href = res.setup ? '/setup' : next
   }
 

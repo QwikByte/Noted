@@ -2,7 +2,7 @@ import 'server-only'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getSession, SESSION_COOKIE } from './session'
-import { pendingSetup, toPublicUser, type UserRow } from './users'
+import { pendingSetup, type UserRow } from './users'
 
 export async function getPageSession() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value
@@ -17,5 +17,3 @@ export async function requireAppUser(opts: { admin?: boolean } = {}): Promise<Us
   if (opts.admin && found.user.role !== 'admin') redirect('/')
   return found.user
 }
-
-export { toPublicUser }

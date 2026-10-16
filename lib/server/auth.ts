@@ -18,15 +18,15 @@ import { getUserById, getUserByUsername, isMfaRequired, pendingSetup, updateUser
 import { getConfig } from './config'
 
 /** Fehlversuche (alle IPs zusammen), ab denen das Konto gesperrt wird */
-export const LOCK_THRESHOLD = 50
-export const LOCK_DURATION_MS = 15 * 60 * 1000
+const LOCK_THRESHOLD = 50
+const LOCK_DURATION_MS = 15 * 60 * 1000
 /** Fehlversuche pro Benutzer und IP-Adresse innerhalb von 15 Minuten */
-export const USER_IP_LIMIT = 10
+const USER_IP_LIMIT = 10
 /** Fehlversuche pro IP-Adresse (alle Benutzer) innerhalb von 15 Minuten */
-export const IP_FAILURE_LIMIT = 30
+const IP_FAILURE_LIMIT = 30
 const LOGIN_WINDOW_MS = 15 * 60_000
 /** Ab so vielen falschen MFA-Codes wird gesperrt – jede weitere Sperre dauert doppelt so lang (max. 24 h). */
-export const MFA_LOCK_THRESHOLD = 5
+const MFA_LOCK_THRESHOLD = 5
 const MFA_LOCK_MAX_MS = 24 * 60 * 60 * 1000
 const MFA_SETUP_TTL_MS = 15 * 60 * 1000
 

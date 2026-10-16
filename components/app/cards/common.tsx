@@ -15,14 +15,14 @@ export function useNow(intervalMs = 60_000) {
   return now
 }
 
-export const STATUS_LABELS: Record<CardStatus, string> = {
+const STATUS_LABELS: Record<CardStatus, string> = {
   new: 'Neu',
   learning: 'Lernend',
   young: 'Gelernt',
   mature: 'Sicher',
 }
 
-export const STATUS_COLORS: Record<CardStatus, string> = {
+const STATUS_COLORS: Record<CardStatus, string> = {
   new: 'bg-border-strong',
   learning: 'bg-warning',
   young: 'bg-accent',

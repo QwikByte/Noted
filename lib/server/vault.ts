@@ -9,9 +9,9 @@ import { getFlashcardData } from './flashcards'
 import { deckToMarkdown } from '@/lib/shared/card-markdown'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/lib/shared/names'
 
-export const EXPORT_ATTACHMENT_FOLDER = 'Anhänge'
+const EXPORT_ATTACHMENT_FOLDER = 'Anhänge'
 /** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
-export const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
+const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 
 type ExportEntry = { path: string; mtime: number; compress: boolean; data: () => Uint8Array }
 

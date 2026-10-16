@@ -7,7 +7,7 @@ import type { SessionInfo } from '@/lib/shared/types'
 
 export const SESSION_COOKIE = 'noted_session'
 /** Zeit für die Eingabe des MFA-Codes nach erfolgreichem Passwort */
-export const MFA_STAGE_TTL_MS = 10 * 60 * 1000
+const MFA_STAGE_TTL_MS = 10 * 60 * 1000
 export const MAX_MFA_ATTEMPTS = 5
 
 export type SessionStage = 'mfa' | 'full'

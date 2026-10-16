@@ -4,7 +4,7 @@ import { cn } from '../../ui/cn'
 
 const WIDE = '(min-width: 1024px)'
 
-export function useMediaQuery(query: string) {
+function useMediaQuery(query: string) {
   return useSyncExternalStore(
     (fn) => {
       const mq = matchMedia(query)

@@ -93,7 +93,7 @@ export function insertText(view: EditorView, text: string, cursor = text.length,
 }
 
 /** Block (z. B. Tabelle, Callout) in eigenen Zeilen einfügen. */
-export function insertBlock(view: EditorView, block: string, cursorInBlock?: number) {
+function insertBlock(view: EditorView, block: string, cursorInBlock?: number) {
   const { state } = view
   const range = state.selection.main
   const line = state.doc.lineAt(range.from)

@@ -3,11 +3,8 @@ import MarkdownIt, { type PluginSimple } from 'markdown-it'
 import footnote from 'markdown-it-footnote'
 import katex from '@vscode/markdown-it-katex'
 import hljs from 'highlight.js/lib/common'
-import { obsidianPlugin, stripComments, type RenderEnv } from './obsidian'
+import { escapeHtml, obsidianPlugin, stripComments, type RenderEnv } from './obsidian'
 import { splitFrontmatter } from '@/lib/shared/markdown-meta'
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 function createMarkdownIt() {
   const md: MarkdownIt = new MarkdownIt({

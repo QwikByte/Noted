@@ -9,10 +9,6 @@ export function formatDateTime(ts: number | null | undefined): string {
   return ts ? dateTime.format(ts) : '–'
 }
 
-export function formatDate(ts: number): string {
-  return dateOnly.format(ts)
-}
-
 /** „gerade eben“, „vor 5 Minuten“, „gestern“, sonst Datum */
 export function formatRelative(ts: number, now = Date.now()): string {
   const diff = (ts - now) / 1000

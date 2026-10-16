@@ -3,9 +3,6 @@ import { api, clearCachedData } from './api'
 import { sync } from './sync'
 import { reviewQueue } from './flashcards'
 
-/** Offline-Caches des Service Workers leeren (beim Ab- und Anmelden), damit keine fremden Daten übrig bleiben. */
-export const clearOfflineCaches = clearCachedData
-
 export async function logout() {
   // Noch nicht gesendete Lernfortschritte möglichst mitnehmen
   await reviewQueue.flush()
@@ -18,6 +15,6 @@ export async function logout() {
   reviewQueue.clearAll()
   // Zuletzt geöffnetes PDF und Lesepositionen gehören zum Konto
   for (const key of ['noted:pdf', 'noted:pdfpos', 'noted:lastDeck']) localStorage.removeItem(key)
-  await clearOfflineCaches()
+  await clearCachedData()
   location.href = '/login'
 }

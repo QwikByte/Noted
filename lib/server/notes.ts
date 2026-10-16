@@ -468,8 +468,8 @@ export function purgeTrash(userId?: number) {
 // Suche, Tags, Backlinks
 // ---------------------------------------------------------------------------
 
-export const SNIPPET_START = '\u0002'
-export const SNIPPET_END = '\u0003'
+const SNIPPET_START = '\u0002'
+const SNIPPET_END = '\u0003'
 
 function buildFtsQuery(terms: string[]): string {
   return terms.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ')

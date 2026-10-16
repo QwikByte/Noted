@@ -4,8 +4,8 @@ import { hash, hashSync, verify, type Algorithm } from '@node-rs/argon2'
 // OWASP-Empfehlung für Argon2id (19 MiB, 2 Iterationen)
 const options = { algorithm: 2 as Algorithm /* Argon2id */, memoryCost: 19456, timeCost: 2, parallelism: 1 }
 
-export const PASSWORD_MIN_LENGTH = 10
-export const PASSWORD_MAX_LENGTH = 256
+const PASSWORD_MIN_LENGTH = 10
+const PASSWORD_MAX_LENGTH = 256
 
 export function hashPassword(password: string): Promise<string> {
   return hash(password, options)

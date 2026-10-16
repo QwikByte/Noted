@@ -69,11 +69,11 @@ export function Page({ children, className }: { children: React.ReactNode; class
 }
 
 /** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
-export function NoteList({ children }: { children: React.ReactNode }) {
+function NoteList({ children }: { children: React.ReactNode }) {
   return <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">{children}</div>
 }
 
-export function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
+function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
   const app = useApp()
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []

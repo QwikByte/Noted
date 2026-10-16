@@ -1,13 +1,13 @@
 // Regeln für Notiz-, Ordner- und Dateinamen – kompatibel mit Obsidian und allen Dateisystemen.
 
 /** Zeichen, die in Dateinamen oder Obsidian-Links Probleme machen */
-export const INVALID_NAME_CHARS = /[\\/:*?"<>|#^[\]]/
+const INVALID_NAME_CHARS = /[\\/:*?"<>|#^[\]]/
 const INVALID_NAME_CHARS_GLOBAL = /[\\/:*?"<>|#^[\]]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
 const CONTROL_CHARS_GLOBAL = /[\u0000-\u001f\u007f]/g
 const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i
 
-export const NAME_MAX_LENGTH = 200
+const NAME_MAX_LENGTH = 200
 
 export function validateName(name: string): string | null {
   const n = name.trim()

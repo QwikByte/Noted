@@ -24,7 +24,7 @@ export function useFolders() {
   })
 }
 
-export function useServerNotes() {
+function useServerNotes() {
   return useQuery({
     queryKey: keys.notes,
     queryFn: () => api<{ notes: NoteSummary[] }>('/api/notes').then((r) => r.notes),
@@ -44,7 +44,7 @@ export function useNotes() {
   return { ...query, notes }
 }
 
-export function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
+function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
   if (drafts.length === 0) return server
   const byId = new Map(drafts.map((d) => [d.id, d]))
   const result = server.map((n) => {
