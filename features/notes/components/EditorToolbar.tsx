@@ -1,8 +1,6 @@
 'use client'
-import { useRef } from 'react'
 import {
   Bold,
-  Camera,
   Code,
   Hash,
   Heading1,
@@ -16,7 +14,6 @@ import {
   ListChecks,
   ListOrdered,
   MessageSquareQuote,
-  Paperclip,
   Redo2,
   Sigma,
   Strikethrough,
@@ -38,40 +35,7 @@ import {
   wrapSelection,
 } from '../client/editor/commands'
 import { Menu, MenuItem } from '@/shared/ui/menu'
-import { cn } from '@/shared/ui/cn'
-
-function ToolButton({
-  label,
-  onClick,
-  children,
-  className,
-  ...rest
-}: {
-  label: string
-  onClick?: () => void
-  children: React.ReactNode
-  className?: string
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'>) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      // Fokus im Editor behalten (wichtig auf dem Handy: Tastatur bleibt offen)
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className={cn(
-        'flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg active:bg-active [&>svg]:size-[18px]',
-        className,
-      )}
-      {...rest}
-    >
-      {children}
-    </button>
-  )
-}
-
-const Divider = () => <div className="mx-1 h-5 w-px shrink-0 bg-border" />
+import { AttachButtons, Divider, ToolButton } from './toolbar'
 
 const CALLOUTS: [string, string][] = [
   ['note', 'Notiz'],
@@ -95,8 +59,6 @@ export function EditorToolbar({
   /** Karteikarte aus der Markierung erstellen */
   onCreateCard: () => void
 }) {
-  const fileInput = useRef<HTMLInputElement>(null)
-  const cameraInput = useRef<HTMLInputElement>(null)
   const run = (fn: (view: EditorView) => void) => () => {
     const view = getView()
     if (view) fn(view)
@@ -194,12 +156,7 @@ export function EditorToolbar({
         <Table />
       </ToolButton>
       <Divider />
-      <ToolButton label="Datei anhängen" onClick={() => fileInput.current?.click()}>
-        <Paperclip />
-      </ToolButton>
-      <ToolButton label="Foto aufnehmen" onClick={() => cameraInput.current?.click()} className="sm:hidden">
-        <Camera />
-      </ToolButton>
+      <AttachButtons onUpload={onUpload} />
       <ToolButton label="Karteikarte aus Markierung" onClick={onCreateCard}>
         <Layers />
       </ToolButton>
@@ -210,30 +167,6 @@ export function EditorToolbar({
       <ToolButton label="Wiederholen" onClick={run((v) => redo(v))}>
         <Redo2 />
       </ToolButton>
-
-      <input
-        ref={fileInput}
-        type="file"
-        multiple
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? [])
-          e.target.value = ''
-          if (files.length) onUpload(files)
-        }}
-      />
-      <input
-        ref={cameraInput}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? [])
-          e.target.value = ''
-          if (files.length) onUpload(files)
-        }}
-      />
     </div>
   )
 }

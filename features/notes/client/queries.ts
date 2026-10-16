@@ -5,6 +5,7 @@ import { api } from '@/shared/client/api'
 import { sync, type Draft } from './sync'
 import type { Folder, Note, NoteSummary, TagCount, TrashedNote } from '../types'
 import { extractTags, makeExcerpt } from '@/shared/markdown/meta'
+import { noteText } from '../format'
 
 export const keys = {
   notes: ['notes'] as const,
@@ -50,26 +51,32 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
     const d = byId.get(n.id)
     if (!d) return n
     byId.delete(n.id)
+    const format = d.format ?? n.format
+    const text = d.content !== undefined ? noteText(format, d.content) : null
     return {
       ...n,
       title: d.title ?? n.title,
       folderId: d.folderId !== undefined ? d.folderId : n.folderId,
+      format,
       updatedAt: Math.max(n.updatedAt, d.updatedAt),
-      ...(d.content !== undefined ? { excerpt: makeExcerpt(d.content), tags: extractTags(d.content) } : {}),
+      ...(text !== null ? { excerpt: makeExcerpt(text), tags: extractTags(text) } : {}),
     }
   })
   for (const d of byId.values()) {
     if (!d.isNew) continue
+    const format = d.format ?? 'markdown'
+    const text = noteText(format, d.content ?? '')
     result.unshift({
       id: d.id,
       title: d.title ?? 'Unbenannt',
       folderId: d.folderId ?? null,
+      format,
       pinned: false,
       version: 0,
       createdAt: d.updatedAt,
       updatedAt: d.updatedAt,
-      tags: extractTags(d.content ?? ''),
-      excerpt: makeExcerpt(d.content ?? ''),
+      tags: extractTags(text),
+      excerpt: makeExcerpt(text),
     })
   }
   return result

@@ -176,4 +176,8 @@ export const migrations: string[] = [
   );
   CREATE INDEX card_reviews_user ON card_reviews(user_id);
   `,
+
+  /* 4: Format einer Notiz – markdown (Obsidian), richtext (HTML aus dem Editor), text (ohne Formatierung) */ `
+  ALTER TABLE notes ADD COLUMN format TEXT NOT NULL DEFAULT 'markdown' CHECK (format IN ('markdown', 'richtext', 'text'));
+  `,
 ]

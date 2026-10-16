@@ -26,3 +26,21 @@ export async function copyText(text: string): Promise<boolean> {
   ta.remove()
   return ok
 }
+
+/** Formatierten Text kopieren (z. B. zum Einfügen in Word) – ohne Unterstützung im Browser nur den Text. */
+export async function copyHtml(html: string, text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined' && window.isSecureContext) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+        }),
+      ])
+      return true
+    }
+  } catch {
+    /* Fallback */
+  }
+  return copyText(text)
+}

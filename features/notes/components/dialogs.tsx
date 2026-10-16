@@ -14,7 +14,10 @@ import { buildTree, descendantFolderIds, type FolderNode } from '../tree'
 import { sync } from '../client/sync'
 import { BUILTIN_TEMPLATES, TEMPLATE_FOLDER_NAMES, applyTemplate } from '../templates'
 import { validateName } from '@/shared/lib/names'
-import type { Folder, Note, NoteSummary } from '../types'
+import { escapeHtml } from '@/shared/lib/html'
+import { useDefaultNoteFormat } from '../client/default-format'
+import { FormatPicker } from './FormatPicker'
+import type { Folder, Note, NoteFormat, NoteSummary } from '../types'
 
 /** Ordnerliste mit Einrückung für Auswahlfelder. */
 function useFolderOptions(exclude?: Set<string>) {
@@ -59,12 +62,23 @@ function FolderSelect({
   )
 }
 
-type TemplateChoice = { id: string; name: string; description: string; title: string; content?: string; noteId?: string }
+type TemplateChoice = {
+  id: string
+  name: string
+  description: string
+  title: string
+  content?: string
+  noteId?: string
+  /** Format der Vorlage – fehlt nur bei „Leere Notiz“ (passt zu jedem Format) */
+  format?: NoteFormat
+}
 
 export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | null; onClose: () => void }) {
   const app = useApp()
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
+  const [defaultFormat, setDefaultFormat] = useDefaultNoteFormat()
+  const [format, setFormat] = useState<NoteFormat>(defaultFormat)
   const [templateId, setTemplateId] = useState('empty')
   const [title, setTitle] = useState('')
   const [titleTouched, setTitleTouched] = useState(false)
@@ -77,10 +91,15 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
     const tplFolders = new Set(folders.filter((f) => TEMPLATE_FOLDER_NAMES.includes(f.name.toLowerCase())).map((f) => f.id))
     return notes
       .filter((n) => n.folderId && tplFolders.has(n.folderId))
-      .map((n) => ({ id: `user:${n.id}`, noteId: n.id, name: n.title, description: 'Eigene Vorlage', title: '' }))
+      .map((n) => ({ id: `user:${n.id}`, noteId: n.id, name: n.title, description: 'Eigene Vorlage', title: '', format: n.format }))
   }, [notes, folders])
 
-  const templates: TemplateChoice[] = useMemo(() => [...BUILTIN_TEMPLATES, ...userTemplates], [userTemplates])
+  // Die eingebauten Vorlagen sind Markdown; eigene Vorlagen gibt es in jedem Format
+  const allTemplates: TemplateChoice[] = useMemo(
+    () => [...BUILTIN_TEMPLATES.map((t) => ({ ...t, format: t.id === 'empty' ? undefined : ('markdown' as const) })), ...userTemplates],
+    [userTemplates],
+  )
+  const templates = allTemplates.filter((t) => !t.format || t.format === format)
   const template = templates.find((t) => t.id === templateId) ?? templates[0]
 
   // Beim Öffnen mit den übergebenen Optionen vorbelegen
@@ -88,13 +107,19 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
   if (options !== prevOptions) {
     setPrevOptions(options)
     if (options) {
-      const tpl = templates.find((t) => t.id === options.templateId) ?? templates[0]
+      const tpl = allTemplates.find((t) => t.id === options.templateId) ?? allTemplates[0]
+      setFormat(tpl.format ?? defaultFormat)
       setTemplateId(tpl.id)
       setTitle(options.title ?? applyTemplate(tpl.title, { title: '' }).trim())
       setTitleTouched(!!options.title)
       setFolderId(options.folderId ?? null)
       setError(null)
     }
+  }
+
+  function chooseFormat(next: NoteFormat) {
+    setFormat(next)
+    if (template.format && template.format !== next) chooseTemplate(allTemplates[0])
   }
 
   function chooseTemplate(t: TemplateChoice) {
@@ -114,7 +139,10 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
         const res = await api<{ note: Note }>(`/api/notes/${template.noteId}`)
         content = res.note.content
       }
-      await app.createNote({ title: finalTitle, folderId, content: applyTemplate(content, { title: finalTitle }) })
+      // Im HTML von formatiertem Text muss der Titel maskiert werden (z. B. „&“)
+      const vars = { title: format === 'richtext' ? escapeHtml(finalTitle) : finalTitle }
+      await app.createNote({ title: finalTitle, folderId, format, content: applyTemplate(content, vars) })
+      setDefaultFormat(format)
       onClose()
     } catch (err) {
       setError(errorMessage(err))
@@ -141,32 +169,38 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
       <form id="new-note-form" onSubmit={submit} className="space-y-5">
         <ErrorText>{error}</ErrorText>
         <div>
-          <p className="mb-2 text-sm font-medium">Vorlage</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => chooseTemplate(t)}
-                className={cn(
-                  'relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition',
-                  t.id === templateId ? 'border-accent bg-accent-soft' : 'border-border hover:border-border-strong',
-                )}
-              >
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  {t.noteId ? <LayoutTemplate className="size-3.5 text-accent-text" /> : <FileText className="size-3.5 text-accent-text" />}
-                  {t.name}
-                </span>
-                <span className="line-clamp-2 text-xs text-muted">{t.description}</span>
-                {t.id === templateId ? <Check className="absolute top-2 right-2 size-4 text-accent-text" /> : null}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-faint">
-            Tipp: Notizen in einem Ordner namens „Vorlagen“ erscheinen hier als eigene Vorlagen ({'{{date}}'}, {'{{time}}'},{' '}
-            {'{{title}}'} werden ersetzt).
-          </p>
+          <p className="mb-2 text-sm font-medium">Format</p>
+          <FormatPicker value={format} onChange={chooseFormat} />
         </div>
+        {templates.length > 1 ? (
+          <div>
+            <p className="mb-2 text-sm font-medium">Vorlage</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {templates.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => chooseTemplate(t)}
+                  className={cn(
+                    'relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition',
+                    t.id === templateId ? 'border-accent bg-accent-soft' : 'border-border hover:border-border-strong',
+                  )}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    {t.noteId ? <LayoutTemplate className="size-3.5 text-accent-text" /> : <FileText className="size-3.5 text-accent-text" />}
+                    {t.name}
+                  </span>
+                  <span className="line-clamp-2 text-xs text-muted">{t.description}</span>
+                  {t.id === templateId ? <Check className="absolute top-2 right-2 size-4 text-accent-text" /> : null}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-faint">
+              Tipp: Notizen in einem Ordner namens „Vorlagen“ erscheinen hier als eigene Vorlagen ({'{{date}}'}, {'{{time}}'},{' '}
+              {'{{title}}'} werden ersetzt).
+            </p>
+          </div>
+        ) : null}
         <Field label="Titel (= Dateiname in Obsidian)">
           {(id) => (
             <Input

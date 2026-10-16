@@ -368,7 +368,7 @@ function DataSection() {
           <p className="mb-1 text-sm font-medium">Alles exportieren</p>
           <p className="mb-3 text-sm text-muted">
             ZIP-Archiv mit allen Notizen in ihrer Ordnerstruktur und allen Anhängen. Entpacken und in Obsidian als Vault öffnen –
-            oder in einen bestehenden Vault kopieren.
+            oder in einen bestehenden Vault kopieren. Notizen mit formatiertem Text liegen als .html-Dateien darin.
           </p>
           <a
             href="/api/export"
@@ -380,7 +380,8 @@ function DataSection() {
         <div className="border-t border-border pt-5">
           <p className="mb-1 text-sm font-medium">Importieren</p>
           <p className="mb-3 text-sm text-muted">
-            Markdown-Dateien (.md), ein ZIP-Archiv (z. B. ein Obsidian-Vault) oder beliebige Dateien als Anhänge.
+            Markdown-Dateien (.md), HTML-Dateien (werden zu formatiertem Text), ein ZIP-Archiv (z. B. ein Obsidian-Vault oder
+            ein Export aus Noted) oder beliebige Dateien als Anhänge.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">

@@ -7,7 +7,7 @@
 // Versionsnummern verhindern, dass Änderungen von einem anderen Gerät überschrieben werden.
 
 import { api, ApiError, NetworkError, errorMessage } from '@/shared/client/api'
-import type { Note } from '../types'
+import type { Note, NoteFormat } from '../types'
 
 export type Draft = {
   id: string
@@ -17,6 +17,8 @@ export type Draft = {
   title?: string
   folderId?: string | null
   content?: string
+  /** Format, zu dem `content` gehört (undefined = unverändert) */
+  format?: NoteFormat
   /** Server-Version, auf der der Entwurf basiert */
   baseVersion: number | null
   rev: number
@@ -142,7 +144,7 @@ class SyncStore {
   // ---- Änderungen ----
 
   /** Neue Notiz anlegen (funktioniert auch offline). */
-  create(input: { id: string; title: string; folderId: string | null; content: string }) {
+  create(input: { id: string; title: string; folderId: string | null; content: string; format: NoteFormat }) {
     const draft: Draft = { ...input, isNew: true, baseVersion: null, rev: 1, updatedAt: Date.now() }
     this.drafts.set(input.id, draft)
     this.setStatus(input.id, { state: 'pending' })
@@ -155,7 +157,7 @@ class SyncStore {
   update(
     id: string,
     version: number,
-    patch: Partial<Pick<Draft, 'title' | 'content' | 'folderId'>>,
+    patch: Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId'>>,
     opts: { immediate?: boolean } = {},
   ) {
     const existing = this.drafts.get(id)
@@ -221,6 +223,7 @@ class SyncStore {
             title: draft.title ?? 'Unbenannt',
             folderId: draft.folderId ?? null,
             content: draft.content ?? '',
+            format: draft.format ?? 'markdown',
           },
           keepalive,
         })
@@ -232,6 +235,7 @@ class SyncStore {
             title: draft.title,
             folderId: draft.folderId,
             content: draft.content,
+            format: draft.format,
             baseVersion: draft.baseVersion ?? undefined,
             autoRename: true,
           },
@@ -306,13 +310,14 @@ class SyncStore {
           title: `${draft.title ?? serverNote?.title ?? 'Notiz'} (Konflikt ${stamp})`,
           folderId: draft.folderId ?? serverNote?.folderId ?? null,
           content: draft.content,
+          format: draft.format ?? serverNote?.format ?? 'markdown',
         })
       }
     }
   }
 
   /** Entwurf als neue Notiz anlegen (z. B. wenn das Original auf dem Server gelöscht wurde). */
-  recreate(id: string, fallback: { title: string; folderId: string | null; content: string }) {
+  recreate(id: string, fallback: { title: string; folderId: string | null; content: string; format: NoteFormat }) {
     const draft = this.drafts.get(id)
     clearTimeout(this.timers.get(id))
     this.drafts.delete(id)
@@ -322,6 +327,7 @@ class SyncStore {
       title: draft?.title ?? fallback.title,
       folderId: draft?.folderId !== undefined ? draft.folderId : fallback.folderId,
       content: draft?.content ?? fallback.content,
+      format: draft?.format ?? fallback.format,
     })
   }
 

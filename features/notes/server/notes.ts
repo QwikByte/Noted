@@ -6,7 +6,8 @@ import { isValidId, uuid } from '@/shared/server/crypto'
 import { getConfig } from '@/shared/server/config'
 import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
-import type { Folder, Note, NoteSummary, SearchResult, TagCount, TrashedNote } from '../types'
+import { noteText } from '../format'
+import type { Folder, Note, NoteFormat, NoteSummary, SearchResult, TagCount, TrashedNote } from '../types'
 
 export const MAX_NOTE_LENGTH = 2_000_000 // ca. 2 MB Text pro Notiz
 
@@ -25,6 +26,7 @@ type NoteRow = {
   folder_id: string | null
   title: string
   content: string
+  format: NoteFormat
   excerpt: string
   pinned: number
   version: number
@@ -52,6 +54,7 @@ function toNote(db: Database.Database, r: NoteRow): Note {
     id: r.id,
     folderId: r.folder_id,
     title: r.title,
+    format: r.format,
     pinned: r.pinned === 1,
     version: r.version,
     createdAt: r.created_at,
@@ -171,17 +174,18 @@ export function deleteFolder(userId: number, id: string): { trashedNotes: number
 // Notizen
 // ---------------------------------------------------------------------------
 
-function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; content: string }) {
+/** Tags, Links und Suchindex aus dem Text der Notiz (bei formatiertem Text ohne HTML, siehe noteText) */
+function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; text: string }) {
   db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(note.id)
   db.prepare('DELETE FROM note_links WHERE note_id = ?').run(note.id)
   unindexNote(db, note.id)
   const insTag = db.prepare('INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)')
-  for (const tag of extractTags(note.content)) insTag.run(note.id, tag)
+  for (const tag of extractTags(note.text)) insTag.run(note.id, tag)
   const insLink = db.prepare('INSERT OR IGNORE INTO note_links (note_id, target) VALUES (?, ?)')
-  for (const target of extractLinks(note.content)) insLink.run(note.id, target)
+  for (const target of extractLinks(note.text)) insLink.run(note.id, target)
   const info = db
     .prepare('INSERT INTO notes_fts (note_id, user_id, title, content) VALUES (?, ?, ?, ?)')
-    .run(note.id, note.user_id, note.title, note.content)
+    .run(note.id, note.user_id, note.title, note.text)
   db.prepare('INSERT OR REPLACE INTO notes_fts_map (note_id, fts_rowid) VALUES (?, ?)').run(note.id, info.lastInsertRowid)
 }
 
@@ -214,7 +218,7 @@ export function listNotes(userId: number): NoteSummary[] {
   const db = getDb()
   const rows = db
     .prepare(
-      `SELECT n.id, n.folder_id, n.title, n.excerpt, n.pinned, n.version, n.created_at, n.updated_at,
+      `SELECT n.id, n.folder_id, n.title, n.format, n.excerpt, n.pinned, n.version, n.created_at, n.updated_at,
               (SELECT GROUP_CONCAT(tag, char(31)) FROM note_tags t WHERE t.note_id = n.id) AS tags
        FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL
        ORDER BY n.updated_at DESC`,
@@ -224,6 +228,7 @@ export function listNotes(userId: number): NoteSummary[] {
     id: r.id,
     folderId: r.folder_id,
     title: r.title,
+    format: r.format,
     pinned: r.pinned === 1,
     version: r.version,
     createdAt: r.created_at,
@@ -243,7 +248,7 @@ function checkContent(content: string) {
 
 export function createNote(
   userId: number,
-  input: { id?: string; title: string; folderId: string | null; content: string; pinned?: boolean },
+  input: { id?: string; title: string; folderId: string | null; content: string; format?: NoteFormat; pinned?: boolean },
 ): Note {
   const db = getDb()
   const title = input.title.trim()
@@ -263,13 +268,15 @@ export function createNote(
   }
   const id = input.id ?? uuid()
   const finalTitle = uniqueName(title, noteTitlesInFolder(userId, input.folderId))
+  const format = input.format ?? 'markdown'
+  const text = noteText(format, input.content)
   const t = Date.now()
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO notes (id, user_id, folder_id, title, content, excerpt, pinned, version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    ).run(id, userId, input.folderId, finalTitle, input.content, makeExcerpt(input.content), input.pinned ? 1 : 0, t, t)
-    indexNote(db, { id, user_id: userId, title: finalTitle, content: input.content })
+      `INSERT INTO notes (id, user_id, folder_id, title, content, format, excerpt, pinned, version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    ).run(id, userId, input.folderId, finalTitle, input.content, format, makeExcerpt(text), input.pinned ? 1 : 0, t, t)
+    indexNote(db, { id, user_id: userId, title: finalTitle, text })
   })()
   return getNote(userId, id)
 }
@@ -278,6 +285,8 @@ export type NotePatch = {
   title?: string
   folderId?: string | null
   content?: string
+  /** Format wechseln – den umgewandelten Inhalt liefert der Browser in `content` mit */
+  format?: NoteFormat
   pinned?: boolean
   /** Version, auf der die Änderung basiert (Konflikterkennung) */
   baseVersion?: number
@@ -288,7 +297,8 @@ export type NotePatch = {
 export function updateNote(userId: number, id: string, patch: NotePatch): { note: Note; linksUpdated: number } {
   const db = getDb()
   const current = getNoteRow(userId, id)
-  const contentChanged = patch.content !== undefined && patch.content !== current.content
+  const format = patch.format ?? current.format
+  const contentChanged = (patch.content !== undefined && patch.content !== current.content) || format !== current.format
   let title = current.title
   if (patch.title !== undefined && patch.title.trim() !== current.title) {
     title = patch.title.trim()
@@ -323,23 +333,26 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   const bump = contentChanged || title !== current.title
   let linksUpdated = 0
 
+  const text = contentChanged || bump ? noteText(format, content) : ''
+
   db.transaction(() => {
     db.prepare(
-      `UPDATE notes SET title = ?, folder_id = ?, content = ?, excerpt = ?, pinned = ?,
+      `UPDATE notes SET title = ?, folder_id = ?, content = ?, format = ?, excerpt = ?, pinned = ?,
          version = version + ?, updated_at = ?
        WHERE id = ? AND user_id = ?`,
     ).run(
       title,
       folderId,
       content,
-      contentChanged ? makeExcerpt(content) : current.excerpt,
+      format,
+      contentChanged ? makeExcerpt(text) : current.excerpt,
       pinned,
       bump ? 1 : 0,
       bump || folderChanged ? Date.now() : current.updated_at,
       id,
       userId,
     )
-    if (bump) indexNote(db, { id, user_id: userId, title, content })
+    if (bump) indexNote(db, { id, user_id: userId, title, text })
     if (title !== current.title) linksUpdated = rewriteLinks(db, userId, id, current.title, title)
   })()
   return { note: getNote(userId, id), linksUpdated }
@@ -364,18 +377,23 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
     .get(userId, noteId, key)
   if (other) return 0
 
-  const re = new RegExp(`(!?\\[\\[)((?:[^[\\]|#\\n]*/)?)${escapeRegExp(oldTitle)}(\\.md)?(?=[\\]|#])`, 'gi')
+  // In formatiertem Text (HTML) steht „&“ als „&amp;“ – andere Sonderzeichen sind in Titeln nicht erlaubt
+  const pattern = (title: string) =>
+    new RegExp(`(!?\\[\\[)((?:[^[\\]|#\\n]*/)?)${escapeRegExp(title)}(\\.md)?(?=[\\]|#])`, 'gi')
+  const forHtml = (s: string) => s.replace(/&/g, '&amp;')
   let count = 0
   for (const src of sources) {
-    const content = src.content.replace(re, (_m, open: string, prefix: string) => {
+    const html = src.format === 'richtext'
+    const content = src.content.replace(pattern(html ? forHtml(oldTitle) : oldTitle), (_m, open: string, prefix: string) => {
       count++
-      return `${open}${prefix}${newTitle}`
+      return `${open}${prefix}${html ? forHtml(newTitle) : newTitle}`
     })
     if (content !== src.content) {
+      const text = noteText(src.format, content)
       db.prepare(
         'UPDATE notes SET content = ?, excerpt = ?, version = version + 1, updated_at = ? WHERE id = ?',
-      ).run(content, makeExcerpt(content), Date.now(), src.id)
-      indexNote(db, { id: src.id, user_id: userId, title: src.title, content })
+      ).run(content, makeExcerpt(text), Date.now(), src.id)
+      indexNote(db, { id: src.id, user_id: userId, title: src.title, text })
     }
   }
   return count
@@ -405,7 +423,7 @@ export function restoreNote(userId: number, id: string): Note {
       Date.now(),
       id,
     )
-    indexNote(db, { id, user_id: userId, title, content: row.content })
+    indexNote(db, { id, user_id: userId, title, text: noteText(row.format, row.content) })
   })()
   return getNote(userId, id)
 }

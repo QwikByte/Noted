@@ -86,4 +86,38 @@ describe('Export und Import (Obsidian-Vault)', () => {
     const r = await call(importRoute.POST, '/', { cookie: token, form })
     expect(r.status).toBe(400)
   })
+
+  it('exportiert formatierten Text als HTML (Bilder relativ zu „Anhänge“) und einfachen Text als .md', async () => {
+    const folder = await newFolder('Formate')
+    const rich = await call(notes.POST, '/api/notes', {
+      cookie: token,
+      body: { title: 'Bericht', folderId: folder.id, format: 'richtext', content: '<p>Bild:</p><img src="/api/files/Tafel-bild.png" alt="x">' },
+    })
+    expect(rich.status).toBe(201)
+    await call(notes.POST, '/api/notes', { cookie: token, body: { title: 'Liste', folderId: folder.id, format: 'text', content: 'a\nb' } })
+    const r = await call(exportRoute.GET, '/', { cookie: token })
+    const zip = unzipSync(new Uint8Array(await r.res.arrayBuffer()))
+    const html = strFromU8(zip['Formate/Bericht.html'])
+    expect(html).toMatch(/^<!doctype html>/)
+    expect(html).toContain('<img src="../Anh%C3%A4nge/Tafel-bild.png" alt="x">')
+    expect(strFromU8(zip['Formate/Liste.md'])).toBe('a\nb')
+  })
+
+  it('importiert HTML-Dateien als formatierten Text – außer im Ordner „Anhänge“', async () => {
+    const page = '<!doctype html><html><head><title>x</title></head><body><h1>Import</h1><img src="../Anhänge/foto.png"></body></html>'
+    const vault = zipSync({
+      'Ordner/Seite.html': strToU8(page),
+      'Anhänge/eingebettet.html': strToU8('<p>bleibt Anhang</p>'),
+    })
+    const form = new FormData()
+    form.append('files', new File([vault], 'export.zip'))
+    const r = await call(importRoute.POST, '/', { cookie: token, form })
+    expect(r.data).toMatchObject({ notes: 1, attachments: 1 })
+    const list = await call(notes.GET, '/', { cookie: token })
+    const imported = list.data.notes.find((n: { title: string }) => n.title === 'Seite')
+    expect(imported.format).toBe('richtext')
+    const { GET } = await import('@/app/api/notes/[id]/route')
+    const full = await call(GET, '/', { cookie: token, params: { id: imported.id } })
+    expect(full.data.note.content).toBe('<h1>Import</h1><img src="/api/files/foto.png">')
+  })
 })

@@ -213,3 +213,79 @@ describe('Papierkorb', () => {
     expect((await call(trash.GET, '/', { cookie: token })).data.notes).toEqual([])
   })
 })
+
+describe('Formate', () => {
+  async function newFormatted(title: string, content: string, format: string) {
+    const r = await call(notes.POST, '/api/notes', { cookie: token, body: { title, content, format } })
+    expect(r.status).toBe(201)
+    return r.data.note as { id: string; title: string; version: number; tags: string[]; excerpt: string; format: string }
+  }
+
+  it('legt Notizen standardmäßig als Markdown an und lehnt unbekannte Formate ab', async () => {
+    const plain = await call(notes.POST, '/api/notes', { cookie: token, body: { title: 'Ohne Format', content: '# x' } })
+    expect(plain.data.note.format).toBe('markdown')
+    const bad = await call(notes.POST, '/api/notes', { cookie: token, body: { title: 'Falsch', format: 'docx' } })
+    expect(bad.status).toBe(400)
+  })
+
+  it('indiziert formatierten Text ohne HTML: Auszug, Tags, Links und Suche', async () => {
+    const html = '<h2>Kapitel</h2><p>Die <strong>Quantenmechanik</strong> &amp; mehr #physik siehe [[Optik]]</p><p style="color: red">span</p>'
+    const n = await newFormatted('Formatiert', html, 'richtext')
+    expect(n.format).toBe('richtext')
+    expect(n.excerpt).toBe('Kapitel Die Quantenmechanik & mehr #physik siehe Optik span')
+    expect(n.tags).toEqual(['physik'])
+    const found = await call(search.GET, '/', { cookie: token, query: { q: 'quanten' } })
+    expect(found.data.results.map((r: { id: string }) => r.id)).toContain(n.id)
+    expect(found.data.results.find((r: { id: string }) => r.id === n.id).snippet).not.toContain('<strong>')
+    // HTML-Bestandteile sind nicht durchsuchbar
+    const tagNames = await call(search.GET, '/', { cookie: token, query: { q: 'strong' } })
+    expect(tagNames.data.results.map((r: { id: string }) => r.id)).not.toContain(n.id)
+    const bl = await call(backlinks.GET, '/', { cookie: token, params: { id: (await newNote('Optik')).id } })
+    expect(bl.data.backlinks.map((b: { id: string }) => b.id)).toContain(n.id)
+  })
+
+  it('wechselt das Format samt umgewandeltem Inhalt und erkennt Konflikte', async () => {
+    const n = await newFormatted('Wechsel', '# Titel\n\nText', 'markdown')
+    const r = await call(note.PUT, '/', {
+      method: 'PUT',
+      cookie: token,
+      params: { id: n.id },
+      body: { content: '<h1>Titel</h1><p>Text</p>', format: 'richtext', baseVersion: n.version },
+    })
+    expect(r.status).toBe(200)
+    expect(r.data.note).toMatchObject({ format: 'richtext', version: n.version + 1, excerpt: 'Titel Text' })
+    // Nur das Format zu ändern ist ebenfalls eine Änderung (Version steigt, alter Stand → Konflikt)
+    const stale = await call(note.PUT, '/', {
+      method: 'PUT',
+      cookie: token,
+      params: { id: n.id },
+      body: { format: 'text', baseVersion: n.version },
+    })
+    expect(stale.status).toBe(409)
+  })
+
+  it('bietet formatierten Text als HTML-Dokument und einfachen Text als .md zum Download an', async () => {
+    const rich = await newFormatted('Bericht & Co', '<p>Hallo <em>Welt</em></p>', 'richtext')
+    const r = await call(download.GET, '/', { cookie: token, params: { id: rich.id } })
+    expect(r.res.headers.get('content-type')).toMatch(/text\/html/)
+    expect(r.res.headers.get('content-disposition')).toMatch(/^attachment;.*\.html/)
+    expect(r.res.headers.get('content-security-policy')).toContain('sandbox')
+    const body = await r.res.text()
+    expect(body).toContain('<title>Bericht &amp; Co</title>')
+    expect(body).toContain('<p>Hallo <em>Welt</em></p>')
+
+    const plain = await newFormatted('Einkauf', '# keine Überschrift', 'text')
+    const p = await call(download.GET, '/', { cookie: token, params: { id: plain.id } })
+    expect(p.res.headers.get('content-disposition')).toContain(encodeURIComponent('Einkauf.md'))
+    expect(await p.res.text()).toBe('# keine Überschrift')
+  })
+
+  it('passt Wikilinks in formatiertem Text beim Umbenennen an (auch mit „&“ im Titel)', async () => {
+    const target = await newNote('Tom & Jerry')
+    const src = await newFormatted('Verweis', '<p>Siehe [[Tom &amp; Jerry]] und [[Tom &amp; Jerry|die beiden]]</p>', 'richtext')
+    const r = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: target.id }, body: { title: 'Katz & Maus' } })
+    expect(r.data.linksUpdated).toBe(2)
+    const after = await call(note.GET, '/', { cookie: token, params: { id: src.id } })
+    expect(after.data.note.content).toBe('<p>Siehe [[Katz &amp; Maus]] und [[Katz &amp; Maus|die beiden]]</p>')
+  })
+})

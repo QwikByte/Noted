@@ -8,10 +8,14 @@ export type Folder = {
   updatedAt: number
 }
 
+/** markdown: Obsidian-Markdown · richtext: formatierter Text (HTML aus dem Editor) · text: einfacher Text */
+export type NoteFormat = 'markdown' | 'richtext' | 'text'
+
 export type NoteSummary = {
   id: string
   folderId: string | null
   title: string
+  format: NoteFormat
   pinned: boolean
   version: number
   createdAt: number

@@ -2,7 +2,7 @@
 import { createContext, useContext } from 'react'
 import type { View } from './nav'
 import type { Card, CardOption, CardType } from '@/features/flashcards/types'
-import type { Folder, NoteSummary } from '@/features/notes/types'
+import type { Folder, NoteFormat, NoteSummary } from '@/features/notes/types'
 
 export type NewNoteOptions = { folderId?: string | null; title?: string; templateId?: string }
 
@@ -24,8 +24,8 @@ export type AppActions = {
   go: (view: View, opts?: { replace?: boolean }) => void
   /** Dialog „Neue Notiz“ öffnen */
   openNewNote: (opts?: NewNoteOptions) => void
-  /** Notiz direkt anlegen und öffnen */
-  createNote: (input: { title: string; folderId: string | null; content?: string }) => Promise<string>
+  /** Notiz direkt anlegen und öffnen – ohne Format im zuletzt gewählten Standardformat */
+  createNote: (input: { title: string; folderId: string | null; content?: string; format?: NoteFormat }) => Promise<string>
   openQuickSwitcher: () => void
   openMove: (target: { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder }) => void
   openNewFolder: (parentId: string | null) => void
