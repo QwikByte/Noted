@@ -10,12 +10,15 @@ export function Menu({
   children,
   align = 'right',
   side = 'bottom',
+  keepFocus,
   className,
 }: {
   trigger: (props: { onClick: () => void; 'aria-expanded': boolean; 'aria-haspopup': 'menu' }) => React.ReactNode
   children: React.ReactNode
   align?: 'left' | 'right'
   side?: 'top' | 'bottom'
+  /** Ein Klick auf einen Eintrag lässt den Fokus, wo er ist – z. B. im Editor, dessen Werkzeugleiste das Menü öffnet */
+  keepFocus?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -44,6 +47,9 @@ export function Menu({
         <MenuContext.Provider value={{ close: () => setOpen(false) }}>
           <div
             role="menu"
+            // Sonst wandert der Fokus auf den Eintrag und nach dem Schließen auf <body>: Was direkt danach getippt
+            // wird, geht ins Leere, bis der Aufrufer den Fokus zurückholt
+            onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
             className={cn(
               'absolute z-50 min-w-52 animate-pop-in rounded-xl border border-border bg-elevated p-1 shadow-pop',
               side === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5',
