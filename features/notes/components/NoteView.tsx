@@ -33,7 +33,7 @@ import {
 import { useApp } from '@/features/workspace/client/context'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
-import { Preview } from './Preview'
+import { Preview, type PreviewLinks } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { Button } from '@/shared/ui/button'
@@ -56,21 +56,30 @@ import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
 import type { NoteEditorHandle } from '../client/editor-handle'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
-import { NOTE_FORMAT_LABELS, noteExtension, noteText } from '../format'
+import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { findWikiLinks, splitFrontmatter } from '@/shared/markdown/meta'
+import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
+import { buildVaultIndex } from '@/features/vault/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { validateName } from '@/shared/lib/names'
 import type { Note, NoteFormat } from '../types'
 
-// Editor für formatierten Text erst laden, wenn er gebraucht wird (TipTap ist groß)
-const RichTextEditor = dynamic(() => import('./RichTextEditor'), {
+const editorLoading = () => (
+  <div className="flex flex-1 items-center justify-center text-muted">
+    <Loader2 className="size-5 animate-spin" />
+  </div>
+)
+// Editoren für formatierten Text, Mindmap und Canvas erst laden, wenn sie gebraucht werden (TipTap und React Flow
+// sind groß)
+const RichTextEditor = dynamic(() => import('./RichTextEditor'), { ssr: false, loading: editorLoading })
+const MindmapEditor = dynamic(() => import('@/features/mindmap/components/MindmapEditor'), {
   ssr: false,
-  loading: () => (
-    <div className="flex flex-1 items-center justify-center text-muted">
-      <Loader2 className="size-5 animate-spin" />
-    </div>
-  ),
+  loading: editorLoading,
+})
+const CanvasEditor = dynamic(() => import('@/features/canvas/components/CanvasEditor'), {
+  ssr: false,
+  loading: editorLoading,
 })
 
 function useSyncStatus(id: string): NoteSyncStatus {
@@ -173,9 +182,10 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
-  // Markdown und einfacher Text: CodeMirror · formatierter Text: TipTap
+  // Markdown und einfacher Text: CodeMirror · formatierter Text: TipTap · Mindmap und Canvas: React Flow
   const cmRef = useRef<EditorHandle>(null)
   const richRef = useRef<NoteEditorHandle>(null)
+  const visualRef = useRef<NoteEditorHandle>(null)
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
   const { data: tags = [] } = useTags()
@@ -198,8 +208,10 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
-  // Die geteilte Ansicht gibt es nur für Markdown – bei den anderen Formaten sieht der Editor schon aus wie das Ergebnis
-  const canSplit = isWide && format === 'markdown'
+  // Geteilte Ansicht: Markdown mit Vorschau, Mindmap mit ihrer Gliederung als Text – bei den anderen Formaten sieht
+  // der Editor schon aus wie das Ergebnis
+  const canSplit = isWide && (format === 'markdown' || format === 'mindmap')
+  const visual = isVisualFormat(format)
   const effectiveMode: EditorMode = mode === 'split' && !canSplit ? 'edit' : mode
   const text = useMemo(() => noteText(format, content), [format, content])
 
@@ -233,8 +245,11 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   useEffect(() => {
     latest.current = { content, format, title, onChange }
   })
-  const editorHandle = (): NoteEditorHandle | null =>
-    latest.current.format === 'richtext' ? richRef.current : cmRef.current
+  const editorHandle = (): NoteEditorHandle | null => {
+    const f = latest.current.format
+    if (f === 'richtext') return richRef.current
+    return isVisualFormat(f) ? visualRef.current : cmRef.current
+  }
 
   /** Stand von einem anderen Gerät übernehmen; bei anderem Format wird der Editor neu aufgebaut */
   function applyRemote(remote: Note) {
@@ -243,6 +258,8 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       setContent(remote.content)
     } else if (remote.content !== latest.current.content) {
       editorHandle()?.setDoc(remote.content)
+      // Mindmap in der geteilten Ansicht: auch die Gliederung daneben
+      if (remote.format === 'mindmap') cmRef.current?.setDoc(remote.content)
       setContent(remote.content)
     }
     if (remote.title !== latest.current.title) setTitle(remote.title)
@@ -342,6 +359,23 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     [app],
   )
 
+  const previewLinks = useMemo<PreviewLinks>(
+    () => ({
+      resolveNote,
+      onOpenNote: (id) => app.go({ kind: 'note', id }),
+      onCreateNote: (t) => void app.createNote({ title: t, folderId }),
+      onOpenTag: (tag) => app.go({ kind: 'tag', tag }),
+      onOpenPdf: app.openPdf,
+    }),
+    [resolveNote, app, folderId],
+  )
+
+  /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */
+  const onVisualChange = (doc: string) => {
+    onChange(doc)
+    if (effectiveMode === 'split') cmRef.current?.setDoc(doc)
+  }
+
   const toggleTask = useCallback(
     (line: number, checked: boolean) => {
       const lines = content.split('\n')
@@ -366,8 +400,8 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     () =>
       format === 'richtext'
         ? linkedPdfs(content)
-        : [...new Set(findWikiLinks(content).map((l) => l.target).filter((t) => /\.pdf$/i.test(t)))],
-    [format, content],
+        : [...new Set(findWikiLinks(text).map((l) => l.target).filter((t) => /\.pdf$/i.test(t)))],
+    [format, content, text],
   )
   const otherPdfs = attachments.filter((a) => a.mime === 'application/pdf' && !notePdfs.includes(a.filename))
 
@@ -398,6 +432,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     } else if (format === 'text') {
       ok = await copyText(content)
       message = 'Text kopiert.'
+    } else if (format === 'canvas') {
+      ok = await copyText(canvasToMarkdown(parseCanvas(content) ?? { nodes: [], edges: [] }))
+      message = 'Inhalt der Karten als Markdown kopiert.'
     } else {
       ok = await copyText(kind === 'body' ? (splitFrontmatter(content)?.body ?? content).replace(/^\n+/, '') : content)
       message = 'Markdown kopiert – einfach in Obsidian einfügen.'
@@ -406,16 +443,26 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     else toast.error('Kopieren nicht möglich.')
   }
 
+  /** Dateikarten zeigen im heruntergeladenen Canvas auf die Pfade im exportierten Vault */
+  function canvasDownload(): string {
+    const ordered = [...notes].sort((a, b) => a.createdAt - b.createdAt)
+    const index = buildVaultIndex(
+      ordered.map((n) => ({ title: n.title, folders: folderPath(folders, n.folderId).map((f) => f.name), format: n.format })),
+      attachments.map((a) => a.filename),
+    )
+    return canvasForExport(content, index)
+  }
+
   function download() {
-    const html = format === 'richtext'
     const name = title || 'Notiz'
-    const blob = new Blob([html ? htmlDocument(name, content) : content], {
-      type: html ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
-    })
+    const ext = noteExtension(format)
+    const body = format === 'richtext' ? htmlDocument(name, content) : format === 'canvas' ? canvasDownload() : content
+    const type = { '.html': 'text/html', '.canvas': 'application/json', '.md': 'text/markdown' }[ext]
+    const blob = new Blob([body], { type: `${type};charset=utf-8` })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${name}${noteExtension(format)}`
+    a.download = `${name}${ext}`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
@@ -423,7 +470,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
   async function changeFormat(next: NoteFormat) {
     try {
       const { convertContent } = await import('../client/convert')
-      const converted = await convertContent(content, format, next)
+      const converted = await convertContent(content, format, next, title || 'Unbenannt')
       setFormat(next)
       setContent(converted)
       sync.update(note.id, version, { content: converted, format: next }, { immediate: true })
@@ -444,27 +491,63 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
 
   const path = folderPath(folders, folderId)
   const summaryForActions = summary ?? { ...note, title }
-  const copyLabel = { markdown: 'Markdown kopieren', richtext: 'Kopieren', text: 'Text kopieren' }[format]
-  const autoFocus = note.content === '' && note.version === 0
+  const copyLabel = {
+    markdown: 'Markdown kopieren',
+    richtext: 'Kopieren',
+    text: 'Text kopieren',
+    mindmap: 'Markdown kopieren',
+    canvas: 'Als Markdown kopieren',
+  }[format]
+  // Neue Notiz: Editor fokussieren. Mindmap und Canvas werden nachgeladen und erscheinen oft erst, wenn die Notiz
+  // schon gespeichert ist (Version 1) – daher beim Öffnen festhalten und auch dann fokussieren
+  const [autoFocus] = useState(
+    note.content === '' && (note.version === 0 || (isVisualFormat(note.format) && sync.wasCreatedHere(note.id))),
+  )
 
   const titleInput = (
     <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
   )
+  // Über Mindmap und Canvas: kleiner, damit die Fläche Platz hat
+  const visualHeader =
+    effectiveMode === 'read' ? (
+      <h1 className="truncate border-b border-border px-4 py-2.5 text-lg font-bold tracking-tight">{title}</h1>
+    ) : effectiveMode === 'edit' ? (
+      <TitleInput compact value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
+    ) : null
+  const visualEditor =
+    format === 'mindmap' ? (
+      <MindmapEditor
+        handleRef={visualRef}
+        content={content}
+        title={title || 'Unbenannt'}
+        onChange={onVisualChange}
+        readOnly={effectiveMode === 'read'}
+        links={previewLinks}
+        onUpload={upload}
+        onCreateCard={createCard}
+        autoFocus={autoFocus}
+        header={visualHeader}
+      />
+    ) : format === 'canvas' ? (
+      <CanvasEditor
+        handleRef={visualRef}
+        content={content}
+        title={title}
+        onChange={onChange}
+        readOnly={effectiveMode === 'read'}
+        links={previewLinks}
+        onUpload={upload}
+        onCreateCard={createCard}
+        header={visualHeader}
+      />
+    ) : null
   const readView =
     format === 'richtext' ? (
       <RichTextView html={content} onOpenPdf={app.openPdf} />
     ) : format === 'text' ? (
       <PlainTextView text={content} />
     ) : (
-      <Preview
-        content={content}
-        resolveNote={resolveNote}
-        onOpenNote={(id) => app.go({ kind: 'note', id })}
-        onCreateNote={(t) => app.createNote({ title: t, folderId })}
-        onOpenTag={(tag) => app.go({ kind: 'tag', tag })}
-        onToggleTask={toggleTask}
-        onOpenPdf={app.openPdf}
-      />
+      <Preview content={content} {...previewLinks} onToggleTask={toggleTask} />
     )
 
   return (
@@ -562,7 +645,7 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
               {copyLabel}
             </MenuItem>
-            {format === 'markdown' ? (
+            {format === 'markdown' || format === 'mindmap' ? (
               <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
                 Ohne Properties kopieren
               </MenuItem>
@@ -631,7 +714,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
       ) : null}
 
       <div className={cn('min-h-0 flex-1', effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col')}>
-        {effectiveMode === 'read' ? null : format === 'richtext' ? (
+        {visual && effectiveMode !== 'split' ? (
+          visualEditor
+        ) : effectiveMode === 'read' ? null : format === 'richtext' ? (
           <RichTextEditor
             handleRef={richRef}
             initialHtml={content}
@@ -664,7 +749,9 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             </div>
           </div>
         )}
-        {effectiveMode !== 'edit' ? (
+        {visual && effectiveMode === 'split' ? (
+          <div className="flex min-h-0 flex-col">{visualEditor}</div>
+        ) : !visual && effectiveMode !== 'edit' ? (
           <div className="min-h-0 overflow-y-auto">
             {effectiveMode === 'read' ? (
               <h1
@@ -735,14 +822,17 @@ function TitleInput({
   error,
   onChange,
   onEnter,
+  compact,
 }: {
   value: string
   error: string | null
   onChange: (v: string) => void
   onEnter: () => void
+  /** Kleine Zeile über Mindmap und Canvas */
+  compact?: boolean
 }) {
   return (
-    <div className="w-full px-5 pt-6 pb-1">
+    <div className={cn('w-full', compact ? 'border-b border-border px-4 py-1.5' : 'px-5 pt-6 pb-1')}>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -755,8 +845,11 @@ function TitleInput({
         placeholder="Titel"
         aria-label="Titel"
         aria-invalid={!!error}
-        className="w-full bg-transparent leading-tight font-bold tracking-tight outline-none placeholder:text-faint"
-        style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+        className={cn(
+          'w-full bg-transparent leading-tight font-bold tracking-tight outline-none placeholder:text-faint',
+          compact && 'text-lg',
+        )}
+        style={compact ? undefined : { fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
         data-testid="note-title"
       />
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}

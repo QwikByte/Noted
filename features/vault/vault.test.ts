@@ -120,4 +120,54 @@ describe('Export und Import (Obsidian-Vault)', () => {
     const full = await call(GET, '/', { cookie: token, params: { id: imported.id } })
     expect(full.data.note.content).toBe('<h1>Import</h1><img src="/api/files/foto.png">')
   })
+
+  it('exportiert Mindmaps als .md und Canvas als .canvas mit Pfaden wie in Obsidian – und importiert beides wieder', async () => {
+    const folder = await newFolder('Visuell')
+    const target = await newNote('Zielnotiz', '', folder.id)
+    const mindmap = '---\nmindmap-plugin: basic\n---\n\n# Plan\n\n## Ast\n'
+    await call(notes.POST, '/api/notes', { cookie: token, body: { title: 'Plan', folderId: folder.id, format: 'mindmap', content: mindmap } })
+    const box = { x: 0, y: 0, width: 100, height: 100 }
+    const canvas = JSON.stringify({
+      nodes: [
+        { id: 'a', type: 'file', file: target.title, ...box },
+        { id: 'b', type: 'file', file: 'Tafel-bild.png', ...box },
+        { id: 'c', type: 'text', text: '[[Zielnotiz]]', ...box },
+      ],
+      edges: [{ id: 'e', fromNode: 'a', toNode: 'c' }],
+    })
+    const c = await call(notes.POST, '/api/notes', { cookie: token, body: { title: 'Brett', folderId: folder.id, format: 'canvas', content: canvas } })
+    expect(c.status).toBe(201)
+
+    const r = await call(exportRoute.GET, '/', { cookie: token })
+    const zip = unzipSync(new Uint8Array(await r.res.arrayBuffer()))
+    expect(strFromU8(zip['Visuell/Plan.md'])).toBe(mindmap)
+    const exported = JSON.parse(strFromU8(zip['Visuell/Brett.canvas']))
+    expect(exported.nodes.map((n: { file?: string; text?: string }) => n.file ?? n.text)).toEqual([
+      'Visuell/Zielnotiz.md',
+      'Anhänge/Tafel-bild.png',
+      '[[Zielnotiz]]',
+    ])
+    expect(exported.edges).toHaveLength(1)
+
+    // Wieder einspielen: Dateikarten verweisen wie Wikilinks auf den Namen, Mindmaps erkennt das Property
+    const form = new FormData()
+    form.append(
+      'files',
+      new File([zipSync({ 'Neu/Brett.canvas': zip['Visuell/Brett.canvas'], 'Neu/Plan.md': zip['Visuell/Plan.md'], 'Neu/Kaputt.canvas': strToU8('{') })], 'v.zip'),
+    )
+    const imp = await call(importRoute.POST, '/', { cookie: token, form })
+    expect(imp.data.notes).toBe(2)
+    expect(imp.data.skipped).toEqual(['Neu/Kaputt.canvas (Kein gültiges Canvas.)'])
+    const list = await call(notes.GET, '/', { cookie: token })
+    const neu = (await call(folders.GET, '/', { cookie: token })).data.folders.find((f: { name: string }) => f.name === 'Neu')
+    const inNeu = list.data.notes.filter((n: { folderId: string }) => n.folderId === neu.id)
+    expect(inNeu.map((n: { title: string; format: string }) => `${n.title}:${n.format}`).sort()).toEqual(['Brett:canvas', 'Plan:mindmap'])
+    const { GET } = await import('@/app/api/notes/[id]/route')
+    const brett = inNeu.find((n: { title: string }) => n.title === 'Brett')
+    const full = await call(GET, '/', { cookie: token, params: { id: brett.id } })
+    expect(JSON.parse(full.data.note.content).nodes.map((n: { file?: string }) => n.file).filter(Boolean)).toEqual([
+      'Zielnotiz',
+      'Tafel-bild.png',
+    ])
+  })
 })

@@ -5,6 +5,7 @@ import { sanitize } from '@/shared/markdown/sanitize'
 import type { ResolvedNote } from '@/shared/markdown/obsidian'
 import { isDarkMode } from '@/shared/client/prefs'
 import { Properties } from './Properties'
+import { cn } from '@/shared/ui/cn'
 
 let mermaidCounter = 0
 
@@ -33,6 +34,16 @@ async function renderMermaid(root: HTMLElement) {
   }
 }
 
+/** Was Links in gerendertem Markdown auslösen (auch in Mindmap und Canvas) */
+export type PreviewLinks = {
+  resolveNote: (target: string) => ResolvedNote | null
+  onOpenNote: (id: string, heading?: string) => void
+  onCreateNote: (title: string) => void
+  onOpenTag: (tag: string) => void
+  /** PDF im eingebauten Viewer öffnen statt in einem neuen Tab */
+  onOpenPdf?: (file: string, page?: number) => void
+}
+
 export function Preview({
   content,
   resolveNote,
@@ -41,15 +52,11 @@ export function Preview({
   onOpenTag,
   onToggleTask,
   onOpenPdf,
-}: {
+  className,
+}: PreviewLinks & {
   content: string
-  resolveNote: (target: string) => ResolvedNote | null
-  onOpenNote: (id: string, heading?: string) => void
-  onCreateNote: (title: string) => void
-  onOpenTag: (tag: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
-  /** PDF im eingebauten Viewer öffnen statt in einem neuen Tab */
-  onOpenPdf?: (file: string, page?: number) => void
+  className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const rendered = useMemo(() => {
@@ -94,7 +101,7 @@ export function Preview({
   }
 
   return (
-    <div className="markdown-body" onClick={onClick}>
+    <div className={cn('markdown-body', className)} onClick={onClick}>
       {rendered.properties || rendered.propertiesError ? (
         <Properties data={rendered.properties} error={rendered.propertiesError} onOpenTag={onOpenTag} />
       ) : null}

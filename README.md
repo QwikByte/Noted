@@ -23,13 +23,15 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Ordner wie in einem Vault (beliebig verschachtelt, Drag & Drop), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
 
-**Drei Formate für Notizen**
+**Fünf Formate für Notizen**
 - Beim Anlegen wählst du das Format; Noted merkt sich die Wahl für die nächste Notiz.
   - **Markdown** (Standard): alles oben Beschriebene, voll Obsidian-kompatibel.
   - **Formatierter Text**: schreiben wie in Word – Überschriften, fett, kursiv, unterstrichen, Schriftgröße, Schriftfarbe, farbige Markierungen, Ausrichtung, Listen, Aufgaben, Tabellen, Links und Bilder. Gespeichert wird HTML; der Export legt solche Notizen als `.html` ab (Obsidian zeigt sie nicht als Notiz). Kopieren übernimmt die Formatierung, z. B. zum Einfügen in Word.
   - **Einfacher Text**: nur Text, nichts wird als Formatierung gelesen. Export und Download als `.md`.
-- Suche, Tags (`#tag`), Rückverweise und „Karteikarten aus Notiz“ funktionieren in allen Formaten; Wikilinks, Callouts und Formeln werden nur in Markdown dargestellt.
-- Unter **⋮ → Format …** lässt sich das Format einer Notiz ändern. Was dabei verloren geht (z. B. Schriftfarben beim Wechsel zu Markdown), steht vor dem Umwandeln im Dialog.
+  - **Mindmap**: Gedanken als Baum um ein zentrales Thema, die Hauptäste farbig abwechselnd rechts und links. Bedienung wie in Mindmap-Programmen: `Tab` legt einen Unterpunkt an, `Enter` den nächsten Punkt, Pfeiltasten wählen, `F2`, Doppelklick oder einfach lostippen bearbeitet, `Entf` löscht, `Alt+↑/↓` verschiebt, `Strg+Z` macht rückgängig. Äste lassen sich einklappen und per Drag & Drop umhängen. Auf dem Handy: Knoten antippen, nochmal antippen zum Bearbeiten, Unterpunkte über die Werkzeugleiste. Punkte können Markdown, `[[Links]]`, `#Tags`, Bilder und Aufgaben (`[ ]`) enthalten. Gespeichert wird eine Markdown-Gliederung im Format des Obsidian-Plugins [Enhancing Mindmap](https://github.com/MarkMindCkm/obsidian-enhancing-mindmap) (`mindmap-plugin: basic`, Wurzel als `#`, erste Ebene als `##`, darunter Listen) – Obsidian zeigt sie ohne Plugin als Gliederung an. In der geteilten Ansicht bearbeitest du die Gliederung als Text, die Mindmap daneben folgt.
+  - **Canvas**: freie Fläche wie [Obsidian Canvas](https://obsidian.md/canvas) mit Textkarten (Markdown), eingebetteten Notizen, Bildern und PDFs, Links und Gruppen. Karten verschieben, in der Größe ändern, färben und mit Pfeilen verbinden (vom Rand einer Karte zur nächsten ziehen, Beschriftung per Doppelklick). Doppelklick auf die Fläche legt eine Karte an; Dateien lassen sich hineinziehen oder einfügen. Gespeichert im offenen Format [JSON Canvas](https://jsoncanvas.org); der Export legt `.canvas`-Dateien ab, die Obsidian direkt öffnet.
+- Suche, Tags (`#tag`), Rückverweise und „Karteikarten aus Notiz“ funktionieren in allen Formaten; Wikilinks, Callouts und Formeln werden in Markdown, Mindmaps und Canvas-Karten dargestellt.
+- Unter **⋮ → Format …** lässt sich das Format einer Notiz ändern. Was dabei verloren geht (z. B. Schriftfarben beim Wechsel zu Markdown), steht vor dem Umwandeln im Dialog. Aus Markdown wird eine Mindmap (Überschriften und Listen werden zu Ästen), aus einer Mindmap ein Canvas (jeder Punkt eine Karte).
 
 **Anhänge**
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
@@ -53,9 +55,9 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
 
 **Export & Import**
-- ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen.
+- ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen. Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im Vault.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, `#flashcards/…`). Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
-- Import von `.md`-Dateien, `.html`-Dateien (werden zu formatiertem Text), ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -295,7 +297,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 | `npm run typecheck` | TypeScript |
 
 **Technik:**
-- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, TipTap (formatierter Text), markdown-it, KaTeX, Mermaid, pdf.js
+- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, TipTap (formatierter Text), React Flow (Mindmap und Canvas), markdown-it, KaTeX, Mermaid, pdf.js
 - Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), @node-rs/argon2, otpauth
 
 **Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
@@ -304,7 +306,9 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Seitenleiste, Navigation, App-Kontext, Benutzermenü
-  notes/                Notizen in drei Formaten, Ordner, Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
+  notes/                Notizen in fünf Formaten, Ordner, Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
+  mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
+  canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht

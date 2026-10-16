@@ -7,6 +7,7 @@ import { getConfig } from '@/shared/server/config'
 import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
 import { noteText } from '../format'
+import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
 import type { Folder, Note, NoteFormat, NoteSummary, SearchResult, TagCount, TrashedNote } from '../types'
 
 export const MAX_NOTE_LENGTH = 2_000_000 // ca. 2 MB Text pro Notiz
@@ -242,8 +243,10 @@ export function getNote(userId: number, id: string): Note {
   return toNote(getDb(), getNoteRow(userId, id))
 }
 
-function checkContent(content: string) {
+function checkContent(content: string, format: NoteFormat) {
   if (content.length > MAX_NOTE_LENGTH) throw badRequest('Die Notiz ist zu groß.')
+  // Ein beschädigtes Canvas würde im Editor leer erscheinen und beim nächsten Speichern überschrieben
+  if (format === 'canvas' && !parseCanvas(content)) throw badRequest('Das Canvas konnte nicht gelesen werden.')
 }
 
 export function createNote(
@@ -254,7 +257,8 @@ export function createNote(
   const title = input.title.trim()
   const error = validateName(title)
   if (error) throw badRequest(error)
-  checkContent(input.content)
+  const format = input.format ?? 'markdown'
+  checkContent(input.content, format)
   assertFolder(userId, input.folderId)
 
   if (input.id !== undefined) {
@@ -268,7 +272,6 @@ export function createNote(
   }
   const id = input.id ?? uuid()
   const finalTitle = uniqueName(title, noteTitlesInFolder(userId, input.folderId))
-  const format = input.format ?? 'markdown'
   const text = noteText(format, input.content)
   const t = Date.now()
   db.transaction(() => {
@@ -318,7 +321,7 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
       note: toNote(db, current),
     })
   }
-  if (patch.content !== undefined) checkContent(patch.content)
+  if (contentChanged) checkContent(patch.content ?? current.content, format)
   if (folderChanged) assertFolder(userId, folderId)
   if (titleChanged || folderChanged) {
     const taken = noteTitlesInFolder(userId, folderId, id)
@@ -382,12 +385,26 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
     new RegExp(`(!?\\[\\[)((?:[^[\\]|#\\n]*/)?)${escapeRegExp(title)}(\\.md)?(?=[\\]|#])`, 'gi')
   const forHtml = (s: string) => s.replace(/&/g, '&amp;')
   let count = 0
-  for (const src of sources) {
-    const html = src.format === 'richtext'
-    const content = src.content.replace(pattern(html ? forHtml(oldTitle) : oldTitle), (_m, open: string, prefix: string) => {
+  const rewrite = (text: string, html: boolean) =>
+    text.replace(pattern(html ? forHtml(oldTitle) : oldTitle), (_m, open: string, prefix: string) => {
       count++
       return `${open}${prefix}${html ? forHtml(newTitle) : newTitle}`
     })
+  // Im Canvas: Wikilinks in Textkarten und Karten, die die Notiz selbst zeigen
+  const rewriteCanvas = (json: string) =>
+    mapCanvasNodes(json, (n) => {
+      if (n.type === 'text') {
+        const text = rewrite(n.text, false)
+        return text === n.text ? n : { ...n, text }
+      }
+      if (n.type === 'file' && linkKey(n.file) === key) {
+        count++
+        return { ...n, file: newTitle }
+      }
+      return n
+    })
+  for (const src of sources) {
+    const content = src.format === 'canvas' ? rewriteCanvas(src.content) : rewrite(src.content, src.format === 'richtext')
     if (content !== src.content) {
       const text = noteText(src.format, content)
       db.prepare(

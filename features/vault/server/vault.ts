@@ -9,10 +9,11 @@ import { getFlashcardData } from '@/features/flashcards/server/flashcards'
 import { deckToMarkdown } from '@/features/flashcards/card-markdown'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
 import { htmlBody, htmlDocument } from '@/shared/lib/html'
-import { noteExtension } from '@/features/notes/format'
 import type { NoteFormat } from '@/features/notes/types'
+import { canvasForExport, mapCanvasNodes, parseCanvas, type VaultIndex } from '@/features/canvas/canvas'
+import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
+import { EXPORT_ATTACHMENT_FOLDER, buildVaultIndex, vaultNotePath } from '../paths'
 
-const EXPORT_ATTACHMENT_FOLDER = 'Anhänge'
 /** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 
@@ -31,21 +32,52 @@ function importImagePaths(html: string): string {
   return html.replace(ATTACHMENT_DIR_RE, '$1/api/files/')
 }
 
+type ExportNote = { id: string; folder_id: string | null; title: string; content: string; format: NoteFormat; updated_at: number }
+type IndexNote = Pick<ExportNote, 'folder_id' | 'title' | 'format'>
+
+const foldersOf = (note: IndexNote, paths: Map<string, string[]>) => (note.folder_id ? (paths.get(note.folder_id) ?? []) : [])
+
+/** Notizen in der Reihenfolge des Anlegens */
+function indexFor(notes: IndexNote[], paths: Map<string, string[]>, userId: number): VaultIndex {
+  return buildVaultIndex(
+    notes.map((n) => ({ title: n.title, folders: foldersOf(n, paths), format: n.format })),
+    listAttachments(userId).map((a) => a.filename),
+  )
+}
+
+/** Pfade aller Notizen und Anhänge im Export – für die Dateikarten eines Canvas */
+export function vaultIndex(userId: number): VaultIndex {
+  const notes = getDb()
+    .prepare('SELECT folder_id, title, format FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at')
+    .all(userId) as IndexNote[]
+  return indexFor(notes, folderPathMap(userId), userId)
+}
+
+function exportContent(n: ExportNote, depth: number, index: () => VaultIndex): string {
+  if (n.format === 'richtext') return htmlDocument(n.title, exportImagePaths(n.content, depth))
+  if (n.format === 'canvas') return canvasForExport(n.content, index())
+  return n.content
+}
+
 /** Erstellt einen ZIP-Stream mit allen Notizen (Ordnerstruktur wie im Vault) und Anhängen. */
 export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
   const paths = folderPathMap(userId)
   const notes = getDb()
-    .prepare('SELECT id, folder_id, title, content, format, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL')
-    .all(userId) as { id: string; folder_id: string | null; title: string; content: string; format: NoteFormat; updated_at: number }[]
+    .prepare(
+      `SELECT id, folder_id, title, content, format, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL
+       ORDER BY created_at`,
+    )
+    .all(userId) as ExportNote[]
+  let vault: VaultIndex | null = null
+  const getVault = () => (vault ??= indexFor(notes, paths, userId))
 
   const entries: ExportEntry[] = notes.map((n) => {
-    const folders = n.folder_id ? (paths.get(n.folder_id) ?? []) : []
+    const folders = foldersOf(n, paths)
     return {
-      path: [...folders, `${n.title}${noteExtension(n.format)}`].join('/'),
+      path: vaultNotePath(folders, n.title, n.format),
       mtime: n.updated_at,
       compress: true,
-      data: () =>
-        strToU8(n.format === 'richtext' ? htmlDocument(n.title, exportImagePaths(n.content, folders.length)) : n.content),
+      data: () => strToU8(exportContent(n, folders.length, getVault)),
     }
   })
   // Leere Ordner trotzdem anlegen
@@ -109,6 +141,7 @@ export type ImportResult = { notes: number; attachments: number; folders: number
 const NOTE_EXT = /\.(md|markdown)$/i
 /** HTML-Dateien werden zu formatiertem Text (so lässt sich ein Export wieder importieren) */
 const HTML_EXT = /\.html?$/i
+const CANVAS_EXT = /\.canvas$/i
 
 function isHiddenPath(p: string) {
   return p.split('/').some((seg) => seg.startsWith('.') || seg === '__MACOSX')
@@ -119,7 +152,23 @@ function decodeText(data: Uint8Array): string {
 }
 
 /**
- * Importiert Markdown-Dateien, ZIP-Archive (z. B. ein Obsidian-Vault) und beliebige Dateien (als Anhänge).
+ * Dateikarten eines importierten Canvas: Obsidian speichert den Pfad im Vault („Ordner/Notiz.md“), Noted den Namen
+ * wie in einem Wikilink – Notizen ohne Endung, Anhänge mit (sie landen beim Import alle unter ihrem Dateinamen).
+ */
+function importCanvasFiles(json: string): string {
+  return mapCanvasNodes(json, (n) => {
+    if (n.type !== 'file') return n
+    const segments = n.file.split('/')
+    const base = segments.pop() ?? n.file
+    const note = NOTE_EXT.test(base) || CANVAS_EXT.test(base) || (HTML_EXT.test(base) && segments[0] !== EXPORT_ATTACHMENT_FOLDER)
+    const file = note ? sanitizeName(base.replace(/\.(md|markdown|canvas|html?)$/i, '')) : sanitizeFilename(base)
+    return file === n.file ? n : { ...n, file }
+  })
+}
+
+/**
+ * Importiert Markdown-, HTML- und Canvas-Dateien, ZIP-Archive (z. B. ein Obsidian-Vault) und beliebige Dateien
+ * (als Anhänge).
  */
 export async function importFiles(userId: number, files: File[], targetFolderId: string | null): Promise<ImportResult> {
   const { maxImportBytes, maxUploadBytes } = getConfig()
@@ -146,14 +195,21 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
     if (HTML_EXT.test(filename)) {
       const title = sanitizeName(filename.replace(HTML_EXT, ''))
       createNote(userId, { title, folderId, format: 'richtext', content: importImagePaths(htmlBody(decodeText(data))) })
+    } else if (CANVAS_EXT.test(filename)) {
+      const content = decodeText(data)
+      if (!parseCanvas(content)) throw badRequest('Kein gültiges Canvas.')
+      const title = sanitizeName(filename.replace(CANVAS_EXT, ''))
+      createNote(userId, { title, folderId, format: 'canvas', content: importCanvasFiles(content) })
     } else {
-      createNote(userId, { title: sanitizeName(filename.replace(NOTE_EXT, '')), folderId, content: decodeText(data) })
+      const content = decodeText(data)
+      const format = isMindmapMarkdown(content) ? 'mindmap' : 'markdown'
+      createNote(userId, { title: sanitizeName(filename.replace(NOTE_EXT, '')), folderId, format, content })
     }
     result.notes++
   }
   // HTML im Ordner „Anhänge“ eines Exports bleibt ein Anhang
   const isNoteFile = (segments: string[], filename: string) =>
-    NOTE_EXT.test(filename) || (HTML_EXT.test(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER)
+    NOTE_EXT.test(filename) || CANVAS_EXT.test(filename) || (HTML_EXT.test(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER)
 
   const importAttachment = (filename: string, type: string | null, data: Uint8Array) => {
     if (data.byteLength > maxUploadBytes) {
@@ -186,7 +242,8 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
         entries = unzipSync(data, {
           filter: (f) => {
             if (f.name.endsWith('/') || isHiddenPath(f.name)) return false
-            const max = NOTE_EXT.test(f.name) || HTML_EXT.test(f.name) ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
+            const isNote = NOTE_EXT.test(f.name) || HTML_EXT.test(f.name) || CANVAS_EXT.test(f.name)
+            const max = isNote ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
             if (f.originalSize > max) {
               result.skipped.push(`${f.name} (zu groß)`)
               return false

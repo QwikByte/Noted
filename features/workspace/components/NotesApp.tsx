@@ -121,11 +121,13 @@ export default function NotesApp() {
     [navigate, defaultFormat],
   )
 
-  // Editor für formatierten Text und die Formatumwandlung im Hintergrund laden – so cacht beide der Service Worker
-  // und sie funktionieren auch offline
+  // Editoren für formatierten Text, Mindmap und Canvas sowie die Formatumwandlung im Hintergrund laden – so cacht
+  // sie der Service Worker und sie funktionieren auch offline
   useEffect(() => {
     const timer = setTimeout(() => {
       void import('@/features/notes/components/RichTextEditor').catch(() => {})
+      void import('@/features/mindmap/components/MindmapEditor').catch(() => {})
+      void import('@/features/canvas/components/CanvasEditor').catch(() => {})
       void import('@/features/notes/client/convert').catch(() => {})
     }, 5_000)
     return () => clearTimeout(timer)

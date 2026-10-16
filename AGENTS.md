@@ -42,8 +42,8 @@ tests/          Gemeinsame Testhelfer und Tests für scripts/
 e2e/            Browser-Tests (Playwright) über mehrere Features
 ```
 
-Features: `workspace` (App-Rahmen, setzt die Features zusammen), `notes`, `attachments`, `flashcards`, `pdf`,
-`vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
+Features: `workspace` (App-Rahmen, setzt die Features zusammen), `notes`, `mindmap`, `canvas`, `attachments`,
+`flashcards`, `pdf`, `vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
 
 **Regeln**
 
