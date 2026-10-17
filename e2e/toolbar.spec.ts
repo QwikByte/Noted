@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { apiHeaders } from './helpers'
 
 // Globale Werkzeugleiste mit dem Fokus-Timer. Die Uhr im Browser ist vorgespult (page.clock), statt 25 Minuten zu warten.
@@ -30,37 +30,24 @@ test.afterEach(() => {
   expect(consoleErrors, 'Fehler in der Browser-Konsole').toEqual([])
 })
 
-test('Werkzeugleiste: ausklappen, einrasten, Fokus-Timer über Neuladen hinweg bis zur Pause', async ({ page }) => {
+/** Abstand eines Elements zum rechten bzw. linken und zum unteren Rand */
+async function gaps(page: Page, locator: Locator) {
+  const b = (await locator.boundingBox())!
+  const { width, height } = page.viewportSize()!
+  return { left: Math.round(b.x), right: Math.round(width - b.x - b.width), bottom: Math.round(height - b.y - b.height) }
+}
+
+test('Werkzeugleiste fest unten rechts, Fokus-Timer über Neuladen hinweg bis zur Pause', async ({ page }) => {
   await page.clock.install()
   await login(page)
   const bar = page.getByTestId('global-toolbar')
-  const { height: vh } = page.viewportSize()!
 
-  // Eingeklappt nur ein Knopf oben; ausgeklappt die Werkzeuge
+  // Eingeklappt ein Knopf in der Ecke unten rechts; ausgeklappt bleibt die Leiste dort, ohne Griff zum Verschieben
+  expect(await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
   await bar.getByRole('button', { name: 'Werkzeuge' }).click()
   await expect(page.getByRole('toolbar', { name: 'Werkzeuge' })).toBeVisible()
-  const top = (await bar.boundingBox())!
-  expect(top.y).toBeLessThan(20)
-
-  // Ziehen: seitlich frei, beim Loslassen rastet die Leiste am näheren Rand ein (hier unten)
-  const grip = bar.getByRole('button', { name: 'Werkzeugleiste verschieben' })
-  const g = (await grip.boundingBox())!
-  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(g.x - 300, vh * 0.7, { steps: 6 })
-  await page.mouse.up()
-  const bottomEdge = async () => {
-    const b = (await bar.boundingBox())!
-    return vh - (b.y + b.height)
-  }
-  await expect.poll(bottomEdge).toBeLessThan(20)
-  expect((await bar.boundingBox())!.x).toBeLessThan(top.x - 250)
-  // Pfeiltasten: ↑ springt nach oben, ←/→ verschieben seitlich
-  await grip.press('ArrowUp')
-  await expect.poll(async () => (await bar.boundingBox())!.y).toBeLessThan(20)
-  const left = (await bar.boundingBox())!.x
-  await grip.press('ArrowRight')
-  await expect.poll(async () => (await bar.boundingBox())!.x).toBeGreaterThan(left)
+  expect(await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
+  await expect(bar.getByRole('button', { name: /verschieben/ })).toHaveCount(0)
 
   // Fokus-Timer als Fenster öffnen und starten
   await bar.getByRole('button', { name: 'Fokus-Timer' }).click()
@@ -86,13 +73,11 @@ test('Werkzeugleiste: ausklappen, einrasten, Fokus-Timer über Neuladen hinweg b
   await settingsToggle.click()
   await expect(win.getByLabel('Fokus (min)')).toHaveCount(0)
 
-  // Neuladen: Leiste (an derselben Stelle), Fenster und laufender Timer sind noch da
-  const placed = (await bar.boundingBox())!
+  // Neuladen: Leiste, Fenster und laufender Timer sind noch da
   await page.reload()
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
   await expect(win.getByTestId('focus-clock')).toHaveText(/^(20:00|19:5\d)$/)
-  expect(Math.round((await bar.boundingBox())!.x)).toBe(Math.round(placed.x))
-  expect(Math.round((await bar.boundingBox())!.y)).toBe(Math.round(placed.y))
+  await expect(page.getByRole('toolbar', { name: 'Werkzeuge' })).toBeVisible()
 
   // Ende der Fokus-Runde: Meldung, und die kurze Pause läuft gleich weiter
   await page.clock.fastForward('20:00')
@@ -100,15 +85,15 @@ test('Werkzeugleiste: ausklappen, einrasten, Fokus-Timer über Neuladen hinweg b
   await expect(win.getByTestId('focus-phase')).toHaveText('Kurze Pause · Runde 1 von 4')
   await expect(win.getByRole('button', { name: 'Anhalten' })).toBeVisible()
 
-  // Fenster zu: Der laufende Timer bleibt klein unten mittig sichtbar
+  // Fenster zu: Der laufende Timer steht klein unten links, direkt neben der Seitenleiste
   const mini = page.getByTestId('focus-mini')
   await expect(mini).toHaveCount(0)
   await win.getByRole('button', { name: 'Schließen' }).click()
   await expect(win).toHaveCount(0)
   await expect(mini).toContainText(/Kurze Pause\s*0[45]:\d\d/)
-  const m = (await mini.boundingBox())!
-  expect(Math.abs(m.x + m.width / 2 - page.viewportSize()!.width / 2)).toBeLessThan(2)
-  expect(vh - (m.y + m.height)).toBeLessThan(20)
+  const sidebar = (await page.locator('aside').first().boundingBox())!
+  // Nach der Einblend-Animation messen
+  await expect.poll(() => gaps(page, mini)).toMatchObject({ left: Math.round(sidebar.x + sidebar.width + 8), bottom: 8 })
   await shot(page, '51-focus-mini')
 
   // Ein Klick darauf öffnet wieder das Fenster
@@ -119,7 +104,22 @@ test('Werkzeugleiste: ausklappen, einrasten, Fokus-Timer über Neuladen hinweg b
   await win.getByRole('button', { name: 'Anhalten' }).click()
   await win.getByRole('button', { name: 'Schließen' }).click()
   await expect(mini).toHaveCount(0)
+
+  // Das Kreuz klappt die Leiste wieder ein
+  await bar.getByRole('button', { name: 'Werkzeugleiste schließen' }).click()
+  await expect(page.getByRole('toolbar', { name: 'Werkzeuge' })).toHaveCount(0)
+  await expect(bar.getByRole('button', { name: 'Werkzeuge' })).toBeVisible()
 })
+
+async function startTimerAndClose(page: Page) {
+  const bar = page.getByTestId('global-toolbar')
+  await bar.getByRole('button', { name: 'Werkzeuge' }).click()
+  await bar.getByRole('button', { name: 'Fokus-Timer' }).click()
+  const win = page.getByTestId('window-focus')
+  await win.getByRole('button', { name: 'Start' }).click()
+  await win.getByRole('button', { name: 'Schließen' }).click()
+  await expect(page.getByTestId('focus-mini')).toBeVisible()
+}
 
 test('Beim Lernen bleiben Leiste und Mini-Timer über den Bewertungsknöpfen', async ({ page }) => {
   await login(page)
@@ -136,31 +136,54 @@ test('Beim Lernen bleiben Leiste und Mini-Timer über den Bewertungsknöpfen', a
   await expect(reveal).toBeVisible()
   const barTop = (await reveal.boundingBox())!.y
 
-  // Timer starten, Fenster schließen: Der Mini-Timer sitzt über der Leiste mit den Knöpfen
-  const bar = page.getByTestId('global-toolbar')
-  await bar.getByRole('button', { name: 'Werkzeuge' }).click()
-  await bar.getByRole('button', { name: 'Fokus-Timer' }).click()
-  const win = page.getByTestId('window-focus')
-  await win.getByRole('button', { name: 'Start' }).click()
-  await win.getByRole('button', { name: 'Schließen' }).click()
-  const m = (await page.getByTestId('focus-mini').boundingBox())!
-  expect(m.y + m.height).toBeLessThan(barTop - 8)
-
-  // Auch die unten eingerastete Werkzeugleiste
-  await bar.getByRole('button', { name: 'Werkzeugleiste verschieben' }).press('ArrowDown')
-  await expect.poll(async () => (await bar.boundingBox())!.y).toBeGreaterThan(page.viewportSize()!.height / 2)
-  const b = (await bar.boundingBox())!
-  expect(b.y + b.height).toBeLessThan(barTop - 8)
+  await startTimerAndClose(page)
+  for (const el of [page.getByTestId('focus-mini'), page.getByTestId('global-toolbar')]) {
+    await expect.poll(async () => (await gaps(page, el)).bottom).toBeGreaterThan(page.viewportSize()!.height - barTop + 8)
+  }
   await shot(page, '52-focus-study')
 
   // Nach dem Lernen gilt wieder der ganze Bildschirm
-  await page.getByTestId('reveal').click()
+  await reveal.click()
   await page.getByTestId('rate-4').click()
-  await expect(page.getByTestId('reveal')).toHaveCount(0)
-  await expect.poll(async () => {
-    const box = (await page.getByTestId('focus-mini').boundingBox())!
-    return page.viewportSize()!.height - (box.y + box.height)
-  }).toBeLessThan(20)
+  await expect(reveal).toHaveCount(0)
+  await expect.poll(async () => (await gaps(page, page.getByTestId('focus-mini'))).bottom).toBe(8)
+})
+
+test('Leiste über den Zoom-Knöpfen der Mindmap', async ({ page }) => {
+  await login(page)
+  const created = await page.request.post('/api/notes', {
+    headers: await apiHeaders(page),
+    data: { title: 'Gedanken', format: 'mindmap', content: '---\nmindmap-plugin: basic\n---\n\n# Gedanken\n\n## Idee\n' },
+  })
+  expect(created.status()).toBe(201)
+  await page.goto(`/?n=${(await created.json()).note.id}`)
+  const zoom = page.getByRole('button', { name: 'Alles anzeigen' })
+  await expect(zoom).toBeVisible()
+  const bar = (await page.getByTestId('global-toolbar').boundingBox())!
+  expect(bar.y + bar.height).toBeLessThan((await zoom.boundingBox())!.y)
+})
+
+test('Auf dem Handy: Mini-Timer ganz unten links, Leiste über „Neue Notiz“', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await login(page)
+  const bar = page.getByTestId('global-toolbar')
+  const fab = page.getByRole('button', { name: 'Neue Notiz' })
+  await expect(fab).toBeVisible()
+  expect((await bar.boundingBox())!.y + (await bar.boundingBox())!.height).toBeLessThan((await fab.boundingBox())!.y)
+
+  await startTimerAndClose(page)
+  await expect.poll(() => gaps(page, page.getByTestId('focus-mini'))).toMatchObject({ left: 8, bottom: 8 })
+  await shot(page, '53-focus-mobile')
+
+  // Ohne „Neue Notiz“ (in einer Notiz) sitzt die Leiste wieder in der Ecke
+  const created = await page.request.post('/api/notes', {
+    headers: await apiHeaders(page),
+    data: { title: 'Mitschrift', content: 'Text' },
+  })
+  await page.goto(`/?n=${(await created.json()).note.id}`)
+  await expect(page.getByTestId('note-title')).toHaveValue('Mitschrift')
+  await expect(fab).toHaveCount(0)
+  await expect.poll(async () => await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
 })
 
 test('Fokus-Timer: Countdown mit eigener Dauer und Systembenachrichtigung', async ({ page }) => {

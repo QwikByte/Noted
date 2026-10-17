@@ -5,7 +5,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from './common'
 import { Button } from '@/shared/ui/button'
-import { useBottomBar } from '@/shared/ui/bottom-bar'
+import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
 import { reviewQueue, useFlashcards, type Flashcards } from '../client/flashcards'
@@ -208,7 +208,7 @@ function StudySession({
   }, [isMc, answer.selected.size])
 
   // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
-  const bottomBar = useBottomBar<HTMLDivElement>()
+  const bottomBar = useReservedSpace<HTMLDivElement>('--bottom-bar-height')
 
   // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen
   const rootRef = useRef<HTMLDivElement>(null)

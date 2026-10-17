@@ -1,4 +1,4 @@
-// Schwebende Elemente (Werkzeugleiste, Fenster): Die Position ist ein Anteil der freien Fläche – 0 = ganz links bzw.
+// Verschiebbare Fenster über der App: Die Position ist ein Anteil der freien Fläche – 0 = ganz links bzw.
 // oben, 1 = ganz rechts bzw. unten. So bleibt ein Element bei jeder Fenstergröße ganz sichtbar und bleibt an dem Rand,
 // an den man es geschoben hat.
 
@@ -23,28 +23,5 @@ export function dragPoint(origin: Point, dx: number, dy: number, freeW: number, 
   return {
     x: freeW > 0 ? clamp01(origin.x + dx / freeW) : origin.x,
     y: freeH > 0 ? clamp01(origin.y + dy / freeH) : origin.y,
-  }
-}
-
-/** Oben oder unten einrasten – an den Rand, der näher liegt; seitlich bleibt es, wo es ist */
-export const snapPoint = (p: Point): Point => ({ x: p.x, y: p.y < 0.5 ? 0 : 1 })
-
-/**
- * Mit den Pfeiltasten verschieben (mit Umschalt in großen Schritten); andere Tasten: null.
- * `snap`: ↑/↓ springen an den oberen bzw. unteren Rand.
- */
-export function nudgePoint(p: Point, key: string, { big = false, snap = false } = {}): Point | null {
-  const step = big ? 0.2 : 0.05
-  switch (key) {
-    case 'ArrowLeft':
-      return { ...p, x: clamp01(p.x - step) }
-    case 'ArrowRight':
-      return { ...p, x: clamp01(p.x + step) }
-    case 'ArrowUp':
-      return { ...p, y: snap ? 0 : clamp01(p.y - step) }
-    case 'ArrowDown':
-      return { ...p, y: snap ? 1 : clamp01(p.y + step) }
-    default:
-      return null
   }
 }

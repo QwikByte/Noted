@@ -62,6 +62,7 @@ import { insertionToMarkdown } from '@/features/notes/client/active-editor'
 import { attachmentMarkdown } from '@/features/attachments/client/upload'
 import type { NoteEditorHandle } from '@/features/notes/client/editor-handle'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
+import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { cn } from '@/shared/ui/cn'
 
 /** Werkzeug der Leiste: Ein offenes Textfeld verliert beim Klicken den Fokus und speichert, bevor das Werkzeug wirkt */
@@ -256,6 +257,8 @@ export default function MindmapEditor(props: Props) {
 function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onUpload, onCreateCard, autoFocus, header }: Props) {
   const flow = useReactFlow<MindFlowNode, BranchEdge>()
   const wrapperRef = useRef<HTMLDivElement>(null)
+  // Die Werkzeugleiste unten rechts setzt sich über die Zoom-Knöpfe
+  const zoomSpace = useReservedSpace<HTMLDivElement>('--bottom-right-height')
   // Baum zum gespeicherten Text; ändert sich der Text von außen (anderes Gerät, Textansicht), wird neu gelesen
   const [doc, setDoc] = useState(() => ({ source: content, root: parseMindmap(content, title) }))
   if (content !== doc.source) setDoc({ source: content, root: parseMindmap(content, title) })
@@ -694,7 +697,7 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
             proOptions={FLOW_PRO_OPTIONS}
           >
             <Background variant={BackgroundVariant.Lines} gap={20} />
-            <Panel position="bottom-right" className="flow-panel">
+            <Panel ref={zoomSpace} position="bottom-right" className="flow-panel">
               <ToolButton label="Verkleinern" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <ZoomOut />
               </ToolButton>

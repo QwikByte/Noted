@@ -54,6 +54,7 @@ import type { NoteEditorHandle } from '@/features/notes/client/editor-handle'
 import { useAttachments } from '@/features/attachments/client/queries'
 import type { Attachment } from '@/features/attachments/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
+import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { Menu, MenuItem } from '@/shared/ui/menu'
 
 /** Werkzeug der Leiste: Ein offenes Textfeld verliert beim Klicken den Fokus und speichert, bevor das Werkzeug wirkt */
@@ -103,6 +104,8 @@ export default function CanvasEditor(props: Props) {
 function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUpload, onCreateCard, header }: Props) {
   const flow = useReactFlow<CardNode, ArrowEdge>()
   const wrapperRef = useRef<HTMLDivElement>(null)
+  // Die Werkzeugleiste unten rechts setzt sich über die Zoom-Knöpfe
+  const zoomSpace = useReservedSpace<HTMLDivElement>('--bottom-right-height')
   const markerId = `canvas-arrow-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   // Stand zum gespeicherten Text; ändert er sich von außen (anderes Gerät), wird neu gelesen
   const [doc, setDoc] = useState(() => ({ source: content, data: parseCanvas(content) ?? EMPTY }))
@@ -731,7 +734,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
                 zum nächsten, um Karten zu verbinden.
               </Panel>
             ) : null}
-            <Panel position="bottom-right" className="flow-panel">
+            <Panel ref={zoomSpace} position="bottom-right" className="flow-panel">
               <ToolButton label="Verkleinern" onClick={() => void flow.zoomOut({ duration: 150 })}>
                 <ZoomOut />
               </ToolButton>
