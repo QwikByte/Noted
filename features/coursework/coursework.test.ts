@@ -5,12 +5,15 @@ import * as courses from '@/app/api/coursework/courses/route'
 import * as courseRoute from '@/app/api/coursework/courses/[id]/route'
 import * as sheets from '@/app/api/coursework/courses/[id]/sheets/route'
 import * as sheetRoute from '@/app/api/coursework/sheets/[id]/route'
+import * as tasks from '@/app/api/coursework/courses/[id]/tasks/route'
+import * as taskRoute from '@/app/api/coursework/tasks/[id]/route'
+import * as attempt from '@/app/api/coursework/tasks/[id]/attempt/route'
 import * as calendar from '@/app/api/calendar/route'
 import * as eventRoute from '@/app/api/calendar/[id]/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
 import type { CalendarEvent } from '@/features/calendar/types'
-import type { Course, CourseworkData, Sheet, SheetInput } from './types'
+import type { Course, CourseTask, CourseworkData, Sheet, SheetInput } from './types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -88,7 +91,7 @@ describe('Übungen', () => {
 
     expect((await call(courseRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: course.id } })).status).toBe(200)
     expect(await events()).toEqual([])
-    expect(await load()).toEqual({ courses: [], sheets: [] })
+    expect(await load()).toEqual({ courses: [], sheets: [], tasks: [] })
   })
 
   it('prüft Eingaben und zeigt jedem nur die eigenen Fächer', async () => {
@@ -108,11 +111,62 @@ describe('Übungen', () => {
     await call(password.POST, '/', { cookie: dora, body: { currentPassword: 'Geheimes-Wort-56', newPassword: 'Geheimes-Wort-78' } })
     const sheet = await createSheet(course.id, { title: 'Blatt 1', maxPoints: 10, points: null, due: null })
 
-    expect(await load(dora)).toEqual({ courses: [], sheets: [] })
+    expect(await load(dora)).toEqual({ courses: [], sheets: [], tasks: [] })
     expect((await call(sheets.POST, '/', { cookie: dora, params: { id: course.id }, body: { title: 'x', maxPoints: 1, points: null, due: null } })).status).toBe(404)
     expect((await putSheet(sheet.id, { title: 'x', maxPoints: 1, points: 1, due: null }, dora)).status).toBe(404)
     expect((await call(courseRoute.DELETE, '/', { method: 'DELETE', cookie: dora, params: { id: course.id } })).status).toBe(404)
     expect((await call(coursework.GET, '/')).status).toBe(401)
     expect((await call(courses.POST, '/', { cookie: token, body: { name: 'x', requiredPercent: 50, plannedSheets: null }, csrf: false })).status).toBe(403)
+  })
+})
+
+describe('Aufgaben zum Wiederholen', () => {
+  it('sammelt Aufgaben je Fach, hält Ergebnisse fest und plant die nächste Wiederholung', async () => {
+    const course = await createCourse('Stochastik')
+    const r = await call(tasks.POST, '/', {
+      cookie: token,
+      params: { id: course.id },
+      body: { title: '  Altklausur 2024,   Aufgabe 1 ', prompt: ' Berechne $P(A)$. ', solution: '$1/2$' },
+    })
+    expect(r.status).toBe(201)
+    const task = r.data.task as CourseTask
+    expect(task).toMatchObject({ title: 'Altklausur 2024, Aufgabe 1', prompt: 'Berechne $P(A)$.', result: null, attempts: 0, due: null })
+
+    const tried = async (result: string, today = '2026-10-17') =>
+      (await call(attempt.POST, '/', { cookie: token, params: { id: task.id }, body: { result, today } })).data.task as CourseTask
+    expect(await tried('wrong')).toMatchObject({ result: 'wrong', due: '2026-10-20', attempts: 1 })
+    expect(await tried('unsure', '2026-10-20')).toMatchObject({ result: 'unsure', due: '2026-10-27', attempts: 2 })
+    const solved = await tried('solved', '2026-10-27')
+    expect(solved).toMatchObject({ result: 'solved', due: null, attempts: 3 })
+    expect(solved.attemptedAt).toBeGreaterThan(0)
+
+    // Ändern lässt den Stand unberührt
+    const put = await call(taskRoute.PUT, '/', {
+      method: 'PUT',
+      cookie: token,
+      params: { id: task.id },
+      body: { title: 'Aufgabe 1', prompt: 'Neu', solution: '' },
+    })
+    expect(put.data.task).toMatchObject({ title: 'Aufgabe 1', prompt: 'Neu', solution: '', result: 'solved', attempts: 3 })
+    expect((await load()).tasks).toEqual([put.data.task])
+
+    expect((await call(attempt.POST, '/', { cookie: token, params: { id: task.id }, body: { result: 'meh', today: '2026-10-27' } })).status).toBe(400)
+    expect((await call(attempt.POST, '/', { cookie: token, params: { id: task.id }, body: { result: 'wrong', today: '2026-02-30' } })).status).toBe(400)
+    expect((await call(tasks.POST, '/', { cookie: token, params: { id: course.id }, body: { title: ' ', prompt: '', solution: '' } })).status).toBe(400)
+
+    // Fremde sehen und ändern nichts
+    expect((await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'emil', password: 'Geheimes-Wort-90' } })).status).toBe(201)
+    const emil = await loginAs('emil', 'Geheimes-Wort-90')
+    await call(password.POST, '/', { cookie: emil, body: { currentPassword: 'Geheimes-Wort-90', newPassword: 'Geheimes-Wort-91' } })
+    expect((await call(attempt.POST, '/', { cookie: emil, params: { id: task.id }, body: { result: 'wrong', today: '2026-10-27' } })).status).toBe(404)
+    expect((await call(taskRoute.DELETE, '/', { method: 'DELETE', cookie: emil, params: { id: task.id } })).status).toBe(404)
+    expect((await call(tasks.POST, '/', { cookie: emil, params: { id: course.id }, body: { title: 'x', prompt: '', solution: '' } })).status).toBe(404)
+
+    expect((await call(taskRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: task.id } })).status).toBe(200)
+    expect((await load()).tasks).toEqual([])
+    // Mit dem Fach verschwinden auch seine Aufgaben
+    await call(tasks.POST, '/', { cookie: token, params: { id: course.id }, body: { title: 'Aufgabe 2', prompt: '', solution: '' } })
+    await call(courseRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: course.id } })
+    expect((await load()).tasks).toEqual([])
   })
 })

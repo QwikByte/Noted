@@ -1,16 +1,20 @@
 'use client'
 // Übungen: je Fach die Übungsblätter mit Punkten und der Stand der Klausurzulassung
 import { useState } from 'react'
-import { ClipboardCheck, CloudOff, Loader2, Pencil, Plus } from 'lucide-react'
-import { dateOf, shortDate, timeOf, weekdayShort } from '@/features/calendar/dates'
+import { ChevronRight, ClipboardCheck, CloudOff, ListChecks, Loader2, Pencil, Plus } from 'lucide-react'
+import { useApp } from '@/features/workspace/client/context'
+import { dateOf, localDate, shortDate, timeOf, weekdayShort } from '@/features/calendar/dates'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
 import { NetworkError } from '@/shared/client/api'
+import { useNow } from '@/shared/client/now'
 import { useCoursework, type DatedSheet } from '../client/coursework'
 import { admission, admissionHint, formatPoints, type Admission } from '../admission'
+import { taskCounts } from '../tasks'
 import { CourseDialog, SheetDialog } from './CourseworkDialogs'
-import type { Course } from '../types'
+import { TaskBar } from './TasksView'
+import type { Course, CourseTask } from '../types'
 
 type Dialog = { kind: 'course'; course: Course | null } | { kind: 'sheet'; course: Course; sheet: DatedSheet | null }
 
@@ -63,6 +67,7 @@ export function CourseworkView() {
               key={course.id}
               course={course}
               sheets={sheetsOf(course)}
+              tasks={data.tasks.filter((t) => t.courseId === course.id)}
               onEdit={() => setDialog({ kind: 'course', course })}
               onSheet={(sheet) => setDialog({ kind: 'sheet', course, sheet })}
             />
@@ -81,15 +86,19 @@ export function CourseworkView() {
 function CourseCard({
   course,
   sheets,
+  tasks,
   onEdit,
   onSheet,
 }: {
   course: Course
   sheets: DatedSheet[]
+  tasks: CourseTask[]
   onEdit: () => void
   onSheet: (sheet: DatedSheet | null) => void
 }) {
+  const app = useApp()
   const a = admission(course, sheets)
+  const counts = taskCounts(tasks, localDate(new Date(useNow())))
   return (
     <section className="rounded-xl border border-border bg-elevated p-4" aria-label={course.name} data-testid="course">
       <div className="flex items-start gap-2">
@@ -146,6 +155,26 @@ function CourseCard({
       <Button variant="ghost" size="sm" className="mt-2" onClick={() => onSheet(null)}>
         <Plus className="size-4" /> Übungsblatt
       </Button>
+
+      {/* Aufgaben aus Altklausuren und Übungen zum Wiederholen */}
+      <button
+        type="button"
+        onClick={() => app.go({ kind: 'tasks', course: course.id })}
+        className="mt-3 flex w-full items-center gap-3 rounded-md border-t border-border px-1 pt-3 text-left text-sm hover:text-fg"
+        data-testid="course-tasks"
+      >
+        <ListChecks className="size-4 shrink-0 text-faint" />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">Aufgaben</span>
+          <span className="text-muted">
+            {counts.total === 0
+              ? ' – Altklausuren und Übungsaufgaben wiederholen'
+              : ` · ${counts.total} · ${Math.floor((counts.solved / counts.total) * 100)} % gelöst${counts.open > 0 ? ` · ${counts.open} offen` : ''}`}
+          </span>
+          {counts.total > 0 ? <TaskBar counts={counts} className="mt-1.5 max-w-xs" /> : null}
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-faint" />
+      </button>
     </section>
   )
 }

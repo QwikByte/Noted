@@ -371,4 +371,23 @@ export const migrations: string[] = [
   CREATE INDEX exercise_sheets_user ON exercise_sheets(user_id, course_id);
   CREATE INDEX exercise_sheets_event ON exercise_sheets(event_id);
   `,
+
+  /* 16: Aufgaben zum Wiederholen (Altklausuren, Übungsaufgaben) je Fach. result = Ergebnis der letzten Bearbeitung
+     (NULL = noch nicht bearbeitet), due = Tag der nächsten Wiederholung (YYYY-MM-DD, nur bei unsicher und falsch). */ `
+  CREATE TABLE course_tasks (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL DEFAULT '',
+    solution TEXT NOT NULL DEFAULT '',
+    result TEXT CHECK (result IN ('solved', 'unsure', 'wrong')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    due TEXT,
+    attempted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX course_tasks_user ON course_tasks(user_id, course_id);
+  `,
 ]

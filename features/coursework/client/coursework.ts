@@ -1,12 +1,13 @@
 'use client'
-// Übungen im Browser: Fächer und Blätter laden (der Service Worker hält sie auch offline bereit) und Änderungen
-// senden. Die Abgabe eines Blatts ist ein Termin im Kalender – Tag und Uhrzeit kommen aus dessen Daten, so stimmen
+// Übungen im Browser: Fächer, Blätter und Aufgaben laden (der Service Worker hält sie auch offline bereit) und
+// Änderungen senden. Die Abgabe eines Blatts ist ein Termin im Kalender – Tag und Uhrzeit kommen aus dessen Daten, so stimmen
 // sie auch, wenn der Termin im Kalender verschoben wurde.
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/client/api'
 import { calendarKey, useEvents } from '@/features/calendar/client/calendar'
-import type { Course, CourseInput, CourseworkData, Sheet, SheetInput } from '../types'
+import { localDate } from '@/features/calendar/dates'
+import type { Course, CourseInput, CourseTask, CourseworkData, Sheet, SheetInput, TaskInput, TaskResult } from '../types'
 
 const courseworkKey = ['coursework'] as const
 
@@ -28,15 +29,17 @@ export function useCoursework() {
     const sheets: DatedSheet[] = query.data.sheets
       .map((s) => ({ ...s, due: s.eventId ? (starts.get(s.eventId) ?? null) : null }))
       .sort(byDue)
-    return { courses: query.data.courses, sheets }
+    // Daten älterer Versionen im Offline-Speicher haben noch keine Aufgaben
+    return { courses: query.data.courses, sheets, tasks: query.data.tasks ?? [] }
   }, [query.data, events])
   return { ...query, data }
 }
 
 export function useCourseworkMutations() {
   const qc = useQueryClient()
+  const reload = () => qc.invalidateQueries({ queryKey: courseworkKey })
   // Abgaben ändern auch den Kalender
-  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: courseworkKey }), qc.invalidateQueries({ queryKey: calendarKey })])
+  const refresh = () => Promise.all([reload(), qc.invalidateQueries({ queryKey: calendarKey })])
   return {
     createCourse: useMutation({
       mutationFn: (input: CourseInput) => api<{ course: Course }>('/api/coursework/courses', { method: 'POST', body: input }),
@@ -64,6 +67,32 @@ export function useCourseworkMutations() {
     deleteSheet: useMutation({
       mutationFn: (id: string) => api(`/api/coursework/sheets/${id}`, { method: 'DELETE' }),
       onSuccess: refresh,
+    }),
+    createTask: useMutation({
+      mutationFn: ({ courseId, input }: { courseId: string; input: TaskInput }) =>
+        api<{ task: CourseTask }>(`/api/coursework/courses/${courseId}/tasks`, { method: 'POST', body: input }),
+      onSuccess: reload,
+    }),
+    updateTask: useMutation({
+      mutationFn: ({ id, input }: { id: string; input: TaskInput }) =>
+        api<{ task: CourseTask }>(`/api/coursework/tasks/${id}`, { method: 'PUT', body: input }),
+      onSuccess: reload,
+    }),
+    deleteTask: useMutation({
+      mutationFn: (id: string) => api(`/api/coursework/tasks/${id}`, { method: 'DELETE' }),
+      onSuccess: reload,
+    }),
+    /** Bearbeitete Aufgabe bewerten – ohne alles neu zu laden (während einer Wiederholung) */
+    attemptTask: useMutation({
+      mutationFn: ({ id, result }: { id: string; result: TaskResult }) =>
+        api<{ task: CourseTask }>(`/api/coursework/tasks/${id}/attempt`, {
+          method: 'POST',
+          body: { result, today: localDate(new Date()) },
+        }),
+      onSuccess: ({ task }) =>
+        qc.setQueryData<CourseworkData>(courseworkKey, (d) =>
+          d ? { ...d, tasks: d.tasks.map((t) => (t.id === task.id ? task : t)) } : d,
+        ),
     }),
   }
 }
