@@ -453,3 +453,24 @@ test('Anki-Deck importieren', async ({ page }) => {
   cleanup.push(`/api/decks/${deck.id}`)
   expect(data.cards.filter((c: { deckId: string }) => c.deckId === deck.id).map((c: { type: string }) => c.type)).toEqual(['reversed', 'cloze'])
 })
+
+test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'FSRS-Stapel' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await post(page, `/api/decks/${deck.id}/cards`, { cards: [{ type: 'basic', front: 'Frage', back: 'Antwort' }] }, 'cards')
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Wiederholungsplan').selectOption('fsrs')
+  await expect(dialog.getByLabel('Gewünschte Behaltensrate (%)')).toHaveValue('90')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toBeHidden()
+
+  // Neue Karte: „Einfach“ plant mit FSRS nach der Anfangsstabilität (gut zwei Wochen) statt 4 Tage wie mit SM-2
+  await page.getByTestId('deck-learn').click()
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('rate-4')).toContainText('16 Tage')
+  await expect(page.getByTestId('rate-3')).toContainText('10 Min.')
+})

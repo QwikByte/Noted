@@ -16,6 +16,9 @@ export type Deck = {
   newPerDay: number
   /** Antwort beim Lernen eintippen (Grund- und beidseitige Karten) */
   typeAnswer: boolean
+  /** Wiederholungsplan: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate (0,7–0,99) */
+  scheduler: 'sm2' | 'fsrs'
+  retention: number
   createdAt: number
   updatedAt: number
 }
@@ -53,6 +56,9 @@ export type SrsState = {
   reviewedAt: number
   /** Zeitpunkt der ersten Abfrage (für das Tageslimit neuer Karten) */
   introducedAt: number
+  /** Nur mit FSRS geplant: Stabilität (Tage bis 90 % Erinnerung) und Schwierigkeit (1–10) */
+  stability?: number | null
+  difficulty?: number | null
 }
 
 /** side 0: Vorderseite wird abgefragt, side 1: Rückseite (nur bei beidseitigen Karten) – bei Lückentexten die Lücke */

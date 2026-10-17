@@ -295,7 +295,7 @@ function patch(qc: QueryClient, fn: (d: FlashcardData) => FlashcardData) {
 
 const byName = (a: Deck, b: Deck) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
 
-export type DeckInput = { name: string; description?: string; newPerDay?: number; typeAnswer?: boolean }
+export type DeckInput = Partial<Pick<Deck, 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>> & { name: string }
 
 export async function createDeck(qc: QueryClient, input: DeckInput): Promise<Deck> {
   const { deck } = await api<{ deck: Deck }>('/api/decks', { method: 'POST', body: input })
