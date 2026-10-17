@@ -228,6 +228,13 @@ export const focusTimer = {
     const { state, settings } = snapshot()
     save(skip(state, settings, Date.now()))
   },
+  /** Countdown mit eigener Dauer sofort starten, z. B. für einen eingeplanten Lernblock im Kalender */
+  startCountdown(minutes: number) {
+    const next = normalizeSettings({ ...snapshot().settings, countdown: minutes })
+    writeItem(SETTINGS_KEY, JSON.stringify(next))
+    unlockAudio()
+    save(start(initialState('countdown', next), Date.now()))
+  },
   setMode(mode: TimerMode) {
     const { state, settings } = snapshot()
     if (mode !== state.mode) save(initialState(mode, settings))

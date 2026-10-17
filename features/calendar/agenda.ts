@@ -1,6 +1,6 @@
 // Terminliste für die Startseite und Beschriftungen von Terminen. Reine Logik ohne Browser-Abhängigkeit.
 import { sanitizeName } from '@/shared/lib/names'
-import { addDays, dateOf, daysBetween, shortDate, timeOf, weekdayName } from './dates'
+import { addDays, dateOf, daysBetween, minutesBetween, shortDate, timeOf, weekdayName } from './dates'
 import { occurrences, onDay } from './event'
 import type { CalendarEvent, Occurrence } from './types'
 
@@ -40,3 +40,20 @@ export function dayLabel(day: string, today: string): string {
 
 /** Titel der Mitschrift zu einem Termin – im Stil der Vorlage „Vorlesung“: Datum vorn, dann der Termin */
 export const noteTitleFor = (o: Occurrence) => sanitizeName(`${o.date} ${o.event.title}`)
+
+/**
+ * Dauer für „Fokus starten“ in Minuten (`now`: Ortszeit YYYY-MM-DDTHH:mm): die ganze Dauer, läuft der Termin schon,
+ * die Restzeit. null bei ganztägigen und schon beendeten Terminen.
+ */
+export function focusMinutes(o: Occurrence, now: string): number | null {
+  if (o.event.allDay || o.end <= now || o.end <= o.start) return null
+  return minutesBetween(o.start > now ? o.start : now, o.end)
+}
+
+/** Termine mit Uhrzeit, die heute begonnen haben und schon vorbei sind (`now`: Ortszeit YYYY-MM-DDTHH:mm) */
+export function endedToday(events: CalendarEvent[], now: string): Occurrence[] {
+  const today = dateOf(now)
+  return occurrences(events, today, addDays(today, 1)).filter(
+    (o) => !o.event.allDay && dateOf(o.start) === today && o.end > o.start && o.end <= now,
+  )
+}

@@ -1,16 +1,19 @@
 'use client'
 import { useState } from 'react'
-import { FilePlus2, FileText, Repeat, Trash2 } from 'lucide-react'
+import { FilePlus2, FileText, Repeat, Timer, Trash2 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useNotes } from '@/features/notes/client/queries'
+import { focusTimer } from '@/features/focus/client/focus-timer'
+import { SETTING_LIMITS } from '@/features/focus/timer'
 import { Button } from '@/shared/ui/button'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
 import { Modal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { noteTitleFor } from '../agenda'
-import { addDays, addMinutes, dateOf, daysBetween, longDate, minutesBetween, timeOf, weekdayName } from '../dates'
+import { useNow } from '@/shared/client/now'
+import { focusMinutes, noteTitleFor } from '../agenda'
+import { addDays, addMinutes, dateOf, daysBetween, localDateTime, longDate, minutesBetween, timeOf, weekdayName } from '../dates'
 import { applyToSeries, eventError } from '../event'
 import { MAX_LOCATION, MAX_NOTES, MAX_TITLE } from '../limits'
 import { useEventMutations } from '../client/calendar'
@@ -303,6 +306,7 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
           </Field>
 
           {occurrence && !occurrence.event.allDay ? <NoteLink occurrence={occurrence} onDone={onClose} /> : null}
+          {occurrence ? <FocusStart occurrence={occurrence} onDone={onClose} /> : null}
 
           {error ? (
             <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
@@ -349,6 +353,30 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
         ) : null}
       </Modal>
     </>
+  )
+}
+
+/** Fokus-Timer als Countdown für die Dauer des Termins (läuft er schon: die Restzeit), z. B. für einen Lernblock */
+function FocusStart({ occurrence, onDone }: { occurrence: Occurrence; onDone: () => void }) {
+  const toast = useToast()
+  const now = useNow()
+  const left = focusMinutes(occurrence, localDateTime(new Date(now)))
+  if (left === null) return null
+  const minutes = Math.min(left, SETTING_LIMITS.countdown.max)
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
+      <span className="min-w-0 flex-1 truncate text-sm text-muted">Fokus-Timer als Countdown ({minutes} min)</span>
+      <Button
+        size="sm"
+        onClick={() => {
+          focusTimer.startCountdown(minutes)
+          toast.success(`Fokus-Timer läuft: ${minutes} min.`)
+          onDone()
+        }}
+      >
+        <Timer className="size-4" /> Fokus starten
+      </Button>
+    </div>
   )
 }
 
