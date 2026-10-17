@@ -11,6 +11,7 @@ import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
+import { MAX_NEW_PER_DAY } from '../limits'
 import type { AnkiImportResult, Deck } from '../types'
 
 /** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit, „Antwort eintippen“ und Wiederholungsplan ändern. */
@@ -36,7 +37,9 @@ export function DeckSettingsDialog({
   async function submit() {
     const newPerDay = Number(limit)
     if (!name.trim()) return setError('Bitte gib einen Namen ein.')
-    if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > 9999) return setError('Das Tageslimit muss zwischen 0 und 9999 liegen.')
+    if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > MAX_NEW_PER_DAY) {
+      return setError(`Das Tageslimit muss zwischen 0 und ${MAX_NEW_PER_DAY} liegen.`)
+    }
     const percent = Number(retention)
     if (scheduler === 'fsrs' && (!Number.isInteger(percent) || percent < 70 || percent > 99)) {
       return setError('Die Behaltensrate muss zwischen 70 und 99 % liegen.')
@@ -84,7 +87,7 @@ export function DeckSettingsDialog({
           {(id) => <AutoTextarea id={id} value={description} onChange={(e) => setDescription(e.target.value)} minRows={2} />}
         </Field>
         <Field label="Neue Karten pro Tag" hint="So viele noch nie gelernte Karten kommen im Lernmodus täglich höchstens dazu. Üben geht immer mit allen Karten.">
-          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={9999} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
+          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field

@@ -36,7 +36,15 @@ type Scope = { title: string; decks: Deck[]; cards: Card[]; pool: Card[]; back: 
 
 function resolveScope(data: Flashcards, scope: StudyScope, noteTitle: (id: string) => string | undefined): Scope | null {
   if (scope === 'all') return { title: 'Alle Stapel', decks: data.decks, cards: data.cards, pool: data.cards, back: { kind: 'cards' } }
-  const [kind, id] = scope.split(':') as ['deck' | 'note', string]
+  const [kind, id] = scope.split(':') as ['deck' | 'note' | 'exam', string]
+  if (kind === 'exam') {
+    const decks = data.decks.filter((d) => d.exams?.some((e) => e.id === id))
+    const exam = decks[0]?.exams?.find((e) => e.id === id)
+    if (!exam) return null
+    const deckIds = new Set(decks.map((d) => d.id))
+    const cards = data.cards.filter((c) => deckIds.has(c.deckId))
+    return { title: exam.title, decks, cards, pool: cards, back: { kind: 'home' } }
+  }
   if (kind === 'deck') {
     const deck = data.decks.find((d) => d.id === id)
     if (!deck) return null

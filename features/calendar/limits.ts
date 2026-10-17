@@ -10,3 +10,5 @@ export const MAX_EXDATES = 1000
 export const MAX_IMPORT_EVENTS = 5000
 /** Länge der Kennung (UID) aus einer .ics-Datei */
 export const MAX_UID = 1000
+/** So viele Stapel lassen sich mit einer Klausur verknüpfen */
+export const MAX_EXAM_DECKS = 100

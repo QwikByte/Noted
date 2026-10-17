@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
-import { FilePlus2, FileText, Repeat, Timer, Trash2 } from 'lucide-react'
+import { FilePlus2, FileText, GraduationCap, Repeat, Timer, Trash2 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useNotes } from '@/features/notes/client/queries'
+import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { focusTimer } from '@/features/focus/client/focus-timer'
 import { SETTING_LIMITS } from '@/features/focus/timer'
 import { Button } from '@/shared/ui/button'
@@ -17,7 +18,7 @@ import { addDays, addMinutes, dateOf, daysBetween, localDateTime, longDate, minu
 import { applyToSeries, eventError } from '../event'
 import { MAX_LOCATION, MAX_NOTES, MAX_TITLE } from '../limits'
 import { useEventMutations } from '../client/calendar'
-import type { EventColor, EventInput, Occurrence } from '../types'
+import type { CalendarEvent, EventColor, EventInput, Occurrence } from '../types'
 
 /** Neuer Termin mit Vorgaben oder ein vorhandener (bei Serien: das angeklickte Vorkommen) */
 export type DialogTarget = { kind: 'new'; input: EventInput } | { kind: 'edit'; occurrence: Occurrence }
@@ -34,6 +35,12 @@ const COLORS: { id: EventColor; label: string }[] = [
 /** Farbe eines Termins für style – ohne eigene Farbe die Akzentfarbe */
 export const eventColor = (color: EventColor | null) => (color ? `var(--swatch-${color})` : 'var(--accent)')
 
+/** Kennzeichen vor dem Titel einer Klausur */
+export function ExamMark({ event }: { event: CalendarEvent }) {
+  if (!event.exam) return null
+  return <GraduationCap className="mr-1 inline size-3.5 shrink-0 align-[-2px]" aria-label="Klausur" role="img" />
+}
+
 type Draft = {
   title: string
   location: string
@@ -49,6 +56,9 @@ type Draft = {
   weeks: number
   /** Leer = ohne Ende */
   until: string
+  exam: boolean
+  /** Stapel, die bis zur Klausur wiederholt werden */
+  deckIds: string[]
 }
 
 function toDraft(e: EventInput): Draft {
@@ -64,6 +74,8 @@ function toDraft(e: EventInput): Draft {
     endTime: e.allDay ? '10:00' : timeOf(e.end),
     weeks: e.repeat?.weeks ?? 0,
     until: e.repeat?.until ?? '',
+    exam: e.exam != null,
+    deckIds: e.exam?.deckIds ?? [],
   }
 }
 
@@ -78,6 +90,7 @@ function toInput(d: Draft, exdates: string[]): EventInput {
     end: d.allDay ? (d.endDate ? addDays(d.endDate, 1) : '') : `${d.endDate}T${d.endTime}`,
     repeat: d.weeks > 0 ? { weeks: d.weeks, until: d.until || null } : null,
     exdates,
+    exam: d.exam && d.weeks === 0 ? { deckIds: d.deckIds } : null,
   }
 }
 
@@ -237,7 +250,12 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
             )}
           </div>
 
-          {onlyThis ? null : (
+          {/* Klausuren wiederholen sich nicht – bei Serien und mit Wiederholung gibt es den Schalter nicht */}
+          {series || draft.weeks > 0 ? null : (
+            <ExamFields draft={draft} onChange={(exam, deckIds) => set({ exam, deckIds })} />
+          )}
+
+          {onlyThis || draft.exam ? null : (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Wiederholung">
                 {(id) => (
@@ -353,6 +371,50 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
         ) : null}
       </Modal>
     </>
+  )
+}
+
+/** Klausur: Die gewählten Stapel kommen bis dahin noch einmal dran (Klausurmodus der Karteikarten) */
+function ExamFields({ draft, onChange }: { draft: Draft; onChange: (exam: boolean, deckIds: string[]) => void }) {
+  const { data } = useFlashcards()
+  const decks = data?.decks ?? []
+  const toggle = (id: string, on: boolean) => onChange(true, on ? [...draft.deckIds, id] : draft.deckIds.filter((x) => x !== id))
+  return (
+    <div className="space-y-2">
+      <Switch
+        checked={draft.exam}
+        onChange={(exam) => {
+          // Beim Einschalten den Stapel vorauswählen, der wie der Termin heißt
+          const title = draft.title.trim().toLowerCase()
+          const named = decks.filter((d) => title && d.name.toLowerCase() === title).map((d) => d.id)
+          onChange(exam, exam && draft.deckIds.length === 0 ? named : draft.deckIds)
+        }}
+        label="Klausur"
+        description="Die verknüpften Karteikarten kommen bis dahin noch einmal dran – auf der Startseite mit Countdown."
+      />
+      {!draft.exam ? null : decks.length === 0 ? (
+        <p className="text-xs text-muted">{data ? 'Noch keine Karteikarten-Stapel zum Verknüpfen.' : 'Die Karteikarten sind gerade nicht geladen.'}</p>
+      ) : (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium">Stapel für die Klausur</legend>
+          <ul className="max-h-44 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+            {decks.map((d) => (
+              <li key={d.id}>
+                <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-hover">
+                  <input
+                    type="checkbox"
+                    checked={draft.deckIds.includes(d.id)}
+                    onChange={(e) => toggle(d.id, e.target.checked)}
+                    className="size-4 shrink-0 accent-[var(--accent)]"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm">{d.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
+    </div>
   )
 }
 

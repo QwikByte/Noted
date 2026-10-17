@@ -10,7 +10,7 @@ import { dayLabel, groupByDay, noteTitleFor, timeLabel, type AgendaDay } from '.
 import { addMinutes, localDate } from '../dates'
 import { blankEvent } from '../event'
 import { useEvents } from '../client/calendar'
-import { EventDialog, eventColor, type DialogTarget } from './EventDialog'
+import { EventDialog, ExamMark, eventColor, type DialogTarget } from './EventDialog'
 import type { Occurrence } from '../types'
 
 const DAYS = 7
@@ -91,7 +91,10 @@ function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpe
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline gap-x-2">
                           <span className="text-xs text-muted tabular-nums">{timeLabel(o, day.date)}</span>
-                          <span className="truncate text-sm font-medium">{o.event.title}</span>
+                          <span className="truncate text-sm font-medium">
+                            <ExamMark event={o.event} />
+                            {o.event.title}
+                          </span>
                         </span>
                         {o.event.location ? <span className="block truncate text-xs text-muted">{o.event.location}</span> : null}
                       </span>

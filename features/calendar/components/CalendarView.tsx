@@ -27,7 +27,7 @@ import {
 import { blankEvent, occurrences, onDay } from '../event'
 import { layoutDay } from '../layout'
 import { useEventMutations, useEvents, type ImportSummary } from '../client/calendar'
-import { EventDialog, eventColor, type DialogTarget } from './EventDialog'
+import { EventDialog, ExamMark, eventColor, type DialogTarget } from './EventDialog'
 import type { CalendarEvent, Occurrence } from '../types'
 
 /** Höhe einer Stunde im Wochenraster in px */
@@ -299,6 +299,7 @@ function WeekView({
                     style={{ background: `color-mix(in srgb, ${eventColor(o.event.color)} 22%, var(--bg-elevated))` }}
                     data-testid="calendar-event"
                   >
+                    <ExamMark event={o.event} />
                     {o.event.title}
                   </button>
                 ))}
@@ -362,13 +363,20 @@ function WeekView({
                 >
                   {height >= 34 ? (
                     <>
-                      <span className="block truncate font-medium">{o.event.title}</span>
+                      <span className="block truncate font-medium">
+                        <ExamMark event={o.event} />
+                        {o.event.title}
+                      </span>
                       <span className="block truncate text-muted">{details}</span>
                     </>
                   ) : (
                     // Kurze Termine: alles in einer Zeile
                     <span className="block truncate">
-                      <span className="font-medium">{o.event.title}</span> <span className="text-muted">{timeLabel(o, d)}</span>
+                      <span className="font-medium">
+                        <ExamMark event={o.event} />
+                        {o.event.title}
+                      </span>{' '}
+                      <span className="text-muted">{timeLabel(o, d)}</span>
                     </span>
                   )}
                 </button>
@@ -498,7 +506,10 @@ function MonthChip({ occurrence: o, day, onOpen }: { occurrence: Occurrence; day
           {o.start.startsWith(day) ? <span className="shrink-0 text-muted tabular-nums">{timeOf(o.start)}</span> : null}
         </>
       )}
-      <span className="truncate font-medium">{o.event.title}</span>
+      <span className="truncate font-medium">
+        <ExamMark event={o.event} />
+        {o.event.title}
+      </span>
     </button>
   )
 }

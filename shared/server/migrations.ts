@@ -332,4 +332,15 @@ export const migrations: string[] = [
   ALTER TABLE card_reviews ADD COLUMN stability REAL;
   ALTER TABLE card_reviews ADD COLUMN difficulty REAL;
   `,
+
+  /* 14: Klausurmodus. Ein einzelner Termin kann eine Klausur sein (exam) und mit Karteikarten-Stapeln verknüpft
+     werden, die bis dahin wiederholt werden. Termin und Stapel gehören immer demselben Nutzer (prüft der Server). */ `
+  ALTER TABLE events ADD COLUMN exam INTEGER NOT NULL DEFAULT 0 CHECK (exam IN (0, 1));
+  CREATE TABLE exam_decks (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, deck_id)
+  );
+  CREATE INDEX exam_decks_deck ON exam_decks(deck_id);
+  `,
 ]

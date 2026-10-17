@@ -1,5 +1,5 @@
 // Termine prüfen und Wiederholungen auflösen. Reine Logik – Server und Browser nutzen dieselben Regeln.
-import { MAX_EXDATES, MAX_LOCATION, MAX_NOTES, MAX_REPEAT_WEEKS, MAX_TITLE } from './limits'
+import { MAX_EXAM_DECKS, MAX_EXDATES, MAX_LOCATION, MAX_NOTES, MAX_REPEAT_WEEKS, MAX_TITLE } from './limits'
 import { addDays, addMinutes, dateOf, daysBetween, isValidDate, isValidDateTime, minutesBetween, timeOf } from './dates'
 import type { CalendarEvent, EventInput, Occurrence } from './types'
 
@@ -20,6 +20,10 @@ export function eventError(e: EventInput): string | null {
     if (until !== null && (!isValidDate(until) || until < dateOf(e.start))) return 'Die Wiederholung endet vor dem ersten Termin.'
   }
   if (e.exdates.length > MAX_EXDATES || e.exdates.some((d) => !isValidDate(d))) return 'Ungültige Ausnahmen.'
+  if (e.exam) {
+    if (e.repeat) return 'Eine Klausur kann sich nicht wiederholen.'
+    if (e.exam.deckIds.length > MAX_EXAM_DECKS) return `Höchstens ${MAX_EXAM_DECKS} Stapel pro Klausur.`
+  }
   return null
 }
 
@@ -76,6 +80,7 @@ export function blankEvent(start: string, minutes = 60): EventInput {
     end: addMinutes(start, minutes),
     repeat: null,
     exdates: [],
+    exam: null,
   }
 }
 

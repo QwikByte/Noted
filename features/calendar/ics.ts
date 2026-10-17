@@ -260,6 +260,7 @@ export function parseIcs(text: string, timeZone: string): IcsImport {
       end,
       repeat: null,
       exdates: [],
+      exam: null,
     }
 
     const rule = first('RRULE')

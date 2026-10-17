@@ -474,3 +474,68 @@ test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
   await expect(page.getByTestId('rate-4')).toContainText('16 Tage')
   await expect(page.getByTestId('rate-3')).toContainText('10 Min.')
 })
+
+test('Klausurmodus: Klausur im Kalender, Countdown und Wiederholungen davor', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Analysis I', newPerDay: 1 }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const cards = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: ['a', 'b', 'c', 'd', 'e'].map((x) => ({ type: 'basic', front: `Frage ${x}`, back: `Antwort ${x}` })) },
+    'cards',
+  )
+  // Drei Karten sind gelernt und kämen erst in einem Monat wieder dran
+  const now = Date.now()
+  const learned = { phase: 'review', step: 0, interval: 40, ease: 2.5, reps: 5, lapses: 0, due: now + 30 * DAY, reviewedAt: now - 10 * DAY, introducedAt: now - 60 * DAY }
+  await post(page, '/api/reviews', { reviews: cards.slice(0, 3).map((c) => ({ cardId: c.id, side: 0, ...learned })) }, 'saved')
+
+  await page.goto('/')
+  const exams = page.getByTestId('exams')
+  await expect(page.getByTestId('agenda')).toBeVisible()
+  await expect(exams).toHaveCount(0)
+
+  // Klausur morgen – der gleichnamige Stapel ist vorausgewählt, wiederholen kann sie sich nicht
+  const tomorrow = await page.evaluate(() => {
+    const d = new Date(Date.now() + 86_400_000)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  await page.getByTestId('agenda').getByRole('button', { name: 'Termin anlegen' }).click()
+  const add = page.getByRole('dialog')
+  await add.getByLabel('Titel').fill('Analysis I')
+  await add.getByLabel('Beginn').fill(tomorrow)
+  await add.getByRole('switch', { name: 'Klausur' }).click()
+  await expect(add.getByRole('checkbox', { name: 'Analysis I' })).toBeChecked()
+  await expect(add.getByLabel('Wiederholung')).toHaveCount(0)
+  await shot(page, '46-exam-dialog')
+  await add.getByRole('button', { name: 'Speichern' }).click()
+  await expect(add).toBeHidden()
+
+  // Startseite: Countdown mit Lernstand; die Wiederholungen sind vorgezogen
+  await expect(exams.getByTestId('exam')).toContainText('morgen')
+  await expect(exams).toContainText('60 % gelernt · 2 neu · heute 4 fällig')
+  await expect(page.getByTestId('agenda').getByRole('img', { name: 'Klausur' })).toBeVisible()
+  await shot(page, '47-exam-countdown')
+
+  // Stapel: Vorschlag, wie viele neue Karten es pro Tag braucht
+  await page.goto(`/?d=${deck.id}`)
+  const plan = page.getByTestId('exam-plan')
+  await expect(plan).toContainText('sind 2 pro Tag nötig (Tageslimit: 1)')
+  await shot(page, '48-exam-plan')
+  await plan.getByRole('button', { name: '2 pro Tag übernehmen' }).click()
+  await expect(plan).toContainText('Mit 2 neuen Karten pro Tag lernst du alle 2 neuen rechtzeitig.')
+
+  // Für die Klausur lernen: alles kommt einmal dran, danach ist bis zur Klausur nichts mehr fällig
+  await page.goto('/')
+  await exams.getByRole('button', { name: 'Lernen' }).click()
+  for (let i = 0; i < 5; i++) {
+    await expect(page.getByTestId('study-card')).toBeVisible()
+    await page.keyboard.press('Space')
+    await page.getByTestId('rate-4').click()
+  }
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  await page.getByRole('button', { name: 'Fertig' }).click()
+  await expect(exams).toContainText('100 % gelernt')
+  await expect(exams).not.toContainText('fällig')
+  await expect(exams.getByRole('button', { name: 'Lernen' })).toHaveCount(0)
+})
