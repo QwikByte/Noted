@@ -8,6 +8,8 @@ import { listAttachments, readAttachmentData, saveAttachment } from '@/features/
 import { getFlashcardData } from '@/features/flashcards/server/flashcards'
 import { deckToMarkdown } from '@/features/flashcards/card-markdown'
 import { exportIcs, importEvents, listEvents } from '@/features/calendar/server/events'
+import { getCoursework } from '@/features/coursework/server/coursework'
+import { tasksToMarkdown } from '@/features/coursework/tasks'
 import { parseIcs } from '@/features/calendar/ics'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
 import { htmlBody, htmlDocument } from '@/shared/lib/html'
@@ -18,6 +20,8 @@ import { EXPORT_ATTACHMENT_FOLDER, buildVaultIndex, vaultNotePath } from '../pat
 
 /** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
+/** Aufgaben zum Wiederholen je Fach, Lösungen als eingeklappte Callouts */
+const EXPORT_TASK_FOLDER = 'Aufgaben'
 /** Alle Termine – lässt sich in jede Kalender-App importieren */
 const EXPORT_CALENDAR_FILE = 'Kalender.ics'
 
@@ -104,6 +108,21 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
       mtime: deck.updatedAt,
       compress: true,
       data: () => strToU8(deckToMarkdown(deck, cards.filter((c) => c.deckId === deck.id))),
+    })
+  }
+  const coursework = getCoursework(userId)
+  const taskPrefix = `${EXPORT_TASK_FOLDER}/`
+  const takenTasks = entries.filter((e) => e.path.startsWith(taskPrefix)).map((e) => e.path.slice(taskPrefix.length))
+  for (const course of coursework.courses) {
+    const tasks = coursework.tasks.filter((t) => t.courseId === course.id)
+    if (tasks.length === 0) continue
+    const name = uniqueName(sanitizeName(course.name), takenTasks, '.md')
+    takenTasks.push(name)
+    entries.push({
+      path: taskPrefix + name,
+      mtime: Math.max(...tasks.map((t) => t.updatedAt)),
+      compress: true,
+      data: () => strToU8(tasksToMarkdown(course.name, tasks)),
     })
   }
   const events = listEvents(userId)

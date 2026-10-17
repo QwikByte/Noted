@@ -129,7 +129,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
         <NavItem
           icon={<ClipboardCheck />}
           label="Übungen"
-          active={view.kind === 'coursework'}
+          active={view.kind === 'coursework' || view.kind === 'tasks'}
           onClick={() => app.go({ kind: 'coursework' })}
         />
         <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} onClick={() => app.go({ kind: 'glossary' })} />

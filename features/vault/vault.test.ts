@@ -7,6 +7,8 @@ import * as attachments from '@/app/api/attachments/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as importRoute from '@/app/api/import/route'
 import * as calendar from '@/app/api/calendar/route'
+import * as courses from '@/app/api/coursework/courses/route'
+import * as tasks from '@/app/api/coursework/courses/[id]/tasks/route'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -219,5 +221,21 @@ describe('Export und Import (Obsidian-Vault)', () => {
       'Analysis I 2026-10-19T10:15',
       'Lineare Algebra 2026-10-20T08:15',
     ])
+  })
+
+  it('exportiert die Aufgaben je Fach als Markdown im Ordner „Aufgaben“', async () => {
+    const r = await call(courses.POST, '/', { cookie: token, body: { name: 'Analysis I', requiredPercent: 50, plannedSheets: null } })
+    expect(r.status).toBe(201)
+    const course = r.data.course as { id: string }
+    // Ohne Aufgaben keine Datei
+    await call(courses.POST, '/', { cookie: token, body: { name: 'Leeres Fach', requiredPercent: 50, plannedSheets: null } })
+    const body = { title: 'Altklausur 2024, Aufgabe 1', prompt: 'Zeige $a_n \\to 0$.', solution: 'Sandwich-Lemma.' }
+    expect((await call(tasks.POST, '/', { cookie: token, params: { id: course.id }, body })).status).toBe(201)
+
+    const zip = unzipSync(new Uint8Array(await (await call(exportRoute.GET, '/', { cookie: token })).res.arrayBuffer()))
+    expect(Object.keys(zip).filter((p) => p.startsWith('Aufgaben/'))).toEqual(['Aufgaben/Analysis I.md'])
+    const md = strFromU8(zip['Aufgaben/Analysis I.md'])
+    expect(md).toContain('## Altklausur 2024, Aufgabe 1\n#aufgabe/neu')
+    expect(md).toContain('> [!success]- Lösung\n> Sandwich-Lemma.')
   })
 })

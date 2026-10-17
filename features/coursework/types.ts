@@ -25,9 +25,31 @@ export type Sheet = {
   updatedAt: number
 }
 
-export type CourseworkData = { courses: Course[]; sheets: Sheet[] }
+/** Ergebnis einer Bearbeitung: gelöst, unsicher oder falsch */
+export type TaskResult = 'solved' | 'unsure' | 'wrong'
+
+/** Aufgabe zum Wiederholen, z. B. aus einer Altklausur – Text und Lösung in Markdown */
+export type CourseTask = {
+  id: string
+  courseId: string
+  title: string
+  prompt: string
+  solution: string
+  /** Ergebnis der letzten Bearbeitung – null = noch nicht bearbeitet */
+  result: TaskResult | null
+  attempts: number
+  /** Nächste Wiederholung (YYYY-MM-DD) – nur bei unsicher und falsch */
+  due: string | null
+  attemptedAt: number | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type CourseworkData = { courses: Course[]; sheets: Sheet[]; tasks: CourseTask[] }
 
 export type CourseInput = Pick<Course, 'name' | 'requiredPercent' | 'plannedSheets'>
 
 /** Abgabe: YYYY-MM-DD (ohne Uhrzeit) oder YYYY-MM-DDTHH:mm, null = keine */
 export type SheetInput = Pick<Sheet, 'title' | 'maxPoints' | 'points'> & { due: string | null }
+
+export type TaskInput = Pick<CourseTask, 'title' | 'prompt' | 'solution'>
