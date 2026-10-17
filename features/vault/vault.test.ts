@@ -6,6 +6,7 @@ import * as folders from '@/app/api/folders/route'
 import * as attachments from '@/app/api/attachments/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as importRoute from '@/app/api/import/route'
+import * as calendar from '@/app/api/calendar/route'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -168,6 +169,55 @@ describe('Export und Import (Obsidian-Vault)', () => {
     expect(JSON.parse(full.data.note.content).nodes.map((n: { file?: string }) => n.file).filter(Boolean)).toEqual([
       'Zielnotiz',
       'Tafel-bild.png',
+    ])
+  })
+
+  it('exportiert die Termine als Kalender.ics und liest .ics-Dateien in den Kalender ein', async () => {
+    const lecture = {
+      title: 'Analysis I',
+      location: 'Hörsaal 1',
+      notes: '',
+      color: 2,
+      allDay: false,
+      start: '2026-10-19T10:15',
+      end: '2026-10-19T11:45',
+      repeat: { weeks: 1, until: null },
+      exdates: [],
+    }
+    expect((await call(calendar.POST, '/api/calendar', { cookie: token, body: lecture })).status).toBe(201)
+    const r = await call(exportRoute.GET, '/', { cookie: token })
+    const zip = unzipSync(new Uint8Array(await r.res.arrayBuffer()))
+    const ics = strFromU8(zip['Kalender.ics'])
+    expect(ics).toContain('SUMMARY:Analysis I')
+    expect(ics).toContain('RRULE:FREQ=WEEKLY')
+
+    // Der eigene Export legt nichts doppelt an; eine .ics im Ordner „Anhänge“ bleibt ein Anhang
+    const uni = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:la@uni',
+      'SUMMARY:Lineare Algebra',
+      'DTSTART:20261020T061500Z',
+      'DTEND:20261020T074500Z',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:kaputt@uni',
+      'SUMMARY:Ohne Beginn',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    const form = new FormData()
+    form.append('files', new File([zipSync({ 'Kalender.ics': zip['Kalender.ics'], 'Anhänge/Einladung.ics': strToU8(uni) })], 'v.zip'))
+    form.append('files', new File([uni], 'Stundenplan.ics', { type: 'text/calendar' }))
+    form.append('timeZone', 'Europe/Berlin')
+    const imp = await call(importRoute.POST, '/', { cookie: token, form })
+    expect(imp.status).toBe(200)
+    expect(imp.data).toMatchObject({ events: 1, attachments: 1, skipped: ['Stundenplan.ics (1 Termin nicht lesbar oder abgesagt)'] })
+    const events = (await call(calendar.GET, '/api/calendar', { cookie: token })).data.events
+    // 06:15 UTC ist 08:15 in Berlin
+    expect(events.map((e: { title: string; start: string }) => `${e.title} ${e.start}`)).toEqual([
+      'Analysis I 2026-10-19T10:15',
+      'Lineare Algebra 2026-10-20T08:15',
     ])
   })
 })

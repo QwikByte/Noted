@@ -21,7 +21,6 @@ const DATA_ROUTES = [
   /^\/api\/attachments$/,
   /^\/api\/flashcards$/,
   /^\/api\/calendar$/,
-  /^\/api\/calendar\/events$/,
 ]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]
 

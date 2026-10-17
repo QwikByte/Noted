@@ -206,4 +206,29 @@ export const migrations: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+
+  /* 7: Eigener Kalender statt Microsoft-Anbindung. Zeiten als Ortszeit ohne Zone (YYYY-MM-DDTHH:mm, ganztägig
+     YYYY-MM-DD, Ende exklusiv); repeat_weeks/repeat_until = wöchentliche Serie, exdates = ausfallende Tage (JSON),
+     uid = Kennung aus einer importierten .ics-Datei, damit ein zweiter Import nichts doppelt anlegt */ `
+  DROP TABLE IF EXISTS calendar_accounts;
+  CREATE TABLE events (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    color INTEGER CHECK (color BETWEEN 1 AND 6),
+    all_day INTEGER NOT NULL DEFAULT 0 CHECK (all_day IN (0, 1)),
+    start_at TEXT NOT NULL,
+    end_at TEXT NOT NULL,
+    repeat_weeks INTEGER,
+    repeat_until TEXT,
+    exdates TEXT NOT NULL DEFAULT '[]',
+    uid TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX events_user ON events(user_id, start_at);
+  CREATE UNIQUE INDEX events_uid ON events(user_id, uid) WHERE uid IS NOT NULL;
+  `,
 ]

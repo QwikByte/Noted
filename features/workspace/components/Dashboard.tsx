@@ -20,7 +20,7 @@ export function Dashboard() {
   return (
     <Page>
       <PageHeader title={`${greeting()}, ${user.displayName.split(' ')[0]}!`} subtitle="Was möchtest du heute festhalten?" />
-      {/* Ohne Kalender und Stapel bleibt die Zeile leer – dann ohne Abstand */}
+      {/* Offline ohne geladene Termine und ohne Stapel bleibt die Zeile leer – dann ohne Abstand */}
       <div className="mb-10 flex flex-col gap-4 empty:hidden lg:flex-row lg:items-start">
         <Agenda className="min-w-0 lg:flex-[3]" />
         <DueDecks className="min-w-0 lg:flex-[2]" />

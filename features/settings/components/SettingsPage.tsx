@@ -20,7 +20,6 @@ import { confirmLogout } from '@/features/auth/client/logout'
 import { ThemeSwitch } from '@/shared/ui/theme-switch'
 import { PasswordChangeForm } from '@/features/auth/components/PasswordChangeForm'
 import { MfaSetup } from '@/features/auth/components/MfaSetup'
-import { CalendarSettings } from '@/features/calendar/components/CalendarSettings'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
@@ -32,6 +31,7 @@ import { api, errorMessage } from '@/shared/client/api'
 import { describeUserAgent, formatDateTime, formatRelative } from '@/shared/lib/format'
 import { keys, useDrafts, useFolders } from '@/features/notes/client/queries'
 import { attachmentsKey } from '@/features/attachments/client/queries'
+import { calendarKey, deviceTimeZone } from '@/features/calendar/client/calendar'
 import { sync } from '@/features/notes/client/sync'
 import { useFontSize, usePref, type EditorMode } from '@/shared/client/prefs'
 import type { SessionInfo } from '@/features/auth/types'
@@ -49,7 +49,6 @@ export function SettingsPage() {
         <MfaSection />
         <SessionsSection />
         <AppearanceSection />
-        <CalendarSettings />
         <DataSection />
         <Section icon={<LogOut />} title="Abmelden" description={`Angemeldet als @${user.username}.`}>
           <Button onClick={confirmLogout}>
@@ -335,7 +334,9 @@ function DataSection() {
   const input = useRef<HTMLInputElement>(null)
   const [targetFolder, setTargetFolder] = useState('')
   const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState<{ notes: number; attachments: number; folders: number; skipped: string[] } | null>(null)
+  const [result, setResult] = useState<{ notes: number; attachments: number; folders: number; events: number; skipped: string[] } | null>(
+    null,
+  )
 
   async function runImport(files: File[]) {
     setImporting(true)
@@ -344,6 +345,7 @@ function DataSection() {
       const form = new FormData()
       for (const f of files) form.append('files', f)
       if (targetFolder) form.append('folderId', targetFolder)
+      form.append('timeZone', deviceTimeZone())
       const res = await api<NonNullable<typeof result>>('/api/import', { method: 'POST', form })
       setResult(res)
       await Promise.all([
@@ -351,6 +353,7 @@ function DataSection() {
         qc.invalidateQueries({ queryKey: keys.folders }),
         qc.invalidateQueries({ queryKey: keys.tags }),
         qc.invalidateQueries({ queryKey: attachmentsKey }),
+        qc.invalidateQueries({ queryKey: calendarKey }),
       ])
     } catch (err) {
       toast.error(errorMessage(err))
@@ -371,7 +374,7 @@ function DataSection() {
           <p className="mb-3 text-sm text-muted">
             ZIP-Archiv mit allen Notizen in ihrer Ordnerstruktur und allen Anhängen. Entpacken und in Obsidian als Vault öffnen –
             oder in einen bestehenden Vault kopieren. Notizen mit formatiertem Text liegen als .html-Dateien darin, Canvas als
-            .canvas-Dateien wie in Obsidian.
+            .canvas-Dateien wie in Obsidian, die Termine als Kalender.ics.
           </p>
           <a
             href="/api/export"
@@ -384,8 +387,8 @@ function DataSection() {
           <p className="mb-1 text-sm font-medium">Importieren</p>
           <p className="mb-3 text-sm text-muted">
             Markdown-Dateien (.md, Mindmaps des Plugins „Enhancing Mindmap“ werden erkannt), HTML-Dateien (werden zu
-            formatiertem Text), Canvas-Dateien (.canvas), ein ZIP-Archiv (z. B. ein Obsidian-Vault oder ein Export aus Noted)
-            oder beliebige Dateien als Anhänge.
+            formatiertem Text), Canvas-Dateien (.canvas), Kalender (.ics – die Termine kommen in den Kalender), ein ZIP-Archiv
+            (z. B. ein Obsidian-Vault oder ein Export aus Noted) oder beliebige Dateien als Anhänge.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">
@@ -417,7 +420,8 @@ function DataSection() {
           />
           {result ? (
             <div className="mt-4 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
-              Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Anhänge.
+              Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Anhänge
+              {result.events ? `, ${result.events} Termine` : ''}.
               {result.skipped.length > 0 ? (
                 <details className="mt-2 text-muted">
                   <summary className="cursor-pointer">{result.skipped.length} übersprungen</summary>

@@ -20,8 +20,6 @@ export type AuditEvent =
   | 'sessions_revoked_by_admin'
   | 'settings_changed'
   | 'update_requested'
-  | 'calendar_connected'
-  | 'calendar_disconnected'
 
 export type AuditEntry = {
   event: AuditEvent

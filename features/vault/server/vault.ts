@@ -7,6 +7,8 @@ import { createFolder, createNote, folderPathMap, listFolders, MAX_NOTE_LENGTH }
 import { listAttachments, readAttachmentData, saveAttachment } from '@/features/attachments/server/attachments'
 import { getFlashcardData } from '@/features/flashcards/server/flashcards'
 import { deckToMarkdown } from '@/features/flashcards/card-markdown'
+import { exportIcs, importEvents, listEvents } from '@/features/calendar/server/events'
+import { parseIcs } from '@/features/calendar/ics'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
 import { htmlBody, htmlDocument } from '@/shared/lib/html'
 import type { NoteFormat } from '@/features/notes/types'
@@ -16,6 +18,8 @@ import { EXPORT_ATTACHMENT_FOLDER, buildVaultIndex, vaultNotePath } from '../pat
 
 /** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
+/** Alle Termine – lässt sich in jede Kalender-App importieren */
+const EXPORT_CALENDAR_FILE = 'Kalender.ics'
 
 type ExportEntry = { path: string; mtime: number; compress: boolean; data: () => Uint8Array }
 
@@ -102,6 +106,15 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
       data: () => strToU8(deckToMarkdown(deck, cards.filter((c) => c.deckId === deck.id))),
     })
   }
+  const events = listEvents(userId)
+  if (events.length > 0) {
+    entries.push({
+      path: EXPORT_CALENDAR_FILE,
+      mtime: Math.max(...events.map((e) => e.updatedAt)),
+      compress: true,
+      data: () => strToU8(exportIcs(userId)),
+    })
+  }
   for (const att of listAttachments(userId)) {
     entries.push({
       path: `${EXPORT_ATTACHMENT_FOLDER}/${att.filename}`,
@@ -136,12 +149,13 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
   })
 }
 
-export type ImportResult = { notes: number; attachments: number; folders: number; skipped: string[] }
+export type ImportResult = { notes: number; attachments: number; folders: number; events: number; skipped: string[] }
 
 const NOTE_EXT = /\.(md|markdown)$/i
 /** HTML-Dateien werden zu formatiertem Text (so lässt sich ein Export wieder importieren) */
 const HTML_EXT = /\.html?$/i
 const CANVAS_EXT = /\.canvas$/i
+const ICS_EXT = /\.ics$/i
 
 function isHiddenPath(p: string) {
   return p.split('/').some((seg) => seg.startsWith('.') || seg === '__MACOSX')
@@ -167,12 +181,17 @@ function importCanvasFiles(json: string): string {
 }
 
 /**
- * Importiert Markdown-, HTML- und Canvas-Dateien, ZIP-Archive (z. B. ein Obsidian-Vault) und beliebige Dateien
- * (als Anhänge).
+ * Importiert Markdown-, HTML- und Canvas-Dateien, Kalender (.ics), ZIP-Archive (z. B. ein Obsidian-Vault) und beliebige
+ * Dateien (als Anhänge). Zeiten aus Kalendern werden in `timeZone` umgerechnet.
  */
-export async function importFiles(userId: number, files: File[], targetFolderId: string | null): Promise<ImportResult> {
+export async function importFiles(
+  userId: number,
+  files: File[],
+  targetFolderId: string | null,
+  timeZone: string,
+): Promise<ImportResult> {
   const { maxImportBytes, maxUploadBytes } = getConfig()
-  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, skipped: [] }
+  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, skipped: [] }
 
   // Ordner-Cache: "parentId|name" -> id
   const folderCache = new Map<string, string>()
@@ -210,6 +229,15 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
   // HTML im Ordner „Anhänge“ eines Exports bleibt ein Anhang
   const isNoteFile = (segments: string[], filename: string) =>
     NOTE_EXT.test(filename) || CANVAS_EXT.test(filename) || (HTML_EXT.test(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER)
+  // Ebenso eine .ics-Datei – sonst kommen ihre Termine in den Kalender
+  const isCalendarFile = (segments: string[], filename: string) => ICS_EXT.test(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER
+
+  const importCalendar = (filename: string, data: Uint8Array) => {
+    const parsed = parseIcs(decodeText(data), timeZone)
+    result.events += importEvents(userId, parsed.events).created
+    const n = parsed.skipped
+    if (n > 0) result.skipped.push(`${filename} (${n} ${n === 1 ? 'Termin' : 'Termine'} nicht lesbar oder abgesagt)`)
+  }
 
   const importAttachment = (filename: string, type: string | null, data: Uint8Array) => {
     if (data.byteLength > maxUploadBytes) {
@@ -268,6 +296,8 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
             let folderId = targetFolderId
             for (const seg of segments) folderId = ensureFolder(folderId, seg)
             importNote(folderId, filename, entryData)
+          } else if (isCalendarFile(segments, filename)) {
+            importCalendar(entryPath, entryData)
           } else {
             importAttachment(filename, null, entryData)
           }
@@ -278,6 +308,12 @@ export async function importFiles(userId: number, files: File[], targetFolderId:
     } else if (isNoteFile([], name)) {
       try {
         importNote(targetFolderId, name, data)
+      } catch (err) {
+        result.skipped.push(`${name} (${err instanceof Error ? err.message : 'Fehler'})`)
+      }
+    } else if (isCalendarFile([], name)) {
+      try {
+        importCalendar(name, data)
       } catch (err) {
         result.skipped.push(`${name} (${err instanceof Error ? err.message : 'Fehler'})`)
       }
