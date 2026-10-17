@@ -5,7 +5,6 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  ClipboardCheck,
   FolderPlus,
   Hash,
   Home,
@@ -125,12 +124,6 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
           active={view.kind === 'cards' || view.kind === 'deck' || view.kind === 'study' || view.kind === 'stats'}
           onClick={() => app.go({ kind: 'cards' })}
           count={due}
-        />
-        <NavItem
-          icon={<ClipboardCheck />}
-          label="Übungen"
-          active={view.kind === 'coursework' || view.kind === 'tasks'}
-          onClick={() => app.go({ kind: 'coursework' })}
         />
         <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} onClick={() => app.go({ kind: 'glossary' })} />
         <NavItem icon={<Paperclip />} label="Anhänge" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />

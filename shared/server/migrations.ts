@@ -401,4 +401,11 @@ export const migrations: string[] = [
   ALTER TABLE cards RENAME COLUMN type_new TO type;
   ALTER TABLE cards ADD COLUMN occlusion TEXT;
   `,
+
+  /* 18: Übungen (Migrationen 15 und 16) entfernt – samt den Abgabe-Terminen der Übungsblätter im Kalender. */ `
+  DELETE FROM events WHERE id IN (SELECT event_id FROM exercise_sheets WHERE event_id IS NOT NULL);
+  DROP TABLE course_tasks;
+  DROP TABLE exercise_sheets;
+  DROP TABLE courses;
+  `,
 ]

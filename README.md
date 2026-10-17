@@ -80,13 +80,6 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **.ics-Import und -Export** (Menü ⋮ im Kalender): Stundenplan aus dem Vorlesungsverzeichnis, aus Outlook oder Google einmalig übernehmen. Zeiten aus anderen Zeitzonen rechnet Noted in die Ortszeit des Geräts um. Wöchentliche Serien bleiben Serien, einzelne Ausnahmen und Änderungen werden übernommen; andere Wiederholungen (täglich, monatlich) übernimmt Noted nur mit dem ersten Termin. Ein zweiter Import derselben Datei legt nichts doppelt an. Der Export (`Kalender.ics`) lässt sich in jede Kalender-App einlesen; ob ein Termin eine Klausur ist, steht nicht darin.
 - Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
-**Übungen: Klausurzulassung und Aufgaben**
-- Eigener Bereich **Übungen** (Seitenleiste): je Fach die nötige Quote für die Klausurzulassung (z. B. 50 % der Übungspunkte) und, falls bekannt, die Zahl der Blätter im Semester.
-- **Übungsblätter** mit Abgabe (Tag, optional Uhrzeit), erreichbaren und – nach der Korrektur – erreichten Punkten (auch halbe und Zusatzpunkte). Ein neues Blatt übernimmt Punkte und Uhrzeit des letzten, die Abgabe eine Woche später.
-- Fortschrittsbalken gegen die nötige Quote und ein Hinweis wie „Noch 14 Punkte aus 4 Blättern nötig – im Schnitt 3,5 pro Blatt“ – oder dass die Zulassung erreicht bzw. nicht mehr erreichbar ist. Fehlen noch Blätter, schätzt Noted ihre Punkte nach dem Durchschnitt der vorhandenen.
-- **Aufgaben wiederholen** (im Fach unter **Aufgaben**): Aufgaben aus Altklausuren und Übungsblättern sammeln – Text mit Markdown und Formeln, Bilder (`![[…]]`) oder ein Link auf die PDF-Seite (`[[Altklausur.pdf#page=3]]`), optional mit Lösung. Beim **Wiederholen** bearbeitest du eine nach der anderen, deckst die Lösung auf und markierst sie als **gelöst**, **unsicher** oder **falsch**: Gelöste sind erledigt, falsche kommen nach 3 Tagen wieder, unsichere nach einer Woche – bis sie sitzen. Die Übersicht zeigt je Fach den Anteil gelöster und die heute offenen Aufgaben. Tastatur: `Leertaste` deckt die Lösung auf, `1`–`3` bewerten.
-- **Abgaben im Kalender:** Jede Abgabe ist ein Termin („Abgabe Blatt 3 – Analysis I“) und steht damit im Kalender, auf der Startseite und im .ics-Export. Wird der Termin im Kalender verschoben, gilt das neue Datum; wird er dort gelöscht, hat das Blatt keine Abgabe mehr.
-
 **Werkzeugleiste und Fokus-Timer**
 - Eine kleine Werkzeugleiste sitzt fest unten rechts – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt sie auf, das Kreuz wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
 - Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
@@ -103,7 +96,6 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen. Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im Vault.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`). Für Bildverdeckung gibt es dort kein Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
-- Aufgaben zum Wiederholen liegen je Fach im Ordner `Aufgaben/` als Markdown: je Aufgabe eine Überschrift, der Stand als Tag (`#aufgabe/neu`, `#aufgabe/gelöst`, `#aufgabe/unsicher`, `#aufgabe/falsch`) und die Lösung als eingeklappter Callout (`> [!success]- Lösung`).
 - Die Termine liegen als `Kalender.ics` im ZIP.
 - Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
 
@@ -360,7 +352,6 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
-  coursework/           Übungen: Fächer, Übungsblätter mit Punkten, Klausurzulassung, Abgaben als Termine, Aufgaben wiederholen
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht

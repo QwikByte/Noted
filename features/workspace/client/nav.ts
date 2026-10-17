@@ -20,10 +20,6 @@ export type View =
   | { kind: 'quiz'; id: string }
   /** Glossar und Formeln – aller Notizen oder eines Ordners samt Unterordnern */
   | { kind: 'glossary'; folder?: string }
-  /** Übungsblätter und Klausurzulassung */
-  | { kind: 'coursework' }
-  /** Aufgaben eines Fachs – review: die offenen und fälligen bearbeiten */
-  | { kind: 'tasks'; course: string; review?: boolean }
 
 /** Was gelernt wird: alles, ein Stapel, die Karten einer Notiz oder die Stapel einer Klausur (Termin-ID) */
 export type StudyScope = 'all' | `deck:${string}` | `note:${string}` | `exam:${string}`
@@ -54,9 +50,6 @@ function viewFromParams(params: URLSearchParams): View {
   if (v === 'stats') return { kind: 'stats' }
   if (v === 'calendar') return { kind: 'calendar' }
   if (v === 'glossary') return { kind: 'glossary', folder: params.get('in') || undefined }
-  if (v === 'coursework') return { kind: 'coursework' }
-  const course = params.get('course')
-  if (v === 'tasks' && course) return { kind: 'tasks', course, review: params.get('m') === 'review' || undefined }
   return { kind: 'home' }
 }
 
@@ -82,10 +75,6 @@ function viewToUrl(view: View): string {
       return '/?v=calendar'
     case 'glossary':
       return `/?v=glossary${view.folder ? `&in=${encodeURIComponent(view.folder)}` : ''}`
-    case 'coursework':
-      return '/?v=coursework'
-    case 'tasks':
-      return `/?v=tasks&course=${encodeURIComponent(view.course)}${view.review ? '&m=review' : ''}`
     case 'deck':
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':
