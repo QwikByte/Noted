@@ -11,6 +11,8 @@ export type Deck = {
   description: string
   /** Höchstens so viele neue Karten pro Tag im Lernmodus */
   newPerDay: number
+  /** Antwort beim Lernen eintippen (Grund- und beidseitige Karten) */
+  typeAnswer: boolean
   createdAt: number
   updatedAt: number
 }

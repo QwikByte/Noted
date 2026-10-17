@@ -51,6 +51,18 @@ describe('Stapel', () => {
     expect(r.data.deck).toMatchObject({ name: 'Analysis 1', newPerDay: 30, description: 'Klausur' })
   })
 
+  it('speichert „Antwort eintippen“ je Stapel', async () => {
+    const d = await newDeck('Französisch')
+    expect(d.typeAnswer).toBe(false)
+    const on = await call(deck.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: d.id }, body: { typeAnswer: true } })
+    expect(on.data.deck).toMatchObject({ name: 'Französisch', typeAnswer: true })
+    const rename = await call(deck.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: d.id }, body: { name: 'Französisch B1' } })
+    expect(rename.data.deck.typeAnswer).toBe(true)
+    expect((await newDeck('Spanisch', { typeAnswer: true })).typeAnswer).toBe(true)
+    const bad = await call(deck.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: d.id }, body: { typeAnswer: 'ja' } })
+    expect(bad.status).toBe(400)
+  })
+
   it('ist ohne Anmeldung und ohne CSRF-Header nicht nutzbar', async () => {
     expect((await call(flashcards.GET, '/api/flashcards')).status).toBe(401)
     expect((await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'X' }, csrf: false })).status).toBe(403)
