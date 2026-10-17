@@ -15,7 +15,7 @@ import { errorMessage } from '@/shared/client/api'
 import { EXPLICIT_SOURCES, SOURCE_LABELS, parseCardsFromNote, type CandidateSource } from '../card-markdown'
 
 const NEW_DECK = '__new__'
-const SOURCES: CandidateSource[] = ['syntax', 'question', 'definition', 'bold', 'heading']
+const SOURCES: CandidateSource[] = ['syntax', 'question', 'cloze', 'definition', 'bold', 'highlight', 'heading']
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
 function SyntaxHelp() {

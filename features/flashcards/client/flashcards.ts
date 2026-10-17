@@ -6,7 +6,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError, NetworkError } from '@/shared/client/api'
-import { reviewKey, stateMap, type StateMap } from '../study'
+import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
 import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
 const flashcardsKey = ['flashcards'] as const
@@ -167,12 +167,12 @@ export class ReviewQueue {
   prune(data: FlashcardData) {
     if (this.acked.size === 0) return
     const server = new Map(data.reviews.map((r) => [reviewKey(r.cardId, r.side), r]))
-    const types = new Map(data.cards.map((c) => [c.id, c.type]))
+    const sides = new Map(data.cards.map((c) => [c.id, sidesOf(c).length]))
     let changed = false
     for (const [key, r] of this.acked) {
       const known = server.get(key)
-      const type = types.get(r.cardId)
-      if (!type || (r.side === 1 && type !== 'reversed') || (known && known.reviewedAt >= r.reviewedAt)) {
+      const count = sides.get(r.cardId) ?? 0
+      if (r.side >= count || (known && known.reviewedAt >= r.reviewedAt)) {
         this.forget(this.acked, key, r)
         changed = true
       }
@@ -345,10 +345,12 @@ export async function updateCard(
   input: Partial<CardInput> & { deckId?: string; suspended?: boolean },
 ): Promise<Card> {
   const { card } = await api<{ card: Card }>(`/api/cards/${id}`, { method: 'PATCH', body: input })
+  // Weggefallene Seiten (aus beidseitig wird einseitig, Lücke gelöscht) verlieren ihren Lernstand – wie auf dem Server
+  const sides = sidesOf(card).length
   patch(qc, (d) => ({
     ...d,
     cards: d.cards.map((c) => (c.id === id ? card : c)),
-    reviews: card.type === 'reversed' ? d.reviews : d.reviews.filter((r) => r.cardId !== id || r.side === 0),
+    reviews: d.reviews.filter((r) => r.cardId !== id || r.side < sides),
   }))
   return card
 }
@@ -371,4 +373,5 @@ export const CARD_TYPE_LABELS: Record<CardType, string> = {
   basic: 'Grundkarte',
   reversed: 'Beidseitig',
   mc: 'Multiple Choice',
+  cloze: 'Lückentext',
 }

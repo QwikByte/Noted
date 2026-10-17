@@ -1,7 +1,10 @@
 // Typen für Karteikarten (API-Verträge zwischen Server und Browser)
 
-/** basic: Vorderseite → Rückseite · reversed: zusätzlich Rückseite → Vorderseite · mc: Multiple Choice */
-export type CardType = 'basic' | 'reversed' | 'mc'
+/**
+ * basic: Vorderseite → Rückseite · reversed: zusätzlich Rückseite → Vorderseite · mc: Multiple Choice ·
+ * cloze: Lückentext – Lücken als ==Markierung== in der Vorderseite, die Rückseite ist ein optionaler Zusatz
+ */
+export type CardType = 'basic' | 'reversed' | 'mc' | 'cloze'
 
 export type CardOption = { text: string; correct: boolean }
 
@@ -24,7 +27,7 @@ export type Card = {
   noteId: string | null
   type: CardType
   front: string
-  /** Antwort – bei Multiple Choice die (optionale) Erklärung */
+  /** Antwort – bei Multiple Choice die (optionale) Erklärung, bei Lückentexten ein (optionaler) Zusatz */
   back: string
   options: CardOption[]
   position: number
@@ -52,15 +55,15 @@ export type SrsState = {
   introducedAt: number
 }
 
-/** side 0: Vorderseite wird abgefragt, side 1: Rückseite (nur bei beidseitigen Karten) */
-export type CardReview = SrsState & { cardId: string; side: 0 | 1 }
+/** side 0: Vorderseite wird abgefragt, side 1: Rückseite (nur bei beidseitigen Karten) – bei Lückentexten die Lücke */
+export type CardReview = SrsState & { cardId: string; side: number }
 
 export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[] }
 
 /** Eintrag im Bewertungsprotokoll: jede Bewertung im Lernmodus, auch offline gesammelte */
 export type ReviewLogEntry = {
   cardId: string
-  side: 0 | 1
+  side: number
   rating: 1 | 2 | 3 | 4
   /** Phase vor der Bewertung – 'new' bei der ersten Abfrage */
   phase: CardPhase | 'new'

@@ -150,6 +150,31 @@ describe('Karten', () => {
   })
 })
 
+describe('Lückentext-Karten', () => {
+  it('speichert Lücken als ==…==, prüft sie und führt den Lernstand je Lücke', async () => {
+    const d = await newDeck('Lückentexte')
+    const r = await addCards(d.id, [{ type: 'cloze', front: 'Die Ableitung von {{sin}} ist {{cos}} – {{date}} bleibt', back: '' }])
+    expect(r.status).toBe(201)
+    const [c] = r.data.cards as Card[]
+    expect(c).toMatchObject({ type: 'cloze', front: 'Die Ableitung von ==sin== ist ==cos== – {{date}} bleibt', back: '' })
+    expect((await addCards(d.id, [{ type: 'cloze', front: 'Ohne Lücke' }])).status).toBe(400)
+
+    const now = Date.now()
+    const save = (side: number, at = now) =>
+      call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [{ cardId: c.id, side, ...schedule(null, 3, at) }] } })
+    expect((await save(0)).data.saved).toBe(1)
+    expect((await save(1)).data.saved).toBe(1)
+    // Eine dritte Lücke gibt es nicht
+    expect((await save(2)).data.saved).toBe(0)
+    expect((await save(50)).status).toBe(400)
+
+    // Eine Lücke fällt weg: ihr Lernstand auch
+    const edited = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { front: 'Nur noch ==sin==' } })
+    expect(edited.status).toBe(200)
+    expect((await data()).reviews.filter((x) => x.cardId === c.id).map((x) => x.side)).toEqual([0])
+  })
+})
+
 describe('Lernstand', () => {
   it('übernimmt nur neuere Bewertungen und ignoriert unbekannte Karten', async () => {
     const d = await newDeck('Lernen')

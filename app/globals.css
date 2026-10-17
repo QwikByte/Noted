@@ -485,6 +485,18 @@
   color: var(--accent-text);
   text-decoration: none;
 }
+/* Lücke einer Lückentext-Karte, solange sie verdeckt ist */
+.markdown-body .cloze-gap {
+  display: inline-block;
+  min-width: 3em;
+  padding: 0 0.35em;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0.3em 0.3em 0 0;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: center;
+}
 /* Textmarker: leicht unregelmäßige Kanten wie ein Strich mit dem Marker */
 .markdown-body mark,
 .search-snippet mark {

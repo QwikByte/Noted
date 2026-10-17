@@ -2,13 +2,15 @@
 //
 // - Karten in Notizen erkennen („Karteikarten aus Notiz“): Syntax des Obsidian-Plugins „Spaced Repetition“
 //   (Frage::Antwort, Frage:::Antwort, mehrzeilig mit ? bzw. ??), Multiple Choice als Aufgabenliste nach dem ?,
-//   Frage-Callouts (> [!question] …), Definitionen (> [!info] Begriff, **Begriff**: …) und Überschriften.
+//   Frage-Callouts (> [!question] …), Definitionen (> [!info] Begriff, **Begriff**: …), Überschriften und
+//   Lückentexte (Absätze mit {{Lücke}} oder ==Markierung==).
 // - Stapel als Markdown im selben Format ausgeben (Export, „Als Markdown kopieren“) – so lassen sie sich in
 //   Obsidian mit dem Spaced-Repetition-Plugin weiterlernen.
 import { splitFrontmatter } from '@/shared/markdown/meta'
+import { hasCloze, normalizeCloze } from './cloze'
 import type { Card, CardOption, CardType, Deck } from './types'
 
-export type CandidateSource = 'syntax' | 'question' | 'definition' | 'bold' | 'heading'
+export type CandidateSource = 'syntax' | 'question' | 'cloze' | 'definition' | 'bold' | 'highlight' | 'heading'
 
 export type CardDraft = { type: CardType; front: string; back: string; options: CardOption[] }
 
@@ -23,11 +25,13 @@ export const SOURCE_LABELS: Record<CandidateSource, string> = {
   question: 'Frage-Callouts',
   definition: 'Definitionen (Info-Callouts)',
   bold: 'Fett gedruckte Begriffe',
+  cloze: 'Lückentexte ({{Lücke}})',
+  highlight: 'Markierungen als Lückentext (==…==)',
   heading: 'Überschriften mit Abschnitt',
 }
 
-/** Quellen, die eindeutig als Karte gemeint sind (im Dialog vorausgewählt) */
-export const EXPLICIT_SOURCES: CandidateSource[] = ['syntax', 'question']
+/** Quellen, die eindeutig als Karte gemeint sind (im Dialog vorausgewählt) – ==Markierungen== sind oft nur Formatierung */
+export const EXPLICIT_SOURCES: CandidateSource[] = ['syntax', 'question', 'cloze']
 
 export const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
 export const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/
@@ -177,11 +181,30 @@ export function parseCardsFromNote(content: string, opts: ParseOptions = {}): Ca
     }
     const inline = line.includes('::') ? splitInline(line) : null
     if (inline) {
+      consumed[i] = true
       push('syntax', i, { type: inline.reversed ? 'reversed' : 'basic', front: inline.front, back: inline.back, options: [] })
       continue
     }
     const bold = BOLD_COLON_RE.exec(line) ?? BOLD_DEF_RE.exec(line)
-    if (bold) push('bold', i, { type: 'basic', front: bold[1].trim(), back: bold[2].trim(), options: [] })
+    if (bold) {
+      consumed[i] = true
+      push('bold', i, { type: 'basic', front: bold[1].trim(), back: bold[2].trim(), options: [] })
+    }
+  }
+
+  // 5. Lückentexte: ein Absatz mit {{Lücke}} oder ==Markierung== wird eine Karte, jede Lücke einzeln abgefragt
+  const free = (k: number) => usable(k) && !consumed[k] && !isBlank(lines[k]) && !isHeading(k) && !isSeparator(k)
+  for (let i = 0; i < n; i++) {
+    if (!free(i)) continue
+    let j = i
+    while (j + 1 < n && free(j + 1)) j++
+    const text = lines.slice(i, j + 1).join('\n').trim()
+    const front = normalizeCloze(text)
+    if (hasCloze(front)) {
+      // {{Lücke}} ist eindeutig als Lücke gemeint, ==Markierung== oft nur Hervorhebung
+      push(front !== text ? 'cloze' : 'highlight', i, { type: 'cloze', front, back: '', options: [] })
+    }
+    i = j
   }
 
   return out.sort((x, y) => x.line - y.line)
@@ -196,6 +219,8 @@ const compact = (s: string) => s.replace(/\r\n?/g, '\n').trim().replace(/\n[ \t]
 
 export function cardToMarkdown(card: Pick<Card, 'type' | 'front' | 'back' | 'options'>): string {
   const front = compact(card.front)
+  // Lückentext: der Absatz mit den ==Lücken== selbst, ein Zusatz in der Zeile darunter
+  if (card.type === 'cloze') return [front, ...(card.back.trim() ? [compact(card.back)] : [])].join('\n')
   if (card.type === 'mc') {
     const options = card.options.map((o) => `- [${o.correct ? 'x' : ' '}] ${o.text.replace(/\s*\n\s*/g, ' ').trim()}`)
     const explanation = compact(card.back)

@@ -98,7 +98,10 @@ export function ImportCardsDialog({ deck, onClose }: { deck: Deck; onClose: () =
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const parsed = useMemo(() => parseCardsFromNote(text, { tabs: true }).filter((c) => c.source === 'syntax'), [text])
+  const parsed = useMemo(
+    () => parseCardsFromNote(text, { tabs: true }).filter((c) => c.source === 'syntax' || c.source === 'cloze'),
+    [text],
+  )
 
   async function submit() {
     if (parsed.length === 0) return setError('Keine Karten erkannt.')

@@ -27,6 +27,7 @@ import {
   type StudyItem,
 } from '../study'
 import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
+import { clozeAnswer, clozeCount, clozeQuestion, clozeText } from '../cloze'
 import { reviewLogEntry } from '../stats'
 import type { Card, Deck } from '../types'
 
@@ -171,10 +172,25 @@ function StudySession({
   const singleChoice = isMc && card!.options.filter((o) => o.correct).length === 1
   const correct = isMc && answer.checked ? isCorrectSelection(card!.options, answer.selected) : null
   const intervals = useMemo(() => (current && mode === 'learn' ? previewIntervals(state, shownAt) : null), [current, state, mode, shownAt])
-  const question = !card ? '' : isMc ? card.front : side === 1 ? card.back : card.front
-  const solution = !card ? '' : isMc ? card.back : side === 1 ? card.front : card.back
+  const isCloze = card?.type === 'cloze'
+  // Lückentext: Die Lücke wird beim Aufdecken im Satz ausgefüllt, darunter steht nur der Zusatz
+  const question = !card
+    ? ''
+    : isCloze
+      ? revealed
+        ? clozeAnswer(card.front, side)
+        : clozeQuestion(card.front, side)
+      : isMc
+        ? card.front
+        : side === 1
+          ? card.back
+          : card.front
+  const solution = !card ? '' : isMc || isCloze ? card.back : side === 1 ? card.front : card.back
   // Antwort eintippen (Einstellung des Stapels) – nicht bei Multiple Choice und nicht, wenn die Antwort nur ein Bild ist
-  const expected = useMemo(() => answerText(solution), [solution])
+  const expected = useMemo(
+    () => (card && isCloze ? answerText(clozeText(card.front, side)) : answerText(solution)),
+    [card, isCloze, side, solution],
+  )
   const typing = !!card && card.type !== 'mc' && expected !== '' && !!live.decks.find((d) => d.id === card.deckId)?.typeAnswer
   // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“
   const typedWrong = answer.result?.correct === false
@@ -357,6 +373,11 @@ function StudySession({
                   <div className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-faint">
                     {current.kind === 'new' ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-text">Neu</span> : null}
                     {card.type === 'reversed' ? <span>{side === 1 ? 'Rückseite → Vorderseite' : 'Vorderseite → Rückseite'}</span> : null}
+                    {isCloze && clozeCount(card.front) > 1 ? (
+                      <span>
+                        Lücke {side + 1} von {clozeCount(card.front)}
+                      </span>
+                    ) : null}
                     {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
                     {isProblemCard(card, live.states) ? (
                       <span className="inline-flex items-center gap-1 text-warning" title={`Mindestens ${LEECH_LAPSES}-mal vergessen`}>

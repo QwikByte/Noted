@@ -3,7 +3,9 @@ import { z } from 'zod'
 import { getDb } from '@/shared/server/db'
 import { ApiError, badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
-import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
+import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_CLOZES, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
+import { clozeCount, normalizeCloze } from '../cloze'
+import { sidesOf } from '../study'
 import { DEFAULT_NEW_PER_DAY } from '../srs'
 import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
@@ -38,7 +40,7 @@ type CardRow = {
 
 type ReviewRow = {
   card_id: string
-  side: 0 | 1
+  side: number
   user_id: number
   phase: CardReview['phase']
   step: number
@@ -196,9 +198,13 @@ export type CardInput = {
 
 type CleanCard = { type: CardType; front: string; back: string; options: CardOption[]; noteId: string | null }
 
-/** Prüft und bereinigt eine Karte (Texte begrenzt, Multiple Choice mit mind. 2 Antworten, davon mind. 1 richtig). */
+/**
+ * Prüft und bereinigt eine Karte (Texte begrenzt, Multiple Choice mit mind. 2 Antworten, davon mind. 1 richtig,
+ * Lückentext mit mind. einer Lücke – {{Lücke}} wird dabei zu ==Lücke==).
+ */
 function cleanCard(input: CardInput): CleanCard {
-  const front = input.front.replace(/\r\n?/g, '\n').trim()
+  const raw = input.front.replace(/\r\n?/g, '\n').trim()
+  const front = input.type === 'cloze' ? normalizeCloze(raw) : raw
   const back = (input.back ?? '').replace(/\r\n?/g, '\n').trim()
   if (!front) throw badRequest('Die Vorderseite darf nicht leer sein.')
   if (front.length > MAX_CARD_TEXT || back.length > MAX_CARD_TEXT) {
@@ -213,6 +219,10 @@ function cleanCard(input: CardInput): CleanCard {
     if (options.length > MAX_OPTIONS) throw badRequest(`Höchstens ${MAX_OPTIONS} Antworten.`)
     if (options.some((o) => o.text.length > MAX_OPTION_TEXT)) throw badRequest('Eine Antwort ist zu lang.')
     if (!options.some((o) => o.correct)) throw badRequest('Markiere mindestens eine richtige Antwort.')
+  } else if (input.type === 'cloze') {
+    const n = clozeCount(front)
+    if (n === 0) throw badRequest('Markiere mindestens eine Lücke, z. B. ==Begriff== oder {{Begriff}}.')
+    if (n > MAX_CLOZES) throw badRequest(`Höchstens ${MAX_CLOZES} Lücken pro Karte.`)
   } else if (!back) {
     throw badRequest('Die Rückseite darf nicht leer sein.')
   }
@@ -299,8 +309,8 @@ export function updateCard(
       id,
       userId,
     )
-    // Aus einer beidseitigen wird eine einseitige Karte: Lernstand der Rückseite verwerfen
-    if (next.type !== 'reversed') db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side = 1').run(id)
+    // Weggefallene Seiten verlieren ihren Lernstand (aus beidseitig wird einseitig, eine Lücke fällt weg)
+    db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side >= ?').run(id, sidesOf(next).length)
   })()
   return toCard(getCardRow(userId, id))
 }
@@ -333,7 +343,7 @@ export function deleteCard(userId: number, id: string) {
  */
 export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLogEntry[] = []): { saved: number; logged: number } {
   const db = getDb()
-  const cardType = db.prepare('SELECT type, deck_id FROM cards WHERE id = ? AND user_id = ?')
+  const cardInfo = db.prepare('SELECT type, front, deck_id FROM cards WHERE id = ? AND user_id = ?')
   const upsert = db.prepare(
     `INSERT INTO card_reviews (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at)
      VALUES (@cardId, @side, @userId, @phase, @step, @interval, @ease, @reps, @lapses, @due, @reviewedAt, @introducedAt)
@@ -351,15 +361,17 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
   let saved = 0
   let logged = 0
   db.transaction(() => {
+    // Nur Seiten, die die Karte (noch) hat
+    const card = (id: string, side: number) => {
+      const c = cardInfo.get(id, userId) as { type: CardType; front: string; deck_id: string } | undefined
+      return c && side < sidesOf(c).length ? c : null
+    }
     for (const r of reviews) {
-      const card = cardType.get(r.cardId, userId) as { type: CardType } | undefined
-      if (!card || (r.side === 1 && card.type !== 'reversed')) continue
-      saved += upsert.run({ ...r, userId }).changes
+      if (card(r.cardId, r.side)) saved += upsert.run({ ...r, userId }).changes
     }
     for (const e of log) {
-      const card = cardType.get(e.cardId, userId) as { type: CardType; deck_id: string } | undefined
-      if (!card || (e.side === 1 && card.type !== 'reversed')) continue
-      logged += insertLog.run({ ...e, userId, deckId: card.deck_id }).changes
+      const c = card(e.cardId, e.side)
+      if (c) logged += insertLog.run({ ...e, userId, deckId: c.deck_id }).changes
     }
   })()
   return { saved, logged }
@@ -377,7 +389,7 @@ export const deckSchema = z.object({
 })
 
 export const cardSchema = z.object({
-  type: z.enum(['basic', 'reversed', 'mc']),
+  type: z.enum(['basic', 'reversed', 'mc', 'cloze']),
   front: z.string().max(MAX_CARD_TEXT * 2),
   back: z.string().max(MAX_CARD_TEXT * 2).optional(),
   options: z
@@ -389,9 +401,11 @@ export const cardSchema = z.object({
 
 const time = z.number().int().min(0).max(8_640_000_000_000_000)
 
+const side = z.number().int().min(0).max(MAX_CLOZES - 1)
+
 export const reviewSchema = z.object({
   cardId: z.string().uuid(),
-  side: z.union([z.literal(0), z.literal(1)]),
+  side,
   phase: z.enum(['learning', 'review', 'relearning']),
   step: z.number().int().min(0).max(100),
   interval: z.number().min(0).max(100_000),
@@ -405,7 +419,7 @@ export const reviewSchema = z.object({
 
 export const reviewLogSchema = z.object({
   cardId: z.string().uuid(),
-  side: z.union([z.literal(0), z.literal(1)]),
+  side,
   rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   phase: z.enum(['new', 'learning', 'review', 'relearning']),
   intervalBefore: z.number().min(0).max(100_000),

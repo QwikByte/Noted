@@ -1,7 +1,7 @@
 'use client'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, Eye, FileText, PenLine, Plus, Square, X } from 'lucide-react'
+import { Brackets, CheckSquare, Eye, FileText, PenLine, Plus, Square, X } from 'lucide-react'
 import type { CardEditorInit } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { Button } from '@/shared/ui/button'
@@ -15,6 +15,7 @@ import { useNotes } from '@/features/notes/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { MAX_OPTIONS } from '../limits'
+import { clozeCount, clozeQuestion, hasCloze, normalizeCloze } from '../cloze'
 import type { CardOption, CardType } from '../types'
 
 const NEW_DECK = '__new__'
@@ -55,8 +56,8 @@ export const AutoTextarea = forwardRef<
 
 function TypeSwitch({ value, onChange }: { value: CardType; onChange: (t: CardType) => void }) {
   return (
-    <div className="flex rounded-xl bg-subtle p-1" role="radiogroup" aria-label="Kartentyp">
-      {(['basic', 'reversed', 'mc'] as CardType[]).map((t) => (
+    <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-subtle p-1 sm:flex" role="radiogroup" aria-label="Kartentyp">
+      {(['basic', 'reversed', 'cloze', 'mc'] as CardType[]).map((t) => (
         <button
           key={t}
           type="button"
@@ -90,6 +91,8 @@ function validateCard(c: Pick<CardInput, 'type' | 'front' | 'back' | 'options'>)
     const filled = c.options.filter((o) => o.text.trim())
     if (filled.length < 2) return 'Multiple Choice braucht mindestens zwei Antworten.'
     if (!filled.some((o) => o.correct)) return 'Markiere mindestens eine richtige Antwort.'
+  } else if (c.type === 'cloze') {
+    if (!hasCloze(c.front)) return 'Markiere mindestens eine Lücke – Text auswählen und „Als Lücke“, oder ==Begriff== schreiben.'
   } else if (!c.back.trim()) return 'Bitte gib eine Antwort bzw. Rückseite ein.'
   return null
 }
@@ -193,6 +196,25 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
 
   const correctCount = options.filter((o) => o.correct && o.text.trim()).length
 
+  /** Markierten Text der Vorderseite zur Lücke machen (==…==) */
+  function markCloze() {
+    const el = frontRef.current
+    if (!el) return
+    const { selectionStart: a, selectionEnd: b } = el
+    if (a === b) {
+      setError('Wähle zuerst den Text aus, der zur Lücke werden soll.')
+      el.focus()
+      return
+    }
+    const next = `${front.slice(0, a)}==${front.slice(a, b)}==${front.slice(b)}`
+    setFront(next)
+    setError(null)
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(b + 4, b + 4)
+    })
+  }
+
   return (
     <Modal
       open
@@ -269,8 +291,14 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
         {preview ? (
           <div className="space-y-3">
             <div className="rounded-xl border border-border p-4">
-              <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Frage' : 'Vorderseite'}</p>
-              {front.trim() ? <CardMarkdown text={front} /> : <p className="text-sm text-faint italic">Leer</p>}
+              <p className="mb-2 text-xs font-semibold text-faint">
+                {type === 'mc' ? 'Frage' : type === 'cloze' ? `Lückentext (${clozeCount(normalizeCloze(front))} Lücken)` : 'Vorderseite'}
+              </p>
+              {front.trim() ? (
+                <CardMarkdown text={type === 'cloze' ? clozeQuestion(normalizeCloze(front), 0) : front} />
+              ) : (
+                <p className="text-sm text-faint italic">Leer</p>
+              )}
             </div>
             {type === 'mc' ? (
               <ul className="space-y-1.5">
@@ -283,26 +311,43 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                   ))}
               </ul>
             ) : null}
-            {back.trim() || type !== 'mc' ? (
+            {back.trim() || (type !== 'mc' && type !== 'cloze') ? (
               <div className="rounded-xl border border-border p-4">
-                <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Erklärung' : 'Rückseite'}</p>
+                <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Erklärung' : type === 'cloze' ? 'Zusatz' : 'Rückseite'}</p>
                 {back.trim() ? <CardMarkdown text={back} /> : <p className="text-sm text-faint italic">Leer</p>}
               </div>
             ) : null}
           </div>
         ) : (
           <>
-            <Field label={type === 'mc' ? 'Frage' : 'Vorderseite'} hint="Markdown, $Formeln$, Bilder ![[…]] und Links wie [[Skript.pdf#page=3]] sind möglich.">
+            <Field
+              label={type === 'mc' ? 'Frage' : type === 'cloze' ? 'Text mit Lücken' : 'Vorderseite'}
+              hint={
+                type === 'cloze'
+                  ? 'Jede Lücke wird einzeln abgefragt: Text auswählen und „Als Lücke“ – oder ==Begriff== bzw. {{Begriff}} schreiben.'
+                  : 'Markdown, $Formeln$, Bilder ![[…]] und Links wie [[Skript.pdf#page=3]] sind möglich.'
+              }
+            >
               {(id) => (
-                <AutoTextarea
-                  id={id}
-                  ref={frontRef}
-                  value={front}
-                  onChange={(e) => setFront(e.target.value)}
-                  placeholder={type === 'mc' ? 'Welche Aussagen stimmen?' : 'Frage oder Begriff'}
-                  autoFocus={!front}
-                  data-testid="card-front"
-                />
+                <div className="space-y-1.5">
+                  <AutoTextarea
+                    id={id}
+                    ref={frontRef}
+                    value={front}
+                    onChange={(e) => setFront(e.target.value)}
+                    placeholder={
+                      type === 'mc' ? 'Welche Aussagen stimmen?' : type === 'cloze' ? 'Die Ableitung von ==sin x== ist ==cos x==.' : 'Frage oder Begriff'
+                    }
+                    autoFocus={!front}
+                    data-testid="card-front"
+                  />
+                  {type === 'cloze' ? (
+                    // Klick nimmt dem Textfeld die Auswahl nicht weg
+                    <Button size="sm" onMouseDown={(e) => e.preventDefault()} onClick={markCloze}>
+                      <Brackets className="size-4" /> Als Lücke
+                    </Button>
+                  ) : null}
+                </div>
               )}
             </Field>
 
@@ -367,14 +412,24 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
               </div>
             ) : null}
 
-            <Field label={type === 'mc' ? 'Erklärung (optional)' : type === 'reversed' ? 'Rückseite (wird auch als Frage gestellt)' : 'Rückseite'}>
+            <Field
+              label={
+                type === 'mc'
+                  ? 'Erklärung (optional)'
+                  : type === 'cloze'
+                    ? 'Zusatz (optional)'
+                    : type === 'reversed'
+                      ? 'Rückseite (wird auch als Frage gestellt)'
+                      : 'Rückseite'
+              }
+            >
               {(id) => (
                 <AutoTextarea
                   id={id}
                   value={back}
                   onChange={(e) => setBack(e.target.value)}
-                  placeholder={type === 'mc' ? 'Wird nach dem Prüfen angezeigt' : 'Antwort'}
-                  minRows={type === 'mc' ? 1 : 3}
+                  placeholder={type === 'mc' ? 'Wird nach dem Prüfen angezeigt' : type === 'cloze' ? 'Wird nach dem Aufdecken angezeigt' : 'Antwort'}
+                  minRows={type === 'mc' || type === 'cloze' ? 1 : 3}
                   data-testid="card-back"
                 />
               )}
