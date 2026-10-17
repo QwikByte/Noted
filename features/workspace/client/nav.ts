@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 
 export type View =
   | { kind: 'home' }
+  /** heading: Überschrift, zu der die Notiz springt (Links wie [[Notiz#Abschnitt]]) */
   | { kind: 'note'; id: string; heading?: string }
   | { kind: 'folder'; id: string }
   | { kind: 'tag'; tag: string }
@@ -24,7 +25,7 @@ export type StudyMode = 'learn' | 'practice'
 
 function viewFromParams(params: URLSearchParams): View {
   const n = params.get('n')
-  if (n) return { kind: 'note', id: n }
+  if (n) return { kind: 'note', id: n, heading: params.get('h') || undefined }
   const f = params.get('f')
   if (f) return { kind: 'folder', id: f }
   const t = params.get('t')
@@ -50,7 +51,7 @@ function viewFromParams(params: URLSearchParams): View {
 function viewToUrl(view: View): string {
   switch (view.kind) {
     case 'note':
-      return `/?n=${encodeURIComponent(view.id)}`
+      return `/?n=${encodeURIComponent(view.id)}${view.heading ? `&h=${encodeURIComponent(view.heading)}` : ''}`
     case 'folder':
       return `/?f=${encodeURIComponent(view.id)}`
     case 'tag':

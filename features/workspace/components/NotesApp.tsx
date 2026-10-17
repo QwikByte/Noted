@@ -244,7 +244,7 @@ export default function NotesApp() {
   let main: React.ReactNode
   switch (view.kind) {
     case 'note':
-      main = <NoteView key={view.id} id={view.id} onOpenSidebar={() => setSidebarOpen(true)} />
+      main = <NoteView key={view.id} id={view.id} heading={view.heading} onOpenSidebar={() => setSidebarOpen(true)} />
       break
     case 'folder':
       main = <FolderView id={view.id} />

@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
+import { EditorView } from '@codemirror/view'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -59,7 +60,7 @@ import type { NoteEditorHandle } from '../client/editor-handle'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
-import { findWikiLinks, splitFrontmatter } from '@/shared/markdown/meta'
+import { findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
 import { buildVaultIndex } from '@/features/vault/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
@@ -123,7 +124,7 @@ function StatusIndicator({ status }: { status: NoteSyncStatus }) {
 }
 
 /** Lädt die Notiz (Server oder lokaler Entwurf) und zeigt dann den Editor. */
-export function NoteView({ id, onOpenSidebar }: { id: string; onOpenSidebar: () => void }) {
+export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?: string; onOpenSidebar: () => void }) {
   const drafts = useDrafts()
   const draft = drafts.find((d) => d.id === id)
   const isLocalOnly = !!draft?.isNew
@@ -177,10 +178,19 @@ export function NoteView({ id, onOpenSidebar }: { id: string; onOpenSidebar: () 
       </div>
     )
   }
-  return <NoteEditor note={base} serverNote={query.data ?? null} />
+  return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} />
 }
 
-function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null }) {
+/** Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz */
+function headingElement(root: HTMLElement | null, heading: string): HTMLElement | null {
+  const key = headingKey(heading)
+  const all = root?.querySelectorAll<HTMLElement>(
+    ':is(.markdown-body, .ProseMirror) :is(h1, h2, h3, h4, h5, h6)',
+  )
+  return [...(all ?? [])].find((h) => headingKey(h.textContent ?? '') === key) ?? null
+}
+
+function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Note | null; heading?: string }) {
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
@@ -361,10 +371,36 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
     [app],
   )
 
+  // Sprung zu einer Überschrift ([[Notiz#Abschnitt]], Abfrage, Glossar): im Editor zur Zeile, sonst zum gerenderten
+  // Abschnitt. Editoren und Vorschau sind nicht immer sofort fertig aufgebaut – daher ein paar Versuche.
+  useEffect(() => {
+    if (!heading) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const jump = () => {
+      let done = false
+      const view = cmRef.current?.view()
+      const line = view ? findHeadingLine(view.state.doc.toString(), heading) : null
+      if (view && line !== null) {
+        const pos = view.state.doc.line(line + 1).from
+        view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 }) })
+        done = true
+      }
+      const el = headingElement(rootRef.current, heading)
+      if (el) {
+        el.scrollIntoView({ block: 'start' })
+        done = true
+      }
+      if (!done && ++tries < 20) timer = setTimeout(jump, 50)
+    }
+    jump()
+    return () => clearTimeout(timer)
+  }, [heading])
+
   const previewLinks = useMemo<PreviewLinks>(
     () => ({
       resolveNote,
-      onOpenNote: (id) => app.go({ kind: 'note', id }),
+      onOpenNote: (id, target) => app.go({ kind: 'note', id, heading: target }),
       onCreateNote: (t) => void app.createNote({ title: t, folderId }),
       onOpenTag: (tag) => app.go({ kind: 'tag', tag }),
       onOpenPdf: app.openPdf,

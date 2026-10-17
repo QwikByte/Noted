@@ -45,6 +45,23 @@ export function stripCode(text: string): string {
     .replace(/(`+)[^`\n][\s\S]*?\1/g, blank)
 }
 
+/** Vergleichsform einer Überschrift – nur Buchstaben und Ziffern, damit Formatierung und Satzzeichen nicht stören */
+export const headingKey = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+/** Zeile (0-basiert) der ersten Überschrift mit diesem Text, z. B. für Links wie [[Notiz#Abschnitt]] */
+export function findHeadingLine(content: string, heading: string): number | null {
+  const key = headingKey(heading)
+  if (!key) return null
+  const fm = splitFrontmatter(content)
+  const offset = fm ? fm.lines : 0
+  const lines = stripCode(fm ? fm.body : content).split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^#{1,6}[ \t]+(.+?)[ \t#]*$/.exec(lines[i])
+    if (m && headingKey(m[1]) === key) return offset + i
+  }
+  return null
+}
+
 const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
 
 function normalizeTag(tag: string): string | null {

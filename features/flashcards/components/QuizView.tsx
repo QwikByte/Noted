@@ -174,8 +174,16 @@ function QuizSession({ noteId, quiz, onClose }: { noteId: string; quiz: Quiz; on
                 <p className="border-b border-border px-4 py-2 text-xs font-medium text-muted">Nicht gewusst</p>
                 <ul className="divide-y divide-border text-sm" data-testid="quiz-missed">
                   {missed.map((i) => (
-                    <li key={i} className="px-4 py-2">
-                      {trail(quiz.sections[i])}
+                    <li key={i}>
+                      <button
+                        type="button"
+                        onClick={() => app.go({ kind: 'note', id: noteId, heading: quiz.sections[i].heading })}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-hover"
+                        title="In der Notiz zeigen"
+                      >
+                        <span className="min-w-0 flex-1">{trail(quiz.sections[i])}</span>
+                        <FileText className="size-4 shrink-0 text-faint" />
+                      </button>
                     </li>
                   ))}
                 </ul>

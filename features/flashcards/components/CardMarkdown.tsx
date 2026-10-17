@@ -25,7 +25,7 @@ export function CardMarkdown({ text, className }: { text: string; className?: st
       app.openPdf(a.dataset.pdf, Number(a.dataset.page) || undefined)
     } else if (a.dataset.noteId) {
       e.preventDefault()
-      app.go({ kind: 'note', id: a.dataset.noteId })
+      app.go({ kind: 'note', id: a.dataset.noteId, heading: a.dataset.heading })
     } else if (a.classList.contains('tag')) {
       e.preventDefault()
       app.go({ kind: 'tag', tag: a.dataset.tag ?? '' })
