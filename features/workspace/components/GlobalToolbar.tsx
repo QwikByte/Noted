@@ -1,13 +1,12 @@
 'use client'
-// Werkzeugleiste über der ganzen App: ausklappbar, rastet oben oder unten ein, öffnet Werkzeuge als kleine Fenster.
+// Werkzeugleiste über der ganzen App: fest unten rechts, ausklappbar, öffnet Werkzeuge als kleine, verschiebbare Fenster.
+// Läuft ein Werkzeug bei geschlossenem Fenster weiter (Timer), steht es klein unten links neben der Navigation.
 import { useSyncExternalStore } from 'react'
-import { ChevronsRight, GripVertical, Timer, Wrench, type LucideIcon } from 'lucide-react'
-import { useMediaQuery } from '@/shared/client/media'
+import { Timer, Wrench, X, type LucideIcon } from 'lucide-react'
 import { usePref } from '@/shared/client/prefs'
 import { cn } from '@/shared/ui/cn'
 import { FocusMiniTimer, FocusTimer, FocusTimerSettingsToggle } from '@/features/focus/components/FocusTimer'
 import { useFocusAlerts } from '@/features/focus/client/focus-timer'
-import { useFloating } from '../client/use-floating'
 import { FloatingWindow } from './FloatingWindow'
 
 type Tool = {
@@ -17,7 +16,7 @@ type Tool = {
   Window: React.ComponentType
   /** Knöpfe im Fensterkopf */
   Actions?: React.ComponentType
-  /** Kleine Anzeige unten mittig, solange das Fenster zu ist (z. B. ein laufender Timer) */
+  /** Kleine Anzeige unten links, solange das Fenster zu ist (z. B. ein laufender Timer) */
   Mini?: React.ComponentType<{ onOpen: () => void }>
 }
 
@@ -25,17 +24,23 @@ const TOOLS: Tool[] = [
   { id: 'focus', label: 'Fokus-Timer', icon: Timer, Window: FocusTimer, Actions: FocusTimerSettingsToggle, Mini: FocusMiniTimer },
 ]
 
+// Abstand zum unteren Rand: über Leisten, die dort fest liegen (siehe useReservedSpace)
+const BOTTOM = 'calc(max(env(safe-area-inset-bottom), var(--bottom-bar-height, 0px)) + 0.5rem)'
+// Die Leiste zusätzlich über Knöpfen in der Ecke unten rechts („Neue Notiz“, Zoom in Mindmap und Canvas)
+const TOOLBAR_BOTTOM =
+  'calc(max(env(safe-area-inset-bottom), var(--bottom-bar-height, 0px), var(--bottom-right-height, 0px)) + 0.5rem)'
+// Der Mini-Timer rechts neben der Seitenleiste (auf dem Handy ist sie zu: ganz links)
+const MINI_LEFT = 'calc(max(env(safe-area-inset-left), var(--sidebar-width, 0px)) + 0.5rem)'
+
+// Über „Neue Notiz“ (z-30), unter der Seitenleiste auf dem Handy (z-40) und unter Menüs (z-50)
+const LAYER = 'z-[35] print:hidden'
+
 // Ein Klick auf die Leiste nimmt dem Editor den Fokus nicht weg
 const keepFocus = (e: React.MouseEvent) => e.preventDefault()
 
-// Standardplatz: am Desktop oben mittig (dort ist die Kopfzeile frei), auf dem Handy unten links – oben liegen dort
-// die Knöpfe der Notiz, unten mittig der Mini-Timer und rechts „Neue Notiz“
-const WIDE_START = { x: 0.5, y: 0 }
-const NARROW_START = { x: 0, y: 1 }
-
 const noSubscribe = () => () => {}
 
-/** Leiste und Fenster erst im Browser zeigen: Position und Zustand stehen nur dort fest, sonst springen sie beim Laden */
+/** Erst im Browser zeigen: Zustand und Fensterpositionen stehen nur dort fest, sonst springen sie beim Laden */
 export function GlobalToolbar() {
   const inBrowser = useSyncExternalStore(
     noSubscribe,
@@ -46,30 +51,22 @@ export function GlobalToolbar() {
 }
 
 function Toolbar() {
-  const wide = useMediaQuery('(min-width: 1024px)')
   const [expanded, setExpanded] = usePref<'0' | '1'>('noted:toolbar:expanded', '0')
   const [openPref, setOpenPref] = usePref<string>('noted:toolbar:windows', '')
-  const { style, glide, dragHandlers, onKeyDown, wasDragged } = useFloating(
-    'noted:toolbar:pos',
-    wide ? WIDE_START : NARROW_START,
-    { snapY: true },
-  )
   const open = openPref.split(',').filter((id) => TOOLS.some((t) => t.id === id))
   const setOpen = (id: string, on: boolean) =>
     setOpenPref((on ? [...open.filter((o) => o !== id), id] : open.filter((o) => o !== id)).join(','))
   useFocusAlerts()
 
   return (
-    <div
-      className="pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.5rem)] right-[calc(env(safe-area-inset-right)+0.5rem)] left-[calc(env(safe-area-inset-left)+0.5rem)] z-[60] print:hidden"
-      // Über festen Leisten am unteren Rand bleiben (z. B. Bewertungsknöpfe beim Lernen, siehe useBottomBar)
-      style={{ bottom: 'calc(max(env(safe-area-inset-bottom), var(--bottom-bar-height, 0px)) + 0.5rem)' }}
-    >
-      {TOOLS.map((t) => (t.Mini && !open.includes(t.id) ? <t.Mini key={t.id} onOpen={() => setOpen(t.id, true)} /> : null))}
+    <>
+      <div className={cn('pointer-events-none fixed flex items-center gap-2', LAYER)} style={{ left: MINI_LEFT, bottom: BOTTOM }}>
+        {TOOLS.map((t) => (t.Mini && !open.includes(t.id) ? <t.Mini key={t.id} onOpen={() => setOpen(t.id, true)} /> : null))}
+      </div>
+
       <div
-        data-floating
-        className={cn('pointer-events-auto absolute', glide && 'transition-[left,top,transform] duration-200 ease-out')}
-        style={style}
+        className={cn('fixed right-[calc(env(safe-area-inset-right)+0.5rem)]', LAYER)}
+        style={{ bottom: TOOLBAR_BOTTOM }}
         data-testid="global-toolbar"
       >
         {expanded === '1' ? (
@@ -79,16 +76,6 @@ function Toolbar() {
             className="flex animate-pop-in items-center gap-0.5 rounded-xl border border-border bg-elevated p-1 shadow-pop"
             onMouseDown={keepFocus}
           >
-            <button
-              type="button"
-              aria-label="Werkzeugleiste verschieben"
-              title="Verschieben – rastet oben oder unten ein (auch mit den Pfeiltasten)"
-              className="flex h-9 w-6 cursor-grab touch-none items-center justify-center rounded-md text-faint hover:bg-hover hover:text-fg active:cursor-grabbing"
-              {...dragHandlers}
-              onKeyDown={onKeyDown}
-            >
-              <GripVertical className="size-4" />
-            </button>
             {TOOLS.map((t) => (
               <button
                 key={t.id}
@@ -107,12 +94,12 @@ function Toolbar() {
             ))}
             <button
               type="button"
-              aria-label="Werkzeugleiste einklappen"
-              title="Einklappen"
+              aria-label="Werkzeugleiste schließen"
+              title="Schließen"
               onClick={() => setExpanded('0')}
               className="flex size-9 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg"
             >
-              <ChevronsRight className="size-4" />
+              <X className="size-4" />
             </button>
           </div>
         ) : (
@@ -120,30 +107,35 @@ function Toolbar() {
             type="button"
             aria-label="Werkzeuge"
             aria-expanded={false}
-            title="Werkzeuge – zum Verschieben ziehen"
+            title="Werkzeuge"
             onMouseDown={keepFocus}
-            {...dragHandlers}
-            onKeyDown={onKeyDown}
-            onClick={() => {
-              if (!wasDragged()) setExpanded('1')
-            }}
-            className="flex size-11 animate-pop-in cursor-grab touch-none items-center justify-center rounded-full border border-border bg-elevated text-muted shadow-pop hover:text-fg active:cursor-grabbing"
+            onClick={() => setExpanded('1')}
+            className="flex size-11 animate-pop-in items-center justify-center rounded-full border border-border bg-elevated text-muted shadow-pop hover:text-fg"
           >
             <Wrench className="size-[18px]" />
           </button>
         )}
       </div>
-      {TOOLS.filter((t) => open.includes(t.id)).map((t) => (
-        <FloatingWindow
-          key={t.id}
-          id={t.id}
-          title={t.label}
-          actions={t.Actions ? <t.Actions /> : null}
-          onClose={() => setOpen(t.id, false)}
-        >
-          <t.Window />
-        </FloatingWindow>
-      ))}
-    </div>
+
+      <div
+        className={cn(
+          'pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.5rem)] right-[calc(env(safe-area-inset-right)+0.5rem)] left-[calc(env(safe-area-inset-left)+0.5rem)]',
+          LAYER,
+        )}
+        style={{ bottom: BOTTOM }}
+      >
+        {TOOLS.filter((t) => open.includes(t.id)).map((t) => (
+          <FloatingWindow
+            key={t.id}
+            id={t.id}
+            title={t.label}
+            actions={t.Actions ? <t.Actions /> : null}
+            onClose={() => setOpen(t.id, false)}
+          >
+            <t.Window />
+          </FloatingWindow>
+        ))}
+      </div>
+    </>
   )
 }

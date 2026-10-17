@@ -21,6 +21,7 @@ import { Button } from '@/shared/ui/button'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
+import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useNav, type View } from '../client/nav'
 import { usePref } from '@/shared/client/prefs'
 import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/notes/client/queries'
@@ -272,12 +273,15 @@ export default function NotesApp() {
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study'
   const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck'].includes(view.kind)
+  // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
+  const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')
+  const fabSpace = useReservedSpace<HTMLButtonElement>('--bottom-right-height')
 
   return (
     <AppContext.Provider value={actions}>
       <div className="flex h-dvh overflow-hidden bg-bg">
         {/* Seitenleiste: Desktop fest, mobil als Schublade */}
-        <aside className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col xl:w-80">
+        <aside ref={sidebarSpace} className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col xl:w-80">
           <Sidebar currentFolderId={currentFolderId} />
         </aside>
         {sidebarOpen ? (
@@ -327,6 +331,7 @@ export default function NotesApp() {
           />
           {showFab ? (
             <button
+              ref={fabSpace}
               type="button"
               onClick={() => setNewNote({ folderId: currentFolderId })}
               className={cn(

@@ -229,27 +229,24 @@ export function FocusTimerSettingsToggle() {
   )
 }
 
-/** Kleine Anzeige unten mittig, solange der Timer läuft – ein Klick öffnet wieder das Fenster */
+/** Kleine Anzeige, solange der Timer läuft (Platz bestimmt der App-Rahmen) – ein Klick öffnet wieder das Fenster */
 export function FocusMiniTimer({ onOpen }: { onOpen: () => void }) {
   const { state, now } = useFocusTimer()
   if (!isRunning(state)) return null
   return (
-    // Außen zentrieren, innen animieren: Beides über transform ginge nicht zusammen
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center">
-      <button
-        type="button"
-        onClick={onOpen}
-        // Fokus bleibt im Editor
-        onMouseDown={(e) => e.preventDefault()}
-        aria-label="Fokus-Timer öffnen"
-        title="Fokus-Timer öffnen"
-        data-testid="focus-mini"
-        className="pointer-events-auto flex h-8 animate-pop-in items-center gap-2 rounded-full border border-border bg-elevated px-3 text-xs shadow-pop hover:bg-hover"
-      >
-        <span className={cn('size-2 rounded-full', isBreak(state.phase) ? 'bg-success' : 'bg-accent')} />
-        <span className="text-muted">{PHASE_LABELS[state.phase]}</span>
-        <span className="font-semibold text-fg tabular-nums">{formatClock(remainingMs(state, now))}</span>
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      // Fokus bleibt im Editor
+      onMouseDown={(e) => e.preventDefault()}
+      aria-label="Fokus-Timer öffnen"
+      title="Fokus-Timer öffnen"
+      data-testid="focus-mini"
+      className="pointer-events-auto flex h-8 animate-pop-in items-center gap-2 rounded-full border border-border bg-elevated px-3 text-xs shadow-pop hover:bg-hover"
+    >
+      <span className={cn('size-2 rounded-full', isBreak(state.phase) ? 'bg-success' : 'bg-accent')} />
+      <span className="text-muted">{PHASE_LABELS[state.phase]}</span>
+      <span className="font-semibold text-fg tabular-nums">{formatClock(remainingMs(state, now))}</span>
+    </button>
   )
 }
