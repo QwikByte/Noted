@@ -19,6 +19,8 @@ export type CardEditorInit = {
   deckName?: string
 }
 
+export type CardsFromNoteInit = { id: string; title: string; content: string; preselect?: number[] }
+
 export type AppActions = {
   view: View
   go: (view: View, opts?: { replace?: boolean }) => void
@@ -38,8 +40,8 @@ export type AppActions = {
   /** Notiz per Titel (Wikilink-Ziel) auflösen */
   resolveTitle: (target: string) => NoteSummary | null
   openCardEditor: (init?: CardEditorInit) => void
-  /** Dialog „Karteikarten aus Notiz erstellen“ */
-  openCardsFromNote: (note: { id: string; title: string; content: string }) => void
+  /** Dialog „Karteikarten aus Notiz erstellen“ – `preselect`: Zeilen der Überschriften, deren Abschnitte vorausgewählt sind */
+  openCardsFromNote: (note: CardsFromNoteInit) => void
   /** PDF im eingebauten Viewer öffnen (neben der aktuellen Ansicht) */
   openPdf: (file: string, page?: number) => void
 }

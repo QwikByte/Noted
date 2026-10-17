@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import { useApp } from '@/features/workspace/client/context'
+import { useApp, type CardsFromNoteInit } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select } from '@/shared/ui/input'
@@ -40,7 +40,7 @@ Welche Aussagen stimmen?
   )
 }
 
-export function CardsFromNoteDialog({ note, onClose }: { note: { id: string; title: string; content: string }; onClose: () => void }) {
+export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit; onClose: () => void }) {
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
@@ -70,13 +70,15 @@ export function CardsFromNoteDialog({ note, onClose }: { note: { id: string; tit
   const isDuplicate = (i: number) => existing.has(norm(candidates[i].front))
 
   const [selected, setSelected] = useState<Set<number> | null>(null)
-  const effective = useMemo(
-    () =>
-      selected ??
-      new Set(candidates.map((c, i) => (EXPLICIT_SOURCES.includes(c.source) && !existing.has(norm(c.front)) ? i : -1)).filter((i) => i >= 0)),
-    [selected, candidates, existing],
-  )
-  const [open, setOpen] = useState<Set<CandidateSource>>(() => new Set(EXPLICIT_SOURCES))
+  // Vorauswahl: eindeutige Karten – oder die übergebenen Abschnitte (z. B. die beim Abfragen nicht gewussten)
+  const preselect = useMemo(() => (note.preselect ? new Set(note.preselect) : null), [note.preselect])
+  const effective = useMemo(() => {
+    if (selected) return selected
+    const wanted = (c: (typeof candidates)[number]) =>
+      preselect ? c.source === 'heading' && preselect.has(c.line) : EXPLICIT_SOURCES.includes(c.source)
+    return new Set(candidates.map((c, i) => (wanted(c) && !existing.has(norm(c.front)) ? i : -1)).filter((i) => i >= 0))
+  }, [selected, candidates, existing, preselect])
+  const [open, setOpen] = useState<Set<CandidateSource>>(() => new Set(note.preselect ? ['heading'] : EXPLICIT_SOURCES))
   const [help, setHelp] = useState(candidates.length === 0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

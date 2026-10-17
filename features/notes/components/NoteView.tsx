@@ -20,6 +20,7 @@ import {
   Info,
   Layers,
   Link2,
+  ListChecks,
   Loader2,
   Menu as MenuIcon,
   MoreVertical,
@@ -62,6 +63,7 @@ import { findWikiLinks, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
 import { buildVaultIndex } from '@/features/vault/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
+import { canQuiz } from '@/features/flashcards/note-quiz'
 import { validateName } from '@/shared/lib/names'
 import type { Note, NoteFormat } from '../types'
 
@@ -676,6 +678,11 @@ function NoteEditor({ note, serverNote }: { note: Note; serverNote: Note | null 
             <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
               Karteikarten aus Notiz …
             </MenuItem>
+            {canQuiz(format) ? (
+              <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
+                Abfragen
+              </MenuItem>
+            ) : null}
             {linkedCards > 0 ? (
               <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
                 {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
