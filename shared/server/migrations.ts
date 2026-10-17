@@ -390,4 +390,15 @@ export const migrations: string[] = [
   );
   CREATE INDEX course_tasks_user ON course_tasks(user_id, course_id);
   `,
+
+  /* 17: Bildverdeckung (Image Occlusion). Neue Kartenart 'occlusion' (CHECK erweitern wie in Migration 12); die
+     Flächen stehen als JSON in occlusion ({ masks: [{ x, y, w, h, label }], hideAll }, Werte relativ zur Bildgröße).
+     Jede Fläche hat einen eigenen Lernstand – side ist die Nummer der Fläche. */ `
+  ALTER TABLE cards ADD COLUMN type_new TEXT NOT NULL DEFAULT 'basic'
+    CHECK (type_new IN ('basic', 'reversed', 'mc', 'cloze', 'occlusion'));
+  UPDATE cards SET type_new = type;
+  ALTER TABLE cards DROP COLUMN type;
+  ALTER TABLE cards RENAME COLUMN type_new TO type;
+  ALTER TABLE cards ADD COLUMN occlusion TEXT;
+  `,
 ]

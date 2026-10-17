@@ -16,7 +16,10 @@ import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { MAX_OPTIONS } from '../limits'
 import { clozeCount, clozeQuestion, hasCloze, normalizeCloze } from '../cloze'
-import type { CardOption, CardType } from '../types'
+import { occlusionError } from '../occlusion'
+import { OcclusionImage } from './Occlusion'
+import { OcclusionFields } from './OcclusionFields'
+import type { CardOption, CardType, Occlusion } from '../types'
 
 const NEW_DECK = '__new__'
 
@@ -57,7 +60,7 @@ export const AutoTextarea = forwardRef<
 function TypeSwitch({ value, onChange }: { value: CardType; onChange: (t: CardType) => void }) {
   return (
     <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-subtle p-1 sm:flex" role="radiogroup" aria-label="Kartentyp">
-      {(['basic', 'reversed', 'cloze', 'mc'] as CardType[]).map((t) => (
+      {(['basic', 'reversed', 'cloze', 'mc', 'occlusion'] as CardType[]).map((t) => (
         <button
           key={t}
           type="button"
@@ -85,7 +88,11 @@ function emptyOptions(): CardOption[] {
 }
 
 /** Prüft eine Karte wie der Server – liefert eine Fehlermeldung oder null. */
-function validateCard(c: Pick<CardInput, 'type' | 'front' | 'back' | 'options'>): string | null {
+function validateCard(c: Pick<CardInput, 'type' | 'front' | 'back' | 'options' | 'occlusion'>): string | null {
+  if (c.type === 'occlusion') {
+    if (!c.occlusion) return 'Bitte wähle ein Bild.'
+    return occlusionError(c.occlusion) ?? (c.front.trim() ? null : 'Bitte gib einen Titel ein.')
+  }
   if (!c.front.trim()) return 'Bitte gib eine Frage bzw. Vorderseite ein.'
   if (c.type === 'mc') {
     const filled = c.options.filter((o) => o.text.trim())
@@ -116,6 +123,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
   const [options, setOptions] = useState<CardOption[]>(
     editing?.type === 'mc' ? editing.options : init.options?.length ? init.options : emptyOptions(),
   )
+  const [occlusion, setOcclusion] = useState<Occlusion | null>(editing?.occlusion ?? init.occlusion ?? null)
   const [noteId, setNoteId] = useState<string | null>(editing?.noteId ?? init.noteId ?? null)
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -154,6 +162,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
       front: front.trim(),
       back: back.trim(),
       options: type === 'mc' ? options.filter((o) => o.text.trim()).map((o) => ({ text: o.text.trim(), correct: o.correct })) : [],
+      occlusion: type === 'occlusion' ? occlusion : null,
       noteId,
     }
     const invalid = validateCard(card)
@@ -181,6 +190,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
         setFront('')
         setBack('')
         setOptions(emptyOptions())
+        setOcclusion(null)
         setPreview(false)
         frontRef.current?.focus()
       } else {
@@ -292,13 +302,24 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
           <div className="space-y-3">
             <div className="rounded-xl border border-border p-4">
               <p className="mb-2 text-xs font-semibold text-faint">
-                {type === 'mc' ? 'Frage' : type === 'cloze' ? `Lückentext (${clozeCount(normalizeCloze(front))} Lücken)` : 'Vorderseite'}
+                {type === 'mc'
+                  ? 'Frage'
+                  : type === 'cloze'
+                    ? `Lückentext (${clozeCount(normalizeCloze(front))} Lücken)`
+                    : type === 'occlusion'
+                      ? `Bildverdeckung (${occlusion?.masks.length ?? 0} Flächen)`
+                      : 'Vorderseite'}
               </p>
               {front.trim() ? (
                 <CardMarkdown text={type === 'cloze' ? clozeQuestion(normalizeCloze(front), 0) : front} />
               ) : (
                 <p className="text-sm text-faint italic">Leer</p>
               )}
+              {type === 'occlusion' && occlusion ? (
+                <div className="mt-3">
+                  <OcclusionImage occlusion={occlusion} side={0} revealed={false} />
+                </div>
+              ) : null}
             </div>
             {type === 'mc' ? (
               <ul className="space-y-1.5">
@@ -311,9 +332,11 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                   ))}
               </ul>
             ) : null}
-            {back.trim() || (type !== 'mc' && type !== 'cloze') ? (
+            {back.trim() || (type !== 'mc' && type !== 'cloze' && type !== 'occlusion') ? (
               <div className="rounded-xl border border-border p-4">
-                <p className="mb-2 text-xs font-semibold text-faint">{type === 'mc' ? 'Erklärung' : type === 'cloze' ? 'Zusatz' : 'Rückseite'}</p>
+                <p className="mb-2 text-xs font-semibold text-faint">
+                  {type === 'mc' ? 'Erklärung' : type === 'cloze' || type === 'occlusion' ? 'Zusatz' : 'Rückseite'}
+                </p>
                 {back.trim() ? <CardMarkdown text={back} /> : <p className="text-sm text-faint italic">Leer</p>}
               </div>
             ) : null}
@@ -321,11 +344,13 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
         ) : (
           <>
             <Field
-              label={type === 'mc' ? 'Frage' : type === 'cloze' ? 'Text mit Lücken' : 'Vorderseite'}
+              label={type === 'mc' ? 'Frage' : type === 'cloze' ? 'Text mit Lücken' : type === 'occlusion' ? 'Titel' : 'Vorderseite'}
               hint={
                 type === 'cloze'
                   ? 'Jede Lücke wird einzeln abgefragt: Text auswählen und „Als Lücke“ – oder ==Begriff== bzw. {{Begriff}} schreiben.'
-                  : 'Markdown, $Formeln$, Bilder ![[…]] und Links wie [[Skript.pdf#page=3]] sind möglich.'
+                  : type === 'occlusion'
+                    ? 'Steht beim Lernen über dem Bild.'
+                    : 'Markdown, $Formeln$, Bilder ![[…]] und Links wie [[Skript.pdf#page=3]] sind möglich.'
               }
             >
               {(id) => (
@@ -336,8 +361,15 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                     value={front}
                     onChange={(e) => setFront(e.target.value)}
                     placeholder={
-                      type === 'mc' ? 'Welche Aussagen stimmen?' : type === 'cloze' ? 'Die Ableitung von ==sin x== ist ==cos x==.' : 'Frage oder Begriff'
+                      type === 'mc'
+                        ? 'Welche Aussagen stimmen?'
+                        : type === 'cloze'
+                          ? 'Die Ableitung von ==sin x== ist ==cos x==.'
+                          : type === 'occlusion'
+                            ? 'z. B. Herz – Längsschnitt'
+                            : 'Frage oder Begriff'
                     }
+                    minRows={type === 'occlusion' ? 1 : 2}
                     autoFocus={!front}
                     data-testid="card-front"
                   />
@@ -350,6 +382,10 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                 </div>
               )}
             </Field>
+
+            {type === 'occlusion' ? (
+              <OcclusionFields value={occlusion} onChange={setOcclusion} onImage={(title) => setFront((f) => f || title)} />
+            ) : null}
 
             {type === 'mc' ? (
               <div className="space-y-2">
@@ -416,7 +452,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
               label={
                 type === 'mc'
                   ? 'Erklärung (optional)'
-                  : type === 'cloze'
+                  : type === 'cloze' || type === 'occlusion'
                     ? 'Zusatz (optional)'
                     : type === 'reversed'
                       ? 'Rückseite (wird auch als Frage gestellt)'
@@ -428,8 +464,10 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                   id={id}
                   value={back}
                   onChange={(e) => setBack(e.target.value)}
-                  placeholder={type === 'mc' ? 'Wird nach dem Prüfen angezeigt' : type === 'cloze' ? 'Wird nach dem Aufdecken angezeigt' : 'Antwort'}
-                  minRows={type === 'mc' || type === 'cloze' ? 1 : 3}
+                  placeholder={
+                    type === 'mc' ? 'Wird nach dem Prüfen angezeigt' : type === 'cloze' || type === 'occlusion' ? 'Wird nach dem Aufdecken angezeigt' : 'Antwort'
+                  }
+                  minRows={type === 'mc' || type === 'cloze' || type === 'occlusion' ? 1 : 3}
                   data-testid="card-back"
                 />
               )}

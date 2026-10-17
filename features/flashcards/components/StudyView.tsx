@@ -29,6 +29,7 @@ import {
 import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
 import { clozeAnswer, clozeCount, clozeQuestion, clozeText } from '../cloze'
 import { reviewLogEntry } from '../stats'
+import { OcclusionImage } from './Occlusion'
 import type { Card, Deck } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
@@ -189,6 +190,9 @@ function StudySession({
     [current, state, mode, shownAt, plan],
   )
   const isCloze = card?.type === 'cloze'
+  // Bildverdeckung: Titel über dem Bild, beim Aufdecken die Beschriftung der Fläche und der Zusatz
+  const occlusion = card?.type === 'occlusion' ? card.occlusion : null
+  const maskLabel = occlusion?.masks[side]?.label ?? ''
   // Lückentext: Die Lücke wird beim Aufdecken im Satz ausgefüllt, darunter steht nur der Zusatz
   const question = !card
     ? ''
@@ -196,16 +200,24 @@ function StudySession({
       ? revealed
         ? clozeAnswer(card.front, side)
         : clozeQuestion(card.front, side)
-      : isMc
+      : isMc || occlusion
         ? card.front
         : side === 1
           ? card.back
           : card.front
-  const solution = !card ? '' : isMc || isCloze ? card.back : side === 1 ? card.front : card.back
+  const solution = !card
+    ? ''
+    : occlusion
+      ? [maskLabel && `**${maskLabel}**`, card.back].filter(Boolean).join('\n\n')
+      : isMc || isCloze
+        ? card.back
+        : side === 1
+          ? card.front
+          : card.back
   // Antwort eintippen (Einstellung des Stapels) – nicht bei Multiple Choice und nicht, wenn die Antwort nur ein Bild ist
   const expected = useMemo(
-    () => (card && isCloze ? answerText(clozeText(card.front, side)) : answerText(solution)),
-    [card, isCloze, side, solution],
+    () => (card && isCloze ? answerText(clozeText(card.front, side)) : answerText(occlusion ? maskLabel : solution)),
+    [card, isCloze, side, solution, occlusion, maskLabel],
   )
   const typing = !!card && card.type !== 'mc' && expected !== '' && !!deck?.typeAnswer
   // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“
@@ -394,6 +406,11 @@ function StudySession({
                         Lücke {side + 1} von {clozeCount(card.front)}
                       </span>
                     ) : null}
+                    {occlusion && occlusion.masks.length > 1 ? (
+                      <span>
+                        Fläche {side + 1} von {occlusion.masks.length}
+                      </span>
+                    ) : null}
                     {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
                     {isProblemCard(card, live.states) ? (
                       <span className="inline-flex items-center gap-1 text-warning" title={`Mindestens ${LEECH_LAPSES}-mal vergessen`}>
@@ -402,6 +419,11 @@ function StudySession({
                     ) : null}
                   </div>
                   <CardMarkdown text={question} className="study-question" />
+                  {occlusion ? (
+                    <div className="mt-4">
+                      <OcclusionImage occlusion={occlusion} side={side} revealed={revealed} />
+                    </div>
+                  ) : null}
                 </div>
                 <div className="index-card-rule" />
                 <div className={cn('px-5 py-5 text-[1.0625rem] sm:px-7 sm:py-6', !isMc && !revealed && 'index-card-lines min-h-36')}>

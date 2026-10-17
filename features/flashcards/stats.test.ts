@@ -15,6 +15,7 @@ const card = (id: string, patch: Partial<Card> = {}): Card => ({
   front: id,
   back: id,
   options: [],
+  occlusion: null,
   position: 0,
   suspended: false,
   createdAt: 0,

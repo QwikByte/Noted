@@ -26,6 +26,7 @@ function card(id: string, patch: Partial<Card> = {}): Card {
     front: `Frage ${id}`,
     back: `Antwort ${id}`,
     options: [],
+    occlusion: null,
     position: Number(id.replace(/\D/g, '')) || 0,
     suspended: false,
     createdAt: 0,

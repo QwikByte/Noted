@@ -23,7 +23,8 @@ function slugify(text: string): string {
     .replace(/\s+/g, '-')
 }
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i
+/** Dateien, die als Bild eingebettet werden */
+export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i
 const AUDIO_EXT = /\.(mp3|m4a|wav|ogg|flac)$/i
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i

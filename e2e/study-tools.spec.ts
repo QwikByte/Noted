@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { strToU8, zipSync } from 'fflate'
-import { apiHeaders } from './helpers'
+import { apiHeaders, makePdf } from './helpers'
 
 // Lernhilfen: Antwort eintippen, Problemkarten, Notiz abfragen, Fokus aus dem Termin und Karteikarten nach der
 // Vorlesung auf der Startseite.
@@ -635,4 +635,108 @@ test('Aufgaben aus Altklausuren sammeln und wiederholen', async ({ page }) => {
   await shot(page, '51-tasks')
   await page.goto('/?v=coursework')
   await expect(page.getByTestId('course-tasks')).toContainText('Aufgaben · 2 · 50 % gelöst')
+})
+
+test('Bildverdeckung: Flächen über ein Bild ziehen und einzeln lernen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Anatomie' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  // Ein Bild mit zwei Beschriftungen (im Browser gezeichnet) und ein PDF mit einer Abbildung auf Seite 2
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 400
+    canvas.height = 240
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, 400, 240)
+    ctx.fillStyle = '#c00'
+    ctx.beginPath()
+    ctx.arc(200, 130, 70, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#000'
+    ctx.font = '20px sans-serif'
+    ctx.fillText('Aorta', 30, 40)
+    ctx.fillText('Vene', 300, 220)
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  const headers = await apiHeaders(page)
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Abbildungen.pdf', mimeType: 'application/pdf', buffer: makePdf([['Titel'], ['Abbildung 2', 'Schema']]) } },
+  })
+  expect(up.status()).toBe(201)
+
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('add-card').click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('radio', { name: 'Bildverdeckung' }).click()
+  await dialog.getByTestId('occlusion-upload').setInputFiles({ name: 'herz.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') })
+  const editor = dialog.getByTestId('occlusion-editor')
+  await expect(editor.locator('img')).toBeVisible()
+  await expect(dialog.getByTestId('card-front')).toHaveValue('herz')
+
+  // Zwei Flächen ziehen, die erste beschriften
+  const drag = async (x1: number, y1: number, x2: number, y2: number) => {
+    await editor.scrollIntoViewIfNeeded()
+    const box = (await editor.boundingBox())!
+    await page.mouse.move(box.x + box.width * x1, box.y + box.height * y1)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * ((x1 + x2) / 2), box.y + box.height * ((y1 + y2) / 2))
+    await page.mouse.move(box.x + box.width * x2, box.y + box.height * y2)
+    await page.mouse.up()
+  }
+  await drag(0.05, 0.05, 0.3, 0.22)
+  await drag(0.72, 0.8, 0.95, 0.97)
+  await expect(editor.locator('[data-mask]')).toHaveCount(2)
+  await dialog.getByLabel('Beschriftung von Fläche 1').fill('Aorta')
+  await shot(page, '52-occlusion-editor')
+  await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  // Die Flächen liegen dort, wo gezogen wurde – relativ zum Bild
+  const saved = (await flashcards(page)).cards.find((c: { deckId: string }) => c.deckId === deck.id)
+  const near = (n: number) => expect.closeTo(n, 0)
+  expect(saved.occlusion.masks.map((m: Record<string, number>) => [m.x, m.y, m.w, m.h].map((v) => v * 100))).toEqual([
+    [near(5), near(5), near(25), near(17)],
+    [near(72), near(80), near(23), near(17)],
+  ])
+
+  const item = page.getByTestId('card-list').locator('> li').first()
+  await expect(item).toContainText('Bildverdeckung')
+  await expect(item).toContainText('Aorta · Fläche 2')
+
+  // Lernen: Die erste Fläche ist verdeckt, beim Aufdecken erscheint ihre Beschriftung
+  await page.getByTestId('deck-learn').click()
+  const card = page.getByTestId('study-card')
+  await expect(card.getByTestId('occlusion-asked')).toBeVisible()
+  await expect(card).toContainText('herz')
+  await shot(page, '53-occlusion-study')
+  await page.keyboard.press('Space')
+  await expect(card.getByTestId('occlusion-revealed')).toBeVisible()
+  await expect(page.getByTestId('study-answer')).toContainText('Aorta')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  // Neue Flächen kommen nacheinander an verschiedenen Tagen dran – heute nur die erste
+  await expect
+    .poll(async () => {
+      const data = await flashcards(page)
+      const id = data.cards.find((c: { deckId: string }) => c.deckId === deck.id).id
+      return data.reviews.filter((r: { cardId: string }) => r.cardId === id).map((r: { side: number }) => r.side)
+    })
+    .toEqual([0])
+
+  // Eine PDF-Seite als Bild übernehmen
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('add-card').click()
+  await dialog.getByRole('radio', { name: 'Bildverdeckung' }).click()
+  await dialog.getByLabel('PDF', { exact: true }).selectOption('Abbildungen.pdf')
+  await dialog.getByLabel('Seite').fill('2')
+  await dialog.getByRole('button', { name: 'Seite übernehmen' }).click()
+  await expect(dialog.getByTestId('occlusion-editor').locator('img')).toBeVisible({ timeout: 15_000 })
+  await expect(dialog.getByTestId('card-front')).toHaveValue('Abbildungen S. 2')
+  await page.keyboard.press('Escape')
+
+  const { attachments } = await (await page.request.get('/api/attachments')).json()
+  for (const a of attachments as { id: string; filename: string }[]) {
+    if (['herz.png', 'Abbildungen.pdf', 'Abbildungen S. 2.png'].includes(a.filename)) cleanup.push(`/api/attachments/${a.id}`)
+  }
 })

@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   FileText,
+  ImageIcon,
   Layers,
   Link2,
   Loader2,
@@ -37,24 +38,7 @@ import { copyText } from '@/shared/client/clipboard'
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { errorMessage } from '@/shared/client/api'
-
-type Lib = { pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs'); viewer: typeof import('pdfjs-dist/legacy/web/pdf_viewer.mjs') }
-let lib: Promise<Lib> | null = null
-
-/**
- * pdf.js erst laden, wenn wirklich ein PDF geöffnet wird. Der Viewer erwartet die Bibliothek als globalThis.pdfjsLib.
- * „legacy“-Build: läuft auch in Browsern, denen neueste JavaScript-Funktionen fehlen (z. B. ältere Handys).
- */
-function loadPdfjs(): Promise<Lib> {
-  lib ??= (async () => {
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs'
-    const viewer = await import('pdfjs-dist/legacy/web/pdf_viewer.mjs')
-    return { pdfjs, viewer }
-  })()
-  lib.catch(() => (lib = null))
-  return lib
-}
+import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, renderPdfPage } from '../client/pdfjs'
 
 // Zuletzt gelesene Seite je PDF merken
 const POS_KEY = 'noted:pdfpos'
@@ -138,20 +122,9 @@ export default function PdfPanel({
     ;(async () => {
       try {
         const { pdfjs, viewer: V } = await loadPdfjs()
-        // Ganze Datei laden (statt Teilbereichen) – so landet sie im Offline-Cache des Service Workers
-        const res = await fetch(defaultFileUrl(file), { credentials: 'same-origin', signal: ac.signal })
-        if (!res.ok) throw new Error(res.status === 404 ? 'Die Datei wurde nicht gefunden.' : `Die Datei konnte nicht geladen werden (${res.status}).`)
-        const data = new Uint8Array(await res.arrayBuffer())
+        const data = await fetchPdf(file, ac.signal)
         if (cancelled) return
-        task = pdfjs.getDocument({
-          data,
-          enableXfa: false,
-          cMapUrl: '/pdfjs/cmaps/',
-          cMapPacked: true,
-          standardFontDataUrl: '/pdfjs/standard_fonts/',
-          wasmUrl: '/pdfjs/wasm/',
-          iccUrl: '/pdfjs/iccs/',
-        })
+        task = pdfjs.getDocument({ data, ...DOCUMENT_OPTIONS })
         const doc = await task.promise
         if (cancelled) return
         inner.replaceChildren()
@@ -363,6 +336,24 @@ export default function PdfPanel({
 
   const ready = status.state === 'ready'
 
+  /** Seite als Bild in den Anhängen speichern und daraus eine Karte mit Bildverdeckung anlegen */
+  async function pageToOcclusion(page: number) {
+    try {
+      const { blob } = await renderPdfPage(file, page)
+      const att = await uploadAttachment(new File([blob], `${baseName(file)} S. ${page}.png`, { type: 'image/png' }))
+      await qc.invalidateQueries({ queryKey: attachmentsKey })
+      app.openCardEditor({
+        type: 'occlusion',
+        occlusion: { image: att.filename, masks: [], hideAll: false },
+        front: `${baseName(file)}, S. ${page}`,
+        noteId: getActiveEditor()?.noteId ?? null,
+        deckName: baseName(file),
+      })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+
   return (
     <section className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-subtle" aria-label={`PDF: ${file}`} data-testid="pdf-panel">
       {/* Werkzeugleiste – passt sich der Breite des Panels an */}
@@ -500,6 +491,9 @@ export default function PdfPanel({
             <MenuSeparator />
             <MenuItem icon={<Link2 />} onSelect={() => insert({ kind: 'page-link', ref: { file, page: current } }, `Link auf Seite ${current}`)} disabled={!ready}>
               Seite {current} in Notiz verlinken
+            </MenuItem>
+            <MenuItem icon={<ImageIcon />} onSelect={() => void pageToOcclusion(current)} disabled={!ready}>
+              Seite {current} als Bildverdeckung …
             </MenuItem>
             <MenuItem
               icon={<Copy />}

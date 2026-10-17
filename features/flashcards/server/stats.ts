@@ -87,7 +87,13 @@ export function reviewLogCsv(userId: number): string {
       new Date(r.reviewed_at).toISOString(),
       r.deck ?? '(gelöscht)',
       (r.front ?? '(gelöscht)').split('\n')[0].slice(0, 200),
-      r.type === 'cloze' ? `Lücke ${r.side + 1}` : r.side === 1 ? 'Rückseite' : 'Vorderseite',
+      r.type === 'cloze'
+        ? `Lücke ${r.side + 1}`
+        : r.type === 'occlusion'
+          ? `Fläche ${r.side + 1}`
+          : r.side === 1
+            ? 'Rückseite'
+            : 'Vorderseite',
       RATING_LABELS[r.rating] ?? String(r.rating),
       PHASE_LABELS[r.phase] ?? r.phase,
       decimal(r.interval_before),
