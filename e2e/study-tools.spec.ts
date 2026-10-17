@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
+import Database from 'better-sqlite3'
+import { strToU8, zipSync } from 'fflate'
 import { apiHeaders } from './helpers'
 
 // Lernhilfen: Antwort eintippen, Problemkarten, Notiz abfragen, Fokus aus dem Termin und Karteikarten nach der
@@ -412,4 +414,42 @@ test('Lückentext: im Editor markieren und Lücke für Lücke lernen', async ({ 
   await page.getByTestId('rate-4').click()
   // Die zweite Lücke kommt als neue Karte erst morgen
   await expect(page.getByTestId('study-done')).toBeVisible()
+})
+
+/** Kleines Anki-Paket im älteren Format: eine beidseitige Karte und ein Lückentext */
+function ankiPackage(deck: string): Buffer {
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER, decks TEXT);
+    CREATE TABLE notes (id INTEGER PRIMARY KEY, flds TEXT);
+    CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, did INTEGER, ord INTEGER, type INTEGER, queue INTEGER,
+      due INTEGER, ivl INTEGER, factor INTEGER, reps INTEGER, lapses INTEGER);
+    CREATE TABLE revlog (id INTEGER PRIMARY KEY, cid INTEGER, ease INTEGER, ivl INTEGER, lastIvl INTEGER, time INTEGER, type INTEGER);
+  `)
+  db.prepare('INSERT INTO col VALUES (1, 1700000000, ?)').run(JSON.stringify({ 5: { id: 5, name: deck } }))
+  db.exec(`
+    INSERT INTO notes VALUES (1, 'apple' || char(31) || 'Apfel'), (2, '{{c1::Berlin}} ist die Hauptstadt' || char(31) || '');
+    INSERT INTO cards VALUES (11, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0), (12, 1, 5, 1, 0, 0, 0, 0, 0, 0, 0), (21, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0);
+  `)
+  const collection = db.serialize()
+  db.close()
+  return Buffer.from(zipSync({ 'collection.anki2': collection, media: strToU8('{}') }))
+}
+
+test('Anki-Deck importieren', async ({ page }) => {
+  await login(page)
+  await page.goto('/?v=cards')
+  await page.getByRole('main').getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Anki-Deck importieren …' }).click()
+  await page.getByTestId('anki-file').setInputFiles({ name: 'Vokabeln.apkg', mimeType: 'application/octet-stream', buffer: ankiPackage('Englisch::Vokabeln') })
+  await page.getByTestId('anki-import').click()
+  await expect(page.getByTestId('anki-result')).toContainText('2 Karten importiert, 1 neuer Stapel')
+  await shot(page, '40-anki-import')
+  await page.getByRole('button', { name: 'Fertig' }).click()
+  const tile = page.getByTestId('deck-list').locator('> div').filter({ hasText: 'Englisch – Vokabeln' })
+  await expect(tile).toContainText('2 fällig')
+  const data = await flashcards(page)
+  const deck = data.decks.find((d: { name: string }) => d.name === 'Englisch – Vokabeln')
+  cleanup.push(`/api/decks/${deck.id}`)
+  expect(data.cards.filter((c: { deckId: string }) => c.deckId === deck.id).map((c: { type: string }) => c.type)).toEqual(['reversed', 'cloze'])
 })

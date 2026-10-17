@@ -6,11 +6,12 @@ import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
 import { AutoTextarea } from './CardEditor'
-import { CARD_TYPE_LABELS, createCards, createDeck, updateDeck } from '../client/flashcards'
+import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, updateDeck } from '../client/flashcards'
+import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { DEFAULT_NEW_PER_DAY } from '../srs'
-import type { Deck } from '../types'
+import type { AnkiImportResult, Deck } from '../types'
 
 /** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit und „Antwort eintippen“ ändern. */
 export function DeckSettingsDialog({
@@ -168,6 +169,99 @@ export function ImportCardsDialog({ deck, onClose }: { deck: Deck; onClose: () =
           </div>
         ) : null}
       </div>
+    </Modal>
+  )
+}
+
+/** Anki-Paket (.apkg) importieren – Stapel, Karten, Bilder und auf Wunsch der Lernstand */
+export function AnkiImportDialog({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [progress, setProgress] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<AnkiImportResult | null>(null)
+
+  async function submit() {
+    if (!file) return setError('Bitte wähle eine Datei aus.')
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await importAnki(qc, file, progress))
+      void qc.invalidateQueries({ queryKey: attachmentsKey })
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Anki-Deck importieren"
+      footer={
+        result ? (
+          <Button variant="primary" onClick={onClose}>
+            Fertig
+          </Button>
+        ) : (
+          <>
+            {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+            <Button onClick={onClose}>Abbrechen</Button>
+            <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!file} data-testid="anki-import">
+              Importieren
+            </Button>
+          </>
+        )
+      }
+    >
+      {result ? (
+        <div className="space-y-2 text-sm" data-testid="anki-result">
+          <p>
+            <strong>{result.cards.toLocaleString('de-DE')}</strong> {result.cards === 1 ? 'Karte' : 'Karten'} importiert
+            {result.decks ? `, ${result.decks} ${result.decks === 1 ? 'neuer Stapel' : 'neue Stapel'}` : ''}
+            {result.media ? `, ${result.media} ${result.media === 1 ? 'Datei' : 'Dateien'} unter Anhänge` : ''}.
+          </p>
+          {result.skipped.length ? (
+            <div>
+              <p className="text-muted">Übersprungen:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted">
+                {result.skipped.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Exportiere das Deck in Anki über <em>Datei → Exportieren</em> als „Anki-Deck-Paket (.apkg)“. Stapel und Unterstapel,
+            Grund-, beidseitige und Lückentext-Karten, Formeln, Bilder und Töne werden übernommen; Karten, die es im Stapel schon
+            gibt, kommen nicht doppelt.
+          </p>
+          <Field label="Datei">
+            {(id) => (
+              <Input
+                id={id}
+                type="file"
+                accept=".apkg,.colpkg"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="py-2"
+                data-testid="anki-file"
+              />
+            )}
+          </Field>
+          <Switch
+            checked={progress}
+            onChange={setProgress}
+            label="Lernstand übernehmen"
+            description="Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen (für die Statistik) aus Anki."
+          />
+        </div>
+      )}
     </Modal>
   )
 }
