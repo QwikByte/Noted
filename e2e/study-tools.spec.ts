@@ -199,7 +199,9 @@ test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ 
   expect(fromNote.map((c: { front: string; back: string }) => [c.front, c.back])).toEqual([['Nullfolge', 'Eine Folge mit Grenzwert 0']])
   for (const c of fromNote) cleanup.push(`/api/cards/${c.id}`)
 
-  await done.getByRole('button', { name: 'Zur Notiz' }).click()
+  // Ein nicht gewusster Abschnitt öffnet die Notiz an seiner Überschrift
+  await page.getByTestId('quiz-missed').getByRole('button', { name: /Nullfolge/ }).click()
+  await expect(page).toHaveURL(/&h=Nullfolge$/)
   await expect(page.getByTestId('note-title')).toHaveValue('Folgen und Reihen (Abfrage)')
 })
 
@@ -246,4 +248,23 @@ test('Nach der Vorlesung an Karten erinnern, Fokus aus dem Termin starten', asyn
   await dialog.getByRole('button', { name: 'Fokus starten' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByTestId('focus-mini')).toContainText(/Countdown\s*1:(30:00|29:\d\d)/)
+})
+
+test('Links auf Abschnitte springen zur Überschrift – im Lesemodus und im Editor', async ({ page }) => {
+  await login(page)
+  const filler = Array.from({ length: 80 }, (_, i) => `Absatz ${i + 1}`).join('\n\n')
+  const target = await post(page, '/api/notes', { title: 'Lange Mitschrift', content: `# Anfang\n\n${filler}\n\n## Ziel\nHier steht es.\n` }, 'note')
+  const source = await post(page, '/api/notes', { title: 'Verweise', content: 'Siehe [[Lange Mitschrift#Ziel]]\n' }, 'note')
+  cleanup.push(`/api/notes/${target.id}?permanent=1`, `/api/notes/${source.id}?permanent=1`)
+
+  await page.goto(`/?n=${source.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a', { hasText: 'Lange Mitschrift › Ziel' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${target.id}&h=Ziel$`))
+  await expect(page.locator('.markdown-body h2', { hasText: 'Ziel' })).toBeInViewport()
+
+  // Im Editor steht der Cursor auf der Überschrift
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await page.goto(`/?n=${target.id}&h=Ziel`)
+  await expect(page.locator('.cm-line', { hasText: '## Ziel' })).toBeInViewport()
 })

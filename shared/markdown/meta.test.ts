@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   extractLinks,
   extractTags,
+  findHeadingLine,
   findWikiLinks,
+  headingKey,
   makeExcerpt,
   splitFrontmatter,
   stripCode,
@@ -87,5 +89,20 @@ describe('Laufzeit bei böswilligen Eingaben', () => {
       makeExcerpt(s)
       expect(Date.now() - t).toBeLessThan(3000)
     }
+  })
+})
+
+describe('Überschriften', () => {
+  it('findet die Zeile einer Überschrift – ohne Frontmatter, Code-Blöcke und Formatierung', () => {
+    const note = ['---', '# kein: Titel', '---', '```', '## Ziel', '```', 'Text', '## **Ziel**: Grenzwerte ##', '### Ziel'].join('\n')
+    expect(findHeadingLine(note, 'Ziel: Grenzwerte')).toBe(7)
+    expect(findHeadingLine(note, 'ziel')).toBe(8)
+    expect(findHeadingLine(note, 'Fehlt')).toBeNull()
+    expect(findHeadingLine(note, '')).toBeNull()
+  })
+
+  it('vergleicht Überschriften ohne Formatierung und Satzzeichen', () => {
+    expect(headingKey('**Satz** von  $x$!')).toBe(headingKey('Satz von x'))
+    expect(headingKey('Übung 1.2')).toBe('übung 1 2')
   })
 })
