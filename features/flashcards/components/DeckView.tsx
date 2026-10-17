@@ -25,6 +25,7 @@ import {
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { CardMarkdown } from './CardMarkdown'
+import { OcclusionThumb } from './Occlusion'
 import { Legend, ProgressBar, statusCounts } from './common'
 import { useNow } from '@/shared/client/now'
 import { DeckSettingsDialog, ImportCardsDialog } from './DeckDialogs'
@@ -49,6 +50,7 @@ import { copyText } from '@/shared/client/clipboard'
 import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
 import { daysUntil, examDue, examNewPerDay, nextExam } from '../exam'
+import { maskName } from '../occlusion'
 import { MAX_NEW_PER_DAY } from '../limits'
 import { longDate } from '@/features/calendar/dates'
 import { LEECH_LAPSES, endOfDay, formatInterval } from '../srs'
@@ -107,7 +109,8 @@ export function DeckView({ id }: { id: string }) {
     const pool =
       shownFilter === 'problem' ? cards.filter((c) => problems.has(c.id)) : shownFilter === 'suspended' ? cards.filter((c) => c.suspended) : cards
     if (!q) return pool
-    return pool.filter((c) => [c.front, c.back, ...c.options.map((o) => o.text)].some((t) => t.toLowerCase().includes(q)))
+    const texts = (c: Card) => [c.front, c.back, ...c.options.map((o) => o.text), ...(c.occlusion?.masks.map((m) => m.label) ?? [])]
+    return pool.filter((c) => texts(c).some((t) => t.toLowerCase().includes(q)))
   }, [cards, query, shownFilter, problems])
 
   if (!deck || !data || !counts) {
@@ -320,8 +323,15 @@ export function DeckView({ id }: { id: string }) {
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <CardMarkdown text={card.front} className="line-clamp-4 font-medium" />
+                    {card.type === 'occlusion' && card.occlusion ? <OcclusionThumb occlusion={card.occlusion} /> : null}
                     <CardMarkdown
-                      text={card.type === 'mc' ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ') : card.back}
+                      text={
+                        card.type === 'mc'
+                          ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ')
+                          : card.type === 'occlusion' && card.occlusion
+                            ? card.occlusion.masks.map((_, i) => maskName(card.occlusion!, i)).join(' · ')
+                            : card.back
+                      }
                       className="mt-1 line-clamp-2 text-sm text-muted"
                     />
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">

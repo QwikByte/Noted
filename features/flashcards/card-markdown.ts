@@ -217,8 +217,17 @@ export function parseCardsFromNote(content: string, opts: ParseOptions = {}): Ca
 /** Mehrzeilige Karten enden im Spaced-Repetition-Plugin an einer Leerzeile – daher Leerzeilen entfernen. */
 const compact = (s: string) => s.replace(/\r\n?/g, '\n').trim().replace(/\n[ \t]*\n+/g, '\n')
 
-export function cardToMarkdown(card: Pick<Card, 'type' | 'front' | 'back' | 'options'>): string {
+type ExportedCard = Pick<Card, 'type' | 'front' | 'back' | 'options'> & { occlusion?: Card['occlusion'] }
+
+export function cardToMarkdown(card: ExportedCard): string {
   const front = compact(card.front)
+  if (card.type === 'occlusion') {
+    // Ein Format für Bildverdeckung gibt es in Obsidian nicht: Titel und Bild, die Beschriftungen als Lücken darunter
+    const o = card.occlusion
+    const labels = (o?.masks ?? []).map((m) => m.label).filter(Boolean)
+    const extra = compact(card.back)
+    return [front, ...(o ? [`![[${o.image}]]`] : []), ...labels.map((l) => `- ==${l}==`), ...(extra ? [extra] : [])].join('\n')
+  }
   // Lückentext: der Absatz mit den ==Lücken== selbst, ein Zusatz in der Zeile darunter
   if (card.type === 'cloze') return [front, ...(card.back.trim() ? [compact(card.back)] : [])].join('\n')
   if (card.type === 'mc') {

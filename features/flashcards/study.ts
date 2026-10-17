@@ -13,9 +13,16 @@ export type StateMap = Map<string, SrsState>
 export const reviewKey = (cardId: string, side: Side) => `${cardId}:${side}`
 export const itemKey = (item: { card: Card; side: Side }) => reviewKey(item.card.id, item.side)
 
-/** Abgefragte Seiten einer Karte: beidseitige Karten in beide Richtungen, Lückentexte jede Lücke für sich. */
-export function sidesOf(card: Pick<Card, 'type' | 'front'>): Side[] {
+/** Was es braucht, um die abgefragten Seiten einer Karte zu bestimmen */
+type Sided = Pick<Card, 'type' | 'front'> & { occlusion?: Card['occlusion'] }
+
+/**
+ * Abgefragte Seiten einer Karte: beidseitige Karten in beide Richtungen, Lückentexte jede Lücke und
+ * Bildverdeckungen jede Fläche für sich.
+ */
+export function sidesOf(card: Sided): Side[] {
   if (card.type === 'cloze') return Array.from({ length: clozeCount(card.front) }, (_, i) => i)
+  if (card.type === 'occlusion') return Array.from({ length: card.occlusion?.masks.length ?? 0 }, (_, i) => i)
   return card.type === 'reversed' ? [0, 1] : [0]
 }
 
@@ -33,11 +40,11 @@ export function byPosition(a: Card, b: Card) {
 }
 
 /** Wie oft die Karte vergessen wurde – bei beidseitigen Karten und Lückentexten die schwächste Seite */
-export function cardLapses(card: Pick<Card, 'id' | 'type' | 'front'>, states: StateMap): number {
+export function cardLapses(card: Sided & Pick<Card, 'id'>, states: StateMap): number {
   return Math.max(0, ...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
 }
 
-export const isProblemCard = (card: Pick<Card, 'id' | 'type' | 'front'>, states: StateMap) =>
+export const isProblemCard = (card: Sided & Pick<Card, 'id'>, states: StateMap) =>
   cardLapses(card, states) >= LEECH_LAPSES
 
 export type DeckCounts = {

@@ -95,6 +95,7 @@ describe('Wiederholungen vor der Klausur', () => {
       front: id,
       back: '',
       options: [],
+      occlusion: null,
       position: i,
       suspended: id === 'c3',
       createdAt: 0,

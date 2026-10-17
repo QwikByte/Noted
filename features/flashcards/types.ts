@@ -2,11 +2,21 @@
 
 /**
  * basic: Vorderseite → Rückseite · reversed: zusätzlich Rückseite → Vorderseite · mc: Multiple Choice ·
- * cloze: Lückentext – Lücken als ==Markierung== in der Vorderseite, die Rückseite ist ein optionaler Zusatz
+ * cloze: Lückentext – Lücken als ==Markierung== in der Vorderseite, die Rückseite ist ein optionaler Zusatz ·
+ * occlusion: Bildverdeckung – Flächen eines Bilds werden einzeln abgefragt, die Vorderseite ist der Titel
  */
-export type CardType = 'basic' | 'reversed' | 'mc' | 'cloze'
+export type CardType = 'basic' | 'reversed' | 'mc' | 'cloze' | 'occlusion'
 
 export type CardOption = { text: string; correct: boolean }
+
+/** Verdeckte Fläche – Lage und Größe relativ zum Bild (0–1), label = was darunter steht (optional) */
+export type OcclusionMask = { x: number; y: number; w: number; h: number; label: string }
+
+/**
+ * Bildverdeckung: `image` ist der Dateiname eines Anhangs. hideAll: Beim Abfragen sind alle Flächen verdeckt,
+ * sonst nur die abgefragte.
+ */
+export type Occlusion = { image: string; masks: OcclusionMask[]; hideAll: boolean }
 
 export type Deck = {
   id: string
@@ -38,6 +48,8 @@ export type Card = {
   /** Antwort – bei Multiple Choice die (optionale) Erklärung, bei Lückentexten ein (optionaler) Zusatz */
   back: string
   options: CardOption[]
+  /** Nur bei Bildverdeckung */
+  occlusion: Occlusion | null
   position: number
   /** Ausgesetzt: kommt beim Lernen und Üben nicht dran (z. B. eine Problemkarte bis zur Überarbeitung) */
   suspended: boolean

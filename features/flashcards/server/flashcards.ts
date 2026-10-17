@@ -3,11 +3,21 @@ import { z } from 'zod'
 import { getDb } from '@/shared/server/db'
 import { ApiError, badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
-import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_CLOZES, MAX_NEW_PER_DAY, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
+import {
+  MAX_ANSWER_MS,
+  MAX_CARD_TEXT,
+  MAX_CLOZES,
+  MAX_MASK_LABEL,
+  MAX_MASKS,
+  MAX_NEW_PER_DAY,
+  MAX_OPTION_TEXT,
+  MAX_OPTIONS,
+} from '../limits'
 import { clozeCount, normalizeCloze } from '../cloze'
+import { fitMask, occlusionError } from '../occlusion'
 import { sidesOf } from '../study'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
-import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
+import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, Occlusion, ReviewLogEntry } from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
 const MAX_DECK_NAME = 200
@@ -34,6 +44,7 @@ type CardRow = {
   front: string
   back: string
   options: string
+  occlusion: string | null
   position: number
   suspended: 0 | 1
   created_at: number
@@ -78,6 +89,16 @@ function parseOptions(raw: string): CardOption[] {
   }
 }
 
+function parseOcclusion(raw: string | null): Occlusion | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as Occlusion
+    return Array.isArray(o.masks) && typeof o.image === 'string' ? o : null
+  } catch {
+    return null
+  }
+}
+
 const toCard = (r: CardRow): Card => ({
   id: r.id,
   deckId: r.deck_id,
@@ -86,6 +107,7 @@ const toCard = (r: CardRow): Card => ({
   front: r.front,
   back: r.back,
   options: parseOptions(r.options),
+  occlusion: parseOcclusion(r.occlusion),
   position: r.position,
   suspended: r.suspended === 1,
   createdAt: r.created_at,
@@ -222,14 +244,22 @@ export type CardInput = {
   front: string
   back?: string
   options?: CardOption[]
+  occlusion?: Occlusion | null
   noteId?: string | null
 }
 
-type CleanCard = { type: CardType; front: string; back: string; options: CardOption[]; noteId: string | null }
+type CleanCard = {
+  type: CardType
+  front: string
+  back: string
+  options: CardOption[]
+  occlusion: Occlusion | null
+  noteId: string | null
+}
 
 /**
  * Prüft und bereinigt eine Karte (Texte begrenzt, Multiple Choice mit mind. 2 Antworten, davon mind. 1 richtig,
- * Lückentext mit mind. einer Lücke – {{Lücke}} wird dabei zu ==Lücke==).
+ * Lückentext mit mind. einer Lücke – {{Lücke}} wird dabei zu ==Lücke==, Bildverdeckung mit Bild und mind. einer Fläche).
  */
 function cleanCard(input: CardInput): CleanCard {
   const raw = input.front.replace(/\r\n?/g, '\n').trim()
@@ -240,6 +270,7 @@ function cleanCard(input: CardInput): CleanCard {
     throw badRequest(`Eine Kartenseite darf höchstens ${MAX_CARD_TEXT.toLocaleString('de-DE')} Zeichen lang sein.`)
   }
   let options: CardOption[] = []
+  let occlusion: Occlusion | null = null
   if (input.type === 'mc') {
     options = (input.options ?? [])
       .map((o) => ({ text: o.text.replace(/\s*\n\s*/g, ' ').trim(), correct: !!o.correct }))
@@ -252,11 +283,16 @@ function cleanCard(input: CardInput): CleanCard {
     const n = clozeCount(front)
     if (n === 0) throw badRequest('Markiere mindestens eine Lücke, z. B. ==Begriff== oder {{Begriff}}.')
     if (n > MAX_CLOZES) throw badRequest(`Höchstens ${MAX_CLOZES} Lücken pro Karte.`)
+  } else if (input.type === 'occlusion') {
+    const o = input.occlusion
+    occlusion = o ? { image: o.image.trim(), masks: o.masks.map(fitMask), hideAll: !!o.hideAll } : null
+    const error = occlusion ? occlusionError(occlusion) : 'Bitte wähle ein Bild.'
+    if (error) throw badRequest(error)
   } else if (!back) {
     throw badRequest('Die Rückseite darf nicht leer sein.')
   }
   const noteId = input.noteId && isValidId(input.noteId) ? input.noteId : null
-  return { type: input.type, front, back, options, noteId }
+  return { type: input.type, front, back, options, occlusion, noteId }
 }
 
 function getCardRow(userId: number, id: string): CardRow {
@@ -280,8 +316,8 @@ export function createCards(userId: number, deckId: string, inputs: CardInput[])
     throw new ApiError(413, 'too_many_cards', `Höchstens ${MAX_CARDS_PER_USER.toLocaleString('de-DE')} Karten pro Konto.`)
   }
   const insert = db.prepare(
-    `INSERT INTO cards (id, user_id, deck_id, note_id, type, front, back, options, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO cards (id, user_id, deck_id, note_id, type, front, back, options, occlusion, position, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const ids: string[] = []
   db.transaction(() => {
@@ -289,7 +325,8 @@ export function createCards(userId: number, deckId: string, inputs: CardInput[])
     const t = Date.now()
     for (const c of cleaned) {
       const id = uuid()
-      insert.run(id, userId, deckId, c.noteId, c.type, c.front, c.back, JSON.stringify(c.options), position++, t, t)
+      const occlusion = c.occlusion ? JSON.stringify(c.occlusion) : null
+      insert.run(id, userId, deckId, c.noteId, c.type, c.front, c.back, JSON.stringify(c.options), occlusion, position++, t, t)
       ids.push(id)
     }
     db.prepare('UPDATE decks SET updated_at = ? WHERE id = ?').run(t, deckId)
@@ -309,6 +346,7 @@ export function updateCard(
     front: patch.front ?? current.front,
     back: patch.back ?? current.back,
     options: patch.options ?? current.options,
+    occlusion: patch.occlusion !== undefined ? patch.occlusion : current.occlusion,
     noteId: patch.noteId !== undefined ? patch.noteId : current.noteId,
   })
   const db = getDb()
@@ -322,8 +360,8 @@ export function updateCard(
   const suspended = patch.suspended !== undefined ? (patch.suspended ? 1 : 0) : row.suspended
   db.transaction(() => {
     db.prepare(
-      `UPDATE cards SET deck_id = ?, note_id = ?, type = ?, front = ?, back = ?, options = ?, position = ?, suspended = ?,
-         updated_at = ?
+      `UPDATE cards SET deck_id = ?, note_id = ?, type = ?, front = ?, back = ?, options = ?, occlusion = ?, position = ?,
+         suspended = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`,
     ).run(
       deckId,
@@ -332,13 +370,14 @@ export function updateCard(
       next.front,
       next.back,
       JSON.stringify(next.options),
+      next.occlusion ? JSON.stringify(next.occlusion) : null,
       position,
       suspended,
       Date.now(),
       id,
       userId,
     )
-    // Weggefallene Seiten verlieren ihren Lernstand (aus beidseitig wird einseitig, eine Lücke fällt weg)
+    // Weggefallene Seiten verlieren ihren Lernstand (aus beidseitig wird einseitig, eine Lücke oder Fläche fällt weg)
     db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side >= ?').run(id, sidesOf(next).length)
   })()
   return toCard(getCardRow(userId, id))
@@ -372,7 +411,7 @@ export function deleteCard(userId: number, id: string) {
  */
 export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLogEntry[] = []): { saved: number; logged: number } {
   const db = getDb()
-  const cardInfo = db.prepare('SELECT type, front, deck_id FROM cards WHERE id = ? AND user_id = ?')
+  const cardInfo = db.prepare('SELECT type, front, occlusion, deck_id FROM cards WHERE id = ? AND user_id = ?')
   const upsert = db.prepare(
     `INSERT INTO card_reviews
        (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at, stability, difficulty)
@@ -395,8 +434,8 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
   db.transaction(() => {
     // Nur Seiten, die die Karte (noch) hat
     const card = (id: string, side: number) => {
-      const c = cardInfo.get(id, userId) as { type: CardType; front: string; deck_id: string } | undefined
-      return c && side < sidesOf(c).length ? c : null
+      const c = cardInfo.get(id, userId) as { type: CardType; front: string; occlusion: string | null; deck_id: string } | undefined
+      return c && side < sidesOf({ ...c, occlusion: parseOcclusion(c.occlusion) }).length ? c : null
     }
     for (const r of reviews) {
       if (card(r.cardId, r.side)) {
@@ -425,12 +464,30 @@ export const deckSchema = z.object({
 })
 
 export const cardSchema = z.object({
-  type: z.enum(['basic', 'reversed', 'mc', 'cloze']),
+  type: z.enum(['basic', 'reversed', 'mc', 'cloze', 'occlusion']),
   front: z.string().max(MAX_CARD_TEXT * 2),
   back: z.string().max(MAX_CARD_TEXT * 2).optional(),
   options: z
     .array(z.object({ text: z.string().max(MAX_OPTION_TEXT * 2), correct: z.boolean() }))
     .max(MAX_OPTIONS * 2)
+    .optional(),
+  occlusion: z
+    .object({
+      image: z.string().max(1000),
+      masks: z
+        .array(
+          z.object({
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            w: z.number().min(0).max(1),
+            h: z.number().min(0).max(1),
+            label: z.string().max(MAX_MASK_LABEL * 2),
+          }),
+        )
+        .max(MAX_MASKS * 2),
+      hideAll: z.boolean(),
+    })
+    .nullable()
     .optional(),
   noteId: z.string().uuid().nullable().optional(),
 })

@@ -1,7 +1,7 @@
 'use client'
 import { createContext, useContext } from 'react'
 import type { View } from './nav'
-import type { Card, CardOption, CardType } from '@/features/flashcards/types'
+import type { Card, CardOption, CardType, Occlusion } from '@/features/flashcards/types'
 import type { Folder, NoteFormat, NoteSummary } from '@/features/notes/types'
 
 export type NewNoteOptions = { folderId?: string | null; title?: string; templateId?: string }
@@ -12,6 +12,8 @@ export type CardEditorInit = {
   deckId?: string
   type?: CardType
   options?: CardOption[]
+  /** Bildverdeckung, z. B. mit einer PDF-Seite als Bild */
+  occlusion?: Occlusion
   front?: string
   back?: string
   noteId?: string | null

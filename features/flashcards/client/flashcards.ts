@@ -9,7 +9,7 @@ import { api, ApiError, NetworkError } from '@/shared/client/api'
 import { useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
-import type { AnkiImportResult, Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
+import type { AnkiImportResult, Card, CardOption, CardReview, CardType, Deck, FlashcardData, Occlusion, ReviewLogEntry } from '../types'
 
 const flashcardsKey = ['flashcards'] as const
 
@@ -336,7 +336,14 @@ export async function resetDeckProgress(qc: QueryClient, id: string) {
   })
 }
 
-export type CardInput = { type: CardType; front: string; back: string; options: CardOption[]; noteId?: string | null }
+export type CardInput = {
+  type: CardType
+  front: string
+  back: string
+  options: CardOption[]
+  occlusion?: Occlusion | null
+  noteId?: string | null
+}
 
 export async function createCards(qc: QueryClient, deckId: string, cards: CardInput[]): Promise<Card[]> {
   const res = await api<{ cards: Card[] }>(`/api/decks/${deckId}/cards`, { method: 'POST', body: { cards } })
@@ -389,4 +396,5 @@ export const CARD_TYPE_LABELS: Record<CardType, string> = {
   reversed: 'Beidseitig',
   mc: 'Multiple Choice',
   cloze: 'Lückentext',
+  occlusion: 'Bildverdeckung',
 }

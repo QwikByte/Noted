@@ -201,6 +201,61 @@ describe('Lückentext-Karten', () => {
   })
 })
 
+describe('Bildverdeckung', () => {
+  it('speichert Bild und Flächen, prüft sie und führt den Lernstand je Fläche', async () => {
+    const d = await newDeck('Anatomie')
+    const occlusion = {
+      image: 'herz.png',
+      masks: [
+        { x: 0.1, y: 0.1, w: 0.2, h: 0.1, label: '  Aorta ' },
+        { x: 0.5, y: 0.5, w: 0.2, h: 0.1, label: '' },
+        { x: 0.9, y: 0.9, w: 0.3, h: 0.3, label: '' },
+      ],
+      hideAll: true,
+    }
+    const r = await addCards(d.id, [{ type: 'occlusion', front: 'Herz', back: '', occlusion }])
+    expect(r.status).toBe(201)
+    const [c] = r.data.cards as Card[]
+    expect(c).toMatchObject({ type: 'occlusion', front: 'Herz', options: [] })
+    // Beschriftung bereinigt, Fläche ins Bild eingepasst
+    expect(c.occlusion).toEqual({
+      image: 'herz.png',
+      masks: [
+        { x: 0.1, y: 0.1, w: 0.2, h: 0.1, label: 'Aorta' },
+        { x: 0.5, y: 0.5, w: 0.2, h: 0.1, label: '' },
+        { x: 0.7, y: 0.7, w: 0.3, h: 0.3, label: '' },
+      ],
+      hideAll: true,
+    })
+    expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: { ...occlusion, masks: [] } }])).status).toBe(400)
+    expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: { ...occlusion, image: 'skript.pdf' } }])).status).toBe(400)
+    expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz' }])).status).toBe(400)
+    const outside = { ...occlusion, masks: [{ x: 1.5, y: 0, w: 0.1, h: 0.1, label: '' }] }
+    expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: outside }])).status).toBe(400)
+    // Andere Kartenarten speichern keine Flächen
+    const [plain] = (await addCards(d.id, [{ type: 'basic', front: 'a', back: 'b', occlusion }])).data.cards as Card[]
+    expect(plain.occlusion).toBeNull()
+
+    const now = Date.now()
+    const save = (side: number) =>
+      call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [{ cardId: c.id, side, ...schedule(null, 3, now) }] } })
+    expect((await save(0)).data.saved).toBe(1)
+    expect((await save(2)).data.saved).toBe(1)
+    expect((await save(3)).data.saved).toBe(0)
+
+    // Eine Fläche fällt weg: der Lernstand der letzten Seite auch
+    const edited = await call(card.PATCH, '/', {
+      method: 'PATCH',
+      cookie: token,
+      params: { id: c.id },
+      body: { occlusion: { ...occlusion, masks: occlusion.masks.slice(0, 2) } },
+    })
+    expect(edited.status).toBe(200)
+    expect(edited.data.card.occlusion.masks).toHaveLength(2)
+    expect((await data()).reviews.filter((x) => x.cardId === c.id).map((x) => x.side)).toEqual([0])
+  })
+})
+
 describe('Lernstand', () => {
   it('übernimmt nur neuere Bewertungen und ignoriert unbekannte Karten', async () => {
     const d = await newDeck('Lernen')
