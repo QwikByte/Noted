@@ -33,6 +33,12 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Suche, Tags (`#tag`), Rückverweise und „Karteikarten aus Notiz“ funktionieren in allen Formaten; Wikilinks, Callouts und Formeln werden in Markdown, Mindmaps und Canvas-Karten dargestellt.
 - Unter **⋮ → Format …** lässt sich das Format einer Notiz ändern. Was dabei verloren geht (z. B. Schriftfarben beim Wechsel zu Markdown), steht vor dem Umwandeln im Dialog. Aus Markdown wird eine Mindmap (Überschriften und Listen werden zu Ästen), aus einer Mindmap ein Canvas (jeder Punkt eine Karte).
 
+**Glossar und Formelsammlung**
+- Seitenleiste → **Glossar** (oder im Ordner unter **⋯ → Glossar und Formeln**): alle Definitionen und Formeln deiner Notizen auf einen Blick – z. B. als Spickzettel-Vorlage oder zum Nachschlagen vor der Klausur.
+- **Begriffe** alphabetisch: Info-Callouts (`> [!info] Begriff`) und fett gedruckte Begriffe mit Erklärung (`**Begriff**: …`). **Formeln**: alle LaTeX-Blöcke (`$$…$$`), je Notiz mit der Überschrift darüber.
+- Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen, in Obsidian nutzbar).
+- Wird bei jedem Öffnen aus den Notizen berechnet (Markdown, Mindmaps und Canvas) und ist danach auch offline lesbar.
+
 **Anhänge**
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
 - Eingebettet wie in Obsidian: `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
@@ -338,6 +344,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown, Notiz abfragen
+  glossary/             Glossar und Formelsammlung aus den Notizen
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
