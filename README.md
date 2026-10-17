@@ -54,6 +54,13 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
 - Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
 
+**Startseite und Kalender**
+- Die Startseite zeigt auf einen Blick deine Termine von heute und den nächsten Tagen und die fälligen Karteikarten je Stapel (ein Klick startet das Lernen). Darunter stehen wie gewohnt Vorlagen, angeheftete und zuletzt bearbeitete Notizen.
+- **Microsoft-Kalender (Outlook):** Unter **Einstellungen → Kalender** verbindest du dein Microsoft-Konto, privat oder von Uni bzw. Arbeit. Noted liest die Termine nur (Berechtigung `Calendars.Read`) und ändert nichts. Du wählst, welche Kalender erscheinen, z. B. zusätzlich einen Stundenplan. Wiederholungen löst Microsoft auf, abgesagte Termine fehlen.
+- **Mitschrift zum Termin:** Ein Klick legt eine Notiz mit der Vorlage „Vorlesung“ an, Titel aus Datum und Termin (z. B. `2026-10-19 Analysis I`). Gibt es sie schon, öffnet der Knopf sie. Online-Termine (z. B. Teams) haben einen Knopf zum Teilnehmen.
+- Die Zugangsdaten liegen verschlüsselt auf dem Server, **Trennen** löscht sie. Zuletzt geladene Termine sind auch offline lesbar.
+- Voraussetzung: Der Admin richtet die Verbindung einmal ein (siehe [Kalender verbinden](#kalender-verbinden-microsoft)). Ohne Einrichtung erscheint kein Kalender.
+
 **Werkzeugleiste und Fokus-Timer**
 - Eine kleine Werkzeugleiste sitzt fest unten rechts – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt sie auf, das Kreuz wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
 - Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
@@ -192,13 +199,40 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `ADMIN_USERNAME` | `admin` | Benutzername des ersten Admins (nur beim allerersten Start) |
 | `ADMIN_PASSWORD` | – | Passwort des ersten Admins; ohne Angabe wird eins generiert und im Log ausgegeben |
 | `APP_URL` | – | Öffentliche Adresse, z. B. `https://notizen.example.com` |
-| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse (sonst `/data/secret.key`) |
+| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse und Kalender-Zugänge (sonst `/data/secret.key`) |
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
 | `MAX_UPLOAD_MB` | `25` | Maximale Dateigröße für Anhänge |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
 | `TRASH_DAYS` | `30` | Aufbewahrung im Papierkorb |
+| `MICROSOFT_CLIENT_ID` | – | App-Registrierung für den Microsoft-Kalender (siehe [Kalender verbinden](#kalender-verbinden-microsoft)) |
+| `MICROSOFT_CLIENT_SECRET` | – | Geheimer Clientschlüssel dazu; ohne ID und Schlüssel ist der Kalender aus |
+| `MICROSOFT_TENANT` | `common` | `common` = private und Uni-/Arbeitskonten, `organizations` = nur Uni-/Arbeitskonten oder die ID des eigenen Mandanten |
+
+### Kalender verbinden (Microsoft)
+
+Damit Benutzer ihren Outlook-Kalender verbinden können, registriert der Admin Noted einmal als App bei Microsoft:
+
+1. Im [Microsoft Entra Admin Center](https://entra.microsoft.com) (oder im [Azure-Portal](https://portal.azure.com)) unter **App-Registrierungen → Neue Registrierung**:
+   - Name: z. B. `Noted`
+   - Unterstützte Kontotypen: **Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten** (Uni- und private Konten)
+   - Umleitungs-URI: Plattform **Web**, `https://notizen.example.com/api/calendar/callback` (deine Adresse aus `APP_URL`)
+2. **Zertifikate & Geheimnisse → Neuer geheimer Clientschlüssel**: den Wert sofort kopieren, er wird nur einmal angezeigt.
+3. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen**: `Calendars.Read`.
+4. Anwendungs-ID und Schlüssel in die `.env` eintragen und Noted neu starten (`docker compose up -d`):
+
+   ```bash
+   MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
+   MICROSOFT_CLIENT_SECRET=der-geheime-clientschluessel
+   ```
+
+   `APP_URL` muss gesetzt sein und zur Umleitungs-URI passen (der Installer setzt sie bei HTTPS).
+
+Gut zu wissen:
+- **Uni- und Firmenkonten:** Viele Hochschulen erlauben nicht, dass Nutzer selbst einer App zustimmen. Microsoft zeigt dann „Administratorgenehmigung erforderlich“. Die Freigabe kann nur die IT der Hochschule erteilen.
+- **Schlüssel abgelaufen:** Ein Clientschlüssel gilt höchstens zwei Jahre. Danach schlägt der Abruf fehl. Neuen Schlüssel anlegen und eintragen genügt, verbundene Konten bleiben verbunden.
+- Noted fragt Microsoft vom Server aus ab. Der Browser spricht nur mit Noted, die Content-Security-Policy bleibt unverändert.
 
 ### Backup
 
@@ -317,13 +351,14 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 ```
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
-  workspace/            App-Rahmen: Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
+  workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
   notes/                Notizen in fünf Formaten, Ordner, Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung
+  calendar/             Kalender: Anmeldung bei Microsoft, Termine über Microsoft Graph, Terminliste, Einstellungen
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
   vault/                Export und Import als Obsidian-Vault (ZIP)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
@@ -331,8 +366,8 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   settings/             Einstellungsseite
   updates/              Version, Update-Erkennung im Browser, Status der automatischen Updates
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
-  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Platz für feste Leisten
-  client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries
+  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten
+  client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
   server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
   markdown/             Obsidian-Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
   lib/                  Namensregeln, Formatierung, HTML-Hilfen

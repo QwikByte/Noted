@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { startMicrosoftMock } from './e2e-microsoft.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const standalone = path.join(root, '.next/standalone')
@@ -23,6 +24,8 @@ fs.writeFileSync(
   `CHECKED_AT=${nowSec - 600}\nSTATE=ok\nCURRENT=v1.2.0\nLATEST=v1.2.0\nUPDATED_AT=${nowSec - 86400}\nMESSAGE=Aktuell (v1.2.0)\n`,
 )
 fs.writeFileSync(path.join(updateDir, 'last-run.log'), '[2026-10-12 04:00:01] Installiere v1.2.0 (bisher: v1.1.0)\n[2026-10-12 04:02:13] Fertig: v1.2.0 läuft.\n')
+// Microsoft-Kalender gegen eine Attrappe (Port der App + 1)
+const microsoft = startMicrosoftMock(Number(process.env.PORT ?? 3100) + 1)
 const child = spawn(process.execPath, ['server.js'], {
   cwd: standalone,
   stdio: 'inherit',
@@ -34,10 +37,15 @@ const child = spawn(process.execPath, ['server.js'], {
     HOSTNAME: '127.0.0.1',
     ADMIN_USERNAME: 'admin',
     ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'E2E-Admin-Passwort-1',
+    MICROSOFT_CLIENT_ID: 'e2e-client',
+    MICROSOFT_CLIENT_SECRET: 'e2e-secret',
+    MICROSOFT_LOGIN_URL: microsoft.url,
+    MICROSOFT_GRAPH_URL: microsoft.url,
   },
 })
 const stop = () => {
   child.kill()
+  microsoft.close()
   fs.rmSync(dataDir, { recursive: true, force: true })
 }
 process.on('SIGINT', stop)

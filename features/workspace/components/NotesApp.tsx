@@ -6,7 +6,8 @@ import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
 import { AppContext, type AppActions, type CardEditorInit, type NewNoteOptions } from '../client/context'
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
-import { HomeView, FolderView, TagView, SearchView } from '@/features/notes/components/views'
+import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
+import { Dashboard } from './Dashboard'
 import { TrashView } from '@/features/notes/components/TrashView'
 import { FilesView } from '@/features/attachments/components/FilesView'
 import { NewNoteDialog, MoveDialog, PromptDialog } from '@/features/notes/components/dialogs'
@@ -268,7 +269,7 @@ export default function NotesApp() {
       main = <StudyView key={`${view.scope}:${view.mode}`} scope={view.scope} mode={view.mode} />
       break
     default:
-      main = <HomeView />
+      main = <Dashboard />
   }
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study'

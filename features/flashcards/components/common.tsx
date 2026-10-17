@@ -1,19 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
 import { cn } from '@/shared/ui/cn'
 import { cardStatus, type CardStatus } from '../srs'
 import { reviewKey, sidesOf, type StateMap } from '../study'
 import type { Card } from '../types'
-
-/** Aktuelle Zeit, die sich regelmäßig aktualisiert (für „fällig“-Anzeigen). */
-export function useNow(intervalMs = 60_000) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(t)
-  }, [intervalMs])
-  return now
-}
 
 const STATUS_LABELS: Record<CardStatus, string> = {
   new: 'Neu',
