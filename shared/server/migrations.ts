@@ -231,4 +231,8 @@ export const migrations: string[] = [
   CREATE INDEX events_user ON events(user_id, start_at);
   CREATE UNIQUE INDEX events_uid ON events(user_id, uid) WHERE uid IS NOT NULL;
   `,
+
+  /* 8: Stapel mit „Antwort eintippen“ – bei Grund- und beidseitigen Karten erscheint beim Lernen ein Eingabefeld */ `
+  ALTER TABLE decks ADD COLUMN type_answer INTEGER NOT NULL DEFAULT 0 CHECK (type_answer IN (0, 1));
+  `,
 ]

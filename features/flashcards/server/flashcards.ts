@@ -16,6 +16,7 @@ type DeckRow = {
   name: string
   description: string
   new_per_day: number
+  type_answer: 0 | 1
   created_at: number
   updated_at: number
 }
@@ -54,6 +55,7 @@ const toDeck = (r: DeckRow): Deck => ({
   name: r.name,
   description: r.description,
   newPerDay: r.new_per_day,
+  typeAnswer: r.type_answer === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -126,7 +128,7 @@ function checkDeckName(userId: number, name: string, excludeId?: string): string
   return clean
 }
 
-export type DeckInput = { id?: string; name: string; description?: string; newPerDay?: number }
+export type DeckInput = { id?: string; name: string; description?: string; newPerDay?: number; typeAnswer?: boolean }
 
 export function createDeck(userId: number, input: DeckInput): Deck {
   const name = checkDeckName(userId, input.name)
@@ -134,9 +136,10 @@ export function createDeck(userId: number, input: DeckInput): Deck {
   const t = Date.now()
   getDb()
     .prepare(
-      'INSERT INTO decks (id, user_id, name, description, new_per_day, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO decks (id, user_id, name, description, new_per_day, type_answer, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, userId, name, (input.description ?? '').trim(), input.newPerDay ?? DEFAULT_NEW_PER_DAY, t, t)
+    .run(id, userId, name, (input.description ?? '').trim(), input.newPerDay ?? DEFAULT_NEW_PER_DAY, input.typeAnswer ? 1 : 0, t, t)
   return toDeck(getDeckRow(userId, id))
 }
 
@@ -144,11 +147,14 @@ export function updateDeck(userId: number, id: string, patch: Partial<Omit<DeckI
   const deck = getDeckRow(userId, id)
   const name = patch.name !== undefined ? checkDeckName(userId, patch.name, id) : deck.name
   getDb()
-    .prepare('UPDATE decks SET name = ?, description = ?, new_per_day = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+    .prepare(
+      'UPDATE decks SET name = ?, description = ?, new_per_day = ?, type_answer = ?, updated_at = ? WHERE id = ? AND user_id = ?',
+    )
     .run(
       name,
       patch.description !== undefined ? patch.description.trim() : deck.description,
       patch.newPerDay ?? deck.new_per_day,
+      patch.typeAnswer !== undefined ? (patch.typeAnswer ? 1 : 0) : deck.type_answer,
       Date.now(),
       id,
       userId,
@@ -324,6 +330,7 @@ export const deckSchema = z.object({
   name: z.string().max(1000),
   description: z.string().max(5000).optional(),
   newPerDay: z.number().int().min(0).max(9999).optional(),
+  typeAnswer: z.boolean().optional(),
 })
 
 export const cardSchema = z.object({

@@ -5,6 +5,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from '@/shared/client/now'
 import { Button } from '@/shared/ui/button'
+import { Input } from '@/shared/ui/input'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
@@ -23,6 +24,7 @@ import {
   type ItemKind,
   type StudyItem,
 } from '../study'
+import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
 import type { Card, Deck } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
@@ -84,8 +86,8 @@ function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
   return (card) => ids.has(card.id)
 }
 
-/** `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt */
-type Answer = { key: string; selected: Set<number>; checked: boolean; order: number[] }
+/** `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt · `typed`/`result`: eingetippte Antwort */
+type Answer = { key: string; selected: Set<number>; checked: boolean; order: number[]; typed: string; result: TypedResult | null }
 
 const take = (s: LearnSession | PracticeSession) => (s instanceof LearnSession ? s.next(Date.now()) : s.next())
 
@@ -97,6 +99,8 @@ const freshAnswer = (item: StudyItem | null, card: Card | null = item?.card ?? n
   selected: new Set(),
   checked: false,
   order: card ? shuffle(card.options.map((_, i) => i)) : [],
+  typed: '',
+  result: null,
 })
 
 function StudySession({
@@ -163,6 +167,13 @@ function StudySession({
   const singleChoice = isMc && card!.options.filter((o) => o.correct).length === 1
   const correct = isMc && answer.checked ? isCorrectSelection(card!.options, answer.selected) : null
   const intervals = useMemo(() => (current && mode === 'learn' ? previewIntervals(state, shownAt) : null), [current, state, mode, shownAt])
+  const question = !card ? '' : isMc ? card.front : side === 1 ? card.back : card.front
+  const solution = !card ? '' : isMc ? card.back : side === 1 ? card.front : card.back
+  // Antwort eintippen (Einstellung des Stapels) – nicht bei Multiple Choice und nicht, wenn die Antwort nur ein Bild ist
+  const expected = useMemo(() => answerText(solution), [solution])
+  const typing = !!card && card.type !== 'mc' && expected !== '' && !!live.decks.find((d) => d.id === card.deckId)?.typeAnswer
+  // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“
+  const typedWrong = answer.result?.correct === false
 
   const rate = useCallback(
     (rating: Rating) => {
@@ -207,6 +218,12 @@ function StudySession({
     setRevealed(true)
   }, [isMc, answer.selected.size])
 
+  /** Aufdecken – eine eingetippte Antwort wird dabei verglichen, eine leere nicht */
+  const reveal = useCallback(() => {
+    if (typing && answer.typed.trim()) setAnswer((a) => ({ ...a, result: compareAnswer(a.typed, expected) }))
+    setRevealed(true)
+  }, [typing, answer.typed, expected])
+
   // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
   const bottomBar = useReservedSpace<HTMLDivElement>('--bottom-bar-height')
 
@@ -230,26 +247,27 @@ function StudySession({
         else if (primary) check()
         else handled = false
       } else if (!revealed) {
-        if (primary) setRevealed(true)
+        if (primary) reveal()
         else handled = false
       } else if (mode === 'learn') {
         if (isMc && correct === false) {
           if (primary || digit === 1) rate(1)
           else handled = false
-        } else if (primary) rate(3)
+        } else if (primary) rate(typedWrong ? 1 : 3)
         else if (digit && digit <= 4 && !(isMc && digit === 1)) rate(digit as Rating)
         else handled = false
       } else if (isMc) {
         if (primary) practiceAnswer(!!correct)
         else handled = false
-      } else if (digit === 1) practiceAnswer(false)
-      else if (digit === 2 || primary) practiceAnswer(true)
+      } else if (primary) practiceAnswer(!typedWrong)
+      else if (digit === 1) practiceAnswer(false)
+      else if (digit === 2) practiceAnswer(true)
       else handled = false
       if (handled) e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [current, isMc, answer, revealed, mode, correct, toggleOption, check, rate, practiceAnswer])
+  }, [current, isMc, answer, revealed, mode, correct, typedWrong, toggleOption, check, reveal, rate, practiceAnswer])
 
   const close = () => app.go(back, { replace: true })
   const remaining: Record<ItemKind, number> | null = session instanceof LearnSession ? session.remaining() : null
@@ -259,9 +277,6 @@ function StudySession({
       ? reviewed / Math.max(1, reviewed + session.size + (current ? 1 : 0))
       : session.done.size / Math.max(1, session.total)
   const note = card?.noteId ? notes.find((n) => n.id === card.noteId) : undefined
-
-  const question = !card ? '' : isMc ? card.front : side === 1 ? card.back : card.front
-  const solution = !card ? '' : isMc ? card.back : side === 1 ? card.front : card.back
 
   return (
     <div ref={rootRef} className="flex h-full flex-col" data-testid="study">
@@ -401,8 +416,29 @@ function StudySession({
                     </ul>
                   ) : null}
 
+                  {typing && !revealed ? (
+                    <Input
+                      value={answer.typed}
+                      onChange={(e) => setAnswer((a) => ({ ...a, typed: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+                        e.preventDefault()
+                        reveal()
+                      }}
+                      placeholder="Antwort eintippen …"
+                      aria-label="Deine Antwort"
+                      autoFocus
+                      autoComplete="off"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      data-testid="typed-answer"
+                    />
+                  ) : null}
+
                   {revealed ? (
                     <div className={cn(isMc && 'mt-5 border-t border-border pt-5')} data-testid="study-answer">
+                      {answer.result ? <TypedDiff result={answer.result} /> : null}
                       {isMc ? (
                         <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
                           {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
@@ -433,15 +469,22 @@ function StudySession({
                   Prüfen
                 </Button>
               ) : !revealed ? (
-                <Button variant="primary" size="lg" className="flex-1" onClick={() => setRevealed(true)} data-testid="reveal">
-                  Antwort zeigen
+                <Button variant="primary" size="lg" className="flex-1" onClick={reveal} data-testid="reveal">
+                  {typing && answer.typed.trim() ? 'Prüfen' : 'Antwort zeigen'}
                 </Button>
               ) : mode === 'learn' && intervals ? (
                 isMc && correct === false ? (
                   <RatingButton rating={1} label="Weiter" hint={formatInterval(intervals[1])} onClick={rate} wide />
                 ) : (
                   RATINGS.filter((r) => !(isMc && r.rating === 1)).map((r) => (
-                    <RatingButton key={r.rating} rating={r.rating} label={r.label} hint={formatInterval(intervals[r.rating])} onClick={rate} />
+                    <RatingButton
+                      key={r.rating}
+                      rating={r.rating}
+                      label={r.label}
+                      hint={formatInterval(intervals[r.rating])}
+                      onClick={rate}
+                      preferred={answer.result ? r.rating === (typedWrong ? 1 : 3) : false}
+                    />
                   ))
                 )
               ) : isMc ? (
@@ -451,10 +494,10 @@ function StudySession({
               ) : (
                 <>
                   {/* Farbe nur am Symbol: text-* im className kollidiert mit der Textfarbe der Button-Variante */}
-                  <Button size="lg" className="flex-1" onClick={() => practiceAnswer(false)}>
+                  <Button size="lg" className={cn('flex-1', answer.result && typedWrong && PREFERRED)} onClick={() => practiceAnswer(false)}>
                     <X className="size-4 text-danger" /> Nicht gewusst
                   </Button>
-                  <Button size="lg" className="flex-1" onClick={() => practiceAnswer(true)}>
+                  <Button size="lg" className={cn('flex-1', answer.result && !typedWrong && PREFERRED)} onClick={() => practiceAnswer(true)}>
                     <Check className="size-4 text-success" /> Gewusst
                   </Button>
                 </>
@@ -463,6 +506,36 @@ function StudySession({
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** Vorausgewählte Bewertung nach einer eingetippten Antwort (Leertaste/Enter wählt sie) */
+const PREFERRED = 'border-accent ring-3 ring-accent/20'
+
+/** Eingetippte Antwort mit markierten Unterschieden: durchgestrichen = zu viel, unterstrichen = fehlt */
+function TypedDiff({ result }: { result: TypedResult }) {
+  return (
+    <div className="mb-4 rounded-xl border border-border bg-subtle/50 px-3.5 py-3" data-testid="typed-result">
+      <p className={cn('mb-1 flex items-center gap-2 text-sm font-semibold', result.correct ? 'text-success' : 'text-danger')}>
+        {result.correct ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />}
+        {result.correct ? 'Richtig eingetippt' : 'Nicht ganz – Unterschiede sind markiert'}
+      </p>
+      <p className="break-words">
+        {result.parts.map((part, i) =>
+          part.kind === 'extra' ? (
+            <del key={i} title="Zu viel oder falsch" className="rounded-sm bg-danger-soft text-danger decoration-2">
+              {part.text}
+            </del>
+          ) : part.kind === 'missing' ? (
+            <ins key={i} title="Fehlt" className="rounded-sm bg-success-soft text-success underline decoration-2 underline-offset-2">
+              {part.text}
+            </ins>
+          ) : (
+            <span key={i}>{part.text}</span>
+          ),
+        )}
+      </p>
     </div>
   )
 }
@@ -480,12 +553,14 @@ function RatingButton({
   hint,
   onClick,
   wide,
+  preferred,
 }: {
   rating: Rating
   label: string
   hint: string
   onClick: (r: Rating) => void
   wide?: boolean
+  preferred?: boolean
 }) {
   return (
     <button
@@ -494,6 +569,7 @@ function RatingButton({
       className={cn(
         'flex h-14 min-w-0 flex-1 flex-col items-center justify-center rounded-xl border border-border bg-elevated px-1 transition-colors hover:bg-hover active:scale-[0.98]',
         wide && 'flex-1',
+        preferred && PREFERRED,
       )}
       data-testid={`rate-${rating}`}
     >

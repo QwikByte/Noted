@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Field, Input } from '@/shared/ui/input'
+import { Field, Input, Switch } from '@/shared/ui/input'
 import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
@@ -12,7 +12,7 @@ import { parseCardsFromNote } from '../card-markdown'
 import { DEFAULT_NEW_PER_DAY } from '../srs'
 import type { Deck } from '../types'
 
-/** Neuen Stapel anlegen oder Name, Beschreibung und Tageslimit ändern. */
+/** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit und „Antwort eintippen“ ändern. */
 export function DeckSettingsDialog({
   deck,
   onClose,
@@ -26,6 +26,7 @@ export function DeckSettingsDialog({
   const [name, setName] = useState(deck?.name ?? '')
   const [description, setDescription] = useState(deck?.description ?? '')
   const [limit, setLimit] = useState(String(deck?.newPerDay ?? DEFAULT_NEW_PER_DAY))
+  const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -35,7 +36,7 @@ export function DeckSettingsDialog({
     if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > 9999) return setError('Das Tageslimit muss zwischen 0 und 9999 liegen.')
     setSaving(true)
     try {
-      const input = { name: name.trim(), description, newPerDay }
+      const input = { name: name.trim(), description, newPerDay, typeAnswer }
       const saved = deck ? await updateDeck(qc, deck.id, input) : await createDeck(qc, input)
       onSaved?.(saved)
       onClose()
@@ -78,6 +79,12 @@ export function DeckSettingsDialog({
         <Field label="Neue Karten pro Tag" hint="So viele noch nie gelernte Karten kommen im Lernmodus täglich höchstens dazu. Üben geht immer mit allen Karten.">
           {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={9999} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
         </Field>
+        <Switch
+          checked={typeAnswer}
+          onChange={setTypeAnswer}
+          label="Antwort eintippen"
+          description="Bei Grund- und beidseitigen Karten tippst du die Antwort ein, bevor sie aufgedeckt wird. Unterschiede zur richtigen Antwort werden markiert."
+        />
         <button type="submit" hidden />
       </form>
     </Modal>
