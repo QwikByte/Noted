@@ -17,6 +17,7 @@ import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
 import { QuizView } from '@/features/flashcards/components/QuizView'
+import { GlossaryView } from '@/features/glossary/components/GlossaryView'
 import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
 import { CardsFromNoteDialog } from '@/features/flashcards/components/FromNoteDialog'
 import { SplitPane } from '@/features/pdf/components/SplitPane'
@@ -275,6 +276,9 @@ export default function NotesApp() {
       break
     case 'quiz':
       main = <QuizView key={view.id} id={view.id} />
+      break
+    case 'glossary':
+      main = <GlossaryView key={view.folder ?? ''} folder={view.folder} />
       break
     default:
       main = <Dashboard />

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  BookA,
   BookOpen,
   ChevronRight,
   CloudOff,
@@ -223,6 +224,9 @@ export function FolderView({ id }: { id: string }) {
               </MenuItem>
               <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
                 Umbenennen
+              </MenuItem>
+              <MenuItem icon={<BookA />} onSelect={() => app.go({ kind: 'glossary', folder: id })}>
+                Glossar und Formeln
               </MenuItem>
               <MenuSeparator />
               <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>

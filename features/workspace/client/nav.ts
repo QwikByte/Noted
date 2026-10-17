@@ -17,6 +17,8 @@ export type View =
   | { kind: 'study'; scope: StudyScope; mode: StudyMode }
   /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten */
   | { kind: 'quiz'; id: string }
+  /** Glossar und Formeln – aller Notizen oder eines Ordners samt Unterordnern */
+  | { kind: 'glossary'; folder?: string }
 
 /** Was gelernt wird: alle Stapel, ein Stapel oder die Karten aus einer Notiz */
 export type StudyScope = 'all' | `deck:${string}` | `note:${string}`
@@ -45,6 +47,7 @@ function viewFromParams(params: URLSearchParams): View {
   if (v === 'files') return { kind: 'files' }
   if (v === 'cards') return { kind: 'cards' }
   if (v === 'calendar') return { kind: 'calendar' }
+  if (v === 'glossary') return { kind: 'glossary', folder: params.get('in') || undefined }
   return { kind: 'home' }
 }
 
@@ -66,6 +69,8 @@ function viewToUrl(view: View): string {
       return '/?v=cards'
     case 'calendar':
       return '/?v=calendar'
+    case 'glossary':
+      return `/?v=glossary${view.folder ? `&in=${encodeURIComponent(view.folder)}` : ''}`
     case 'deck':
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':

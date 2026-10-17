@@ -268,3 +268,40 @@ test('Links auf Abschnitte springen zur Überschrift – im Lesemodus und im Edi
   await page.goto(`/?n=${target.id}&h=Ziel`)
   await expect(page.locator('.cm-line', { hasText: '## Ziel' })).toBeInViewport()
 })
+
+test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen', async ({ page }) => {
+  await login(page)
+  const folder = await post(page, '/api/folders', { name: 'Glossar-Test', parentId: null }, 'folder')
+  const inside = await post(
+    page,
+    '/api/notes',
+    {
+      title: 'Analysis Glossar',
+      folderId: folder.id,
+      content: '# Folgen\n> [!info] Grenzwert\n> Zahl, der sich die Folge nähert\n\n**Nullfolge**: Folge mit Grenzwert 0\n\n## Reihen\n$$\n\\sum_{k=1}^\\infty a_k\n$$\n',
+    },
+    'note',
+  )
+  const outside = await post(page, '/api/notes', { title: 'Außerhalb', content: '**Außen**: nicht im Ordner\n' }, 'note')
+  cleanup.push(`/api/notes/${inside.id}?permanent=1`, `/api/notes/${outside.id}?permanent=1`, `/api/folders/${folder.id}`)
+
+  await page.goto(`/?f=${folder.id}`)
+  await page.getByRole('main').getByRole('button', { name: 'Ordner-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Glossar und Formeln' }).click()
+  const terms = page.getByTestId('glossary-terms')
+  await expect(terms).toContainText('Grenzwert')
+  await expect(terms).toContainText('Zahl, der sich die Folge nähert')
+  await expect(terms).toContainText('Nullfolge')
+  await expect(terms).not.toContainText('Außen')
+  await page.getByLabel('Glossar durchsuchen').fill('null')
+  await expect(terms).toContainText('Nullfolge')
+  await expect(terms).not.toContainText('Zahl, der sich die Folge nähert')
+  await page.getByLabel('Glossar durchsuchen').fill('')
+
+  await page.getByRole('tab', { name: /Formeln/ }).click()
+  const formulas = page.getByTestId('glossary-formulas')
+  await expect(formulas.locator('.katex-display')).toHaveCount(1)
+  await shot(page, '37-glossary')
+  await formulas.getByRole('button', { name: 'Reihen' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${inside.id}&h=Reihen$`))
+})
