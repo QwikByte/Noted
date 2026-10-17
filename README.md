@@ -56,10 +56,12 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 
 **Startseite und Kalender**
 - Die Startseite zeigt auf einen Blick deine Termine von heute und den nächsten Tagen und die fälligen Karteikarten je Stapel (ein Klick startet das Lernen). Darunter stehen wie gewohnt Vorlagen, angeheftete und zuletzt bearbeitete Notizen.
-- **Microsoft-Kalender (Outlook):** Unter **Einstellungen → Kalender** verbindest du dein Microsoft-Konto, privat oder von Uni bzw. Arbeit. Noted liest die Termine nur (Berechtigung `Calendars.Read`) und ändert nichts. Du wählst, welche Kalender erscheinen, z. B. zusätzlich einen Stundenplan. Wiederholungen löst Microsoft auf, abgesagte Termine fehlen.
-- **Mitschrift zum Termin:** Ein Klick legt eine Notiz mit der Vorlage „Vorlesung“ an, Titel aus Datum und Termin (z. B. `2026-10-19 Analysis I`). Gibt es sie schon, öffnet der Knopf sie. Online-Termine (z. B. Teams) haben einen Knopf zum Teilnehmen.
-- Die Zugangsdaten liegen verschlüsselt auf dem Server, **Trennen** löscht sie. Zuletzt geladene Termine sind auch offline lesbar.
-- Voraussetzung: Der Admin richtet die Verbindung einmal ein (siehe [Kalender verbinden](#kalender-verbinden-microsoft)). Ohne Einrichtung erscheint kein Kalender.
+- **Eigener Kalender** (Seitenleiste → **Kalender**): Wochenansicht mit Stundenraster und Monatsansicht. Auf dem Handy zeigt die Woche einen Tag; Wischen blättert zum nächsten bzw. vorigen Tag, im Monat führt ein Tipp auf den Tag dorthin.
+- Termine mit Uhrzeit oder ganztägig (auch über mehrere Tage), mit Ort, Farbe und Notizen. Ein Klick ins Raster legt einen Termin zur angeklickten Zeit an, ein Klick auf einen Termin öffnet ihn.
+- **Stundenplan als Serie:** Termine wiederholen sich jede Woche oder alle 2, 3 oder 4 Wochen, auf Wunsch bis zu einem Datum (z. B. Vorlesungsende). Bei einer Serie gilt eine Änderung zunächst **nur für diesen Termin** (z. B. Raumwechsel oder eine ausfallende Vorlesung); **Alle Termine** ändert die ganze Serie.
+- **Mitschrift zum Termin:** Ein Klick legt eine Notiz mit der Vorlage „Vorlesung“ an, Titel aus Datum und Termin (z. B. `2026-10-19 Analysis I`). Gibt es sie schon, öffnet der Knopf sie – auf der Startseite und im Termin.
+- **.ics-Import und -Export** (Menü ⋮ im Kalender): Stundenplan aus dem Vorlesungsverzeichnis, aus Outlook oder Google einmalig übernehmen. Zeiten aus anderen Zeitzonen rechnet Noted in die Ortszeit des Geräts um. Wöchentliche Serien bleiben Serien, einzelne Ausnahmen und Änderungen werden übernommen; andere Wiederholungen (täglich, monatlich) übernimmt Noted nur mit dem ersten Termin. Ein zweiter Import derselben Datei legt nichts doppelt an. Der Export (`Kalender.ics`) lässt sich in jede Kalender-App einlesen.
+- Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
 **Werkzeugleiste und Fokus-Timer**
 - Eine kleine Werkzeugleiste sitzt fest unten rechts – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt sie auf, das Kreuz wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
@@ -76,7 +78,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen. Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im Vault.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, `#flashcards/…`). Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
-- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
+- Die Termine liegen als `Kalender.ics` im ZIP.
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -199,40 +202,13 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `ADMIN_USERNAME` | `admin` | Benutzername des ersten Admins (nur beim allerersten Start) |
 | `ADMIN_PASSWORD` | – | Passwort des ersten Admins; ohne Angabe wird eins generiert und im Log ausgegeben |
 | `APP_URL` | – | Öffentliche Adresse, z. B. `https://notizen.example.com` |
-| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse und Kalender-Zugänge (sonst `/data/secret.key`) |
+| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse (sonst `/data/secret.key`) |
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
 | `MAX_UPLOAD_MB` | `25` | Maximale Dateigröße für Anhänge |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
 | `TRASH_DAYS` | `30` | Aufbewahrung im Papierkorb |
-| `MICROSOFT_CLIENT_ID` | – | App-Registrierung für den Microsoft-Kalender (siehe [Kalender verbinden](#kalender-verbinden-microsoft)) |
-| `MICROSOFT_CLIENT_SECRET` | – | Geheimer Clientschlüssel dazu; ohne ID und Schlüssel ist der Kalender aus |
-| `MICROSOFT_TENANT` | `common` | `common` = private und Uni-/Arbeitskonten, `organizations` = nur Uni-/Arbeitskonten oder die ID des eigenen Mandanten |
-
-### Kalender verbinden (Microsoft)
-
-Damit Benutzer ihren Outlook-Kalender verbinden können, registriert der Admin Noted einmal als App bei Microsoft:
-
-1. Im [Microsoft Entra Admin Center](https://entra.microsoft.com) (oder im [Azure-Portal](https://portal.azure.com)) unter **App-Registrierungen → Neue Registrierung**:
-   - Name: z. B. `Noted`
-   - Unterstützte Kontotypen: **Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten** (Uni- und private Konten)
-   - Umleitungs-URI: Plattform **Web**, `https://notizen.example.com/api/calendar/callback` (deine Adresse aus `APP_URL`)
-2. **Zertifikate & Geheimnisse → Neuer geheimer Clientschlüssel**: den Wert sofort kopieren, er wird nur einmal angezeigt.
-3. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen**: `Calendars.Read`.
-4. Anwendungs-ID und Schlüssel in die `.env` eintragen und Noted neu starten (`docker compose up -d`):
-
-   ```bash
-   MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
-   MICROSOFT_CLIENT_SECRET=der-geheime-clientschluessel
-   ```
-
-   `APP_URL` muss gesetzt sein und zur Umleitungs-URI passen (der Installer setzt sie bei HTTPS).
-
-Gut zu wissen:
-- **Uni- und Firmenkonten:** Viele Hochschulen erlauben nicht, dass Nutzer selbst einer App zustimmen. Microsoft zeigt dann „Administratorgenehmigung erforderlich“. Die Freigabe kann nur die IT der Hochschule erteilen.
-- **Schlüssel abgelaufen:** Ein Clientschlüssel gilt höchstens zwei Jahre. Danach schlägt der Abruf fehl. Neuen Schlüssel anlegen und eintragen genügt, verbundene Konten bleiben verbunden.
-- Noted fragt Microsoft vom Server aus ab. Der Browser spricht nur mit Noted, die Content-Security-Policy bleibt unverändert.
 
 ### Backup
 
@@ -358,7 +334,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung
-  calendar/             Kalender: Anmeldung bei Microsoft, Termine über Microsoft Graph, Terminliste, Einstellungen
+  calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
   vault/                Export und Import als Obsidian-Vault (ZIP)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen

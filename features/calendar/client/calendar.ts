@@ -1,47 +1,56 @@
 'use client'
+// Termine im Browser: alle auf einmal laden (der Service Worker hält sie auch offline bereit) und Änderungen senden.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/client/api'
-import type { CalendarEvent, CalendarStatus } from '../types'
+import { parseIcs } from '../ics'
+import type { CalendarEvent, EventInput } from '../types'
 
-const statusKey = ['calendar', 'status'] as const
+export const calendarKey = ['calendar'] as const
 
-export function useCalendarStatus() {
-  return useQuery({ queryKey: statusKey, queryFn: () => api<CalendarStatus>('/api/calendar') })
-}
-
-export function useCalendarEvents(range: { start: string; end: string }, enabled: boolean) {
+export function useEvents() {
   return useQuery({
-    queryKey: ['calendar', 'events', range.start, range.end],
-    queryFn: () =>
-      api<{ events: CalendarEvent[] }>(
-        `/api/calendar/events?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`,
-      ).then((r) => r.events),
-    enabled,
-    // Ein abgelaufener Zugang wird nicht durch Wiederholen besser
-    retry: false,
+    queryKey: calendarKey,
+    // Bis Version 1.6.0 lieferte dieselbe Adresse den Stand der Microsoft-Anbindung – der kann noch im Cache liegen
+    queryFn: () => api<{ events?: unknown }>('/api/calendar').then((r) => (Array.isArray(r.events) ? (r.events as CalendarEvent[]) : [])),
   })
 }
 
-/** Zur Anmeldung bei Microsoft weiterleiten; zurück geht es in die Einstellungen */
-export async function connectCalendar() {
-  const { url } = await api<{ url: string }>('/api/calendar/connect', { method: 'POST' })
-  window.location.assign(url)
-}
+/** Die Ortszeit des Geräts – in sie werden Zeiten aus .ics-Dateien umgerechnet */
+export const deviceTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
-export function useCalendarMutations() {
+export type ImportSummary = { created: number; duplicates: number; skipped: number; simplified: number }
+
+export function useEventMutations() {
   const qc = useQueryClient()
-  const refresh = (status?: CalendarStatus) => {
-    if (status) qc.setQueryData(statusKey, status)
-    void qc.invalidateQueries({ queryKey: ['calendar'] })
-  }
+  const refresh = () => qc.invalidateQueries({ queryKey: calendarKey })
   return {
-    select: useMutation({
-      mutationFn: (calendars: string[]) => api<CalendarStatus>('/api/calendar', { method: 'PUT', body: { calendars } }),
+    create: useMutation({
+      mutationFn: (input: EventInput) => api<{ event: CalendarEvent }>('/api/calendar', { method: 'POST', body: input }),
       onSuccess: refresh,
     }),
-    disconnect: useMutation({
-      mutationFn: () => api('/api/calendar', { method: 'DELETE' }),
-      onSuccess: () => refresh({ configured: true, connected: false }),
+    update: useMutation({
+      mutationFn: ({ id, input }: { id: string; input: EventInput }) =>
+        api<{ event: CalendarEvent }>(`/api/calendar/${id}`, { method: 'PUT', body: input }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api(`/api/calendar/${id}`, { method: 'DELETE' }),
+      onSuccess: refresh,
+    }),
+    /** Nur einen Termin einer Serie ändern (input) oder ausfallen lassen (null) */
+    occurrence: useMutation({
+      mutationFn: ({ id, date, input }: { id: string; date: string; input: EventInput | null }) =>
+        api(`/api/calendar/${id}/occurrence`, { method: 'POST', body: { date, event: input } }),
+      onSuccess: refresh,
+    }),
+    /** .ics-Datei im Browser lesen (dort ist die Zeitzone bekannt) und die Termine hochladen */
+    importFile: useMutation({
+      mutationFn: async (file: File): Promise<ImportSummary> => {
+        const { events, skipped, simplified } = parseIcs(await file.text(), deviceTimeZone())
+        const res = await api<{ created: number; duplicates: number }>('/api/calendar/import', { method: 'POST', body: { events } })
+        return { ...res, skipped, simplified }
+      },
+      onSuccess: refresh,
     }),
   }
 }

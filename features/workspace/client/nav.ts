@@ -11,6 +11,7 @@ export type View =
   | { kind: 'trash' }
   | { kind: 'files' }
   | { kind: 'cards' }
+  | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
   | { kind: 'study'; scope: StudyScope; mode: StudyMode }
 
@@ -38,6 +39,7 @@ function viewFromParams(params: URLSearchParams): View {
   if (v === 'trash') return { kind: 'trash' }
   if (v === 'files') return { kind: 'files' }
   if (v === 'cards') return { kind: 'cards' }
+  if (v === 'calendar') return { kind: 'calendar' }
   return { kind: 'home' }
 }
 
@@ -57,6 +59,8 @@ function viewToUrl(view: View): string {
       return '/?v=files'
     case 'cards':
       return '/?v=cards'
+    case 'calendar':
+      return '/?v=calendar'
     case 'deck':
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':

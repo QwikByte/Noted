@@ -30,16 +30,6 @@ export function getConfig() {
     /** Öffentliche URL, z. B. https://notes.example.com (für Origin-Prüfung) */
     appUrl: process.env.APP_URL?.replace(/\/+$/, '') || undefined,
     trashDays: num(process.env.TRASH_DAYS, 30),
-    /** Microsoft-Kalender: App-Registrierung in Microsoft Entra – ohne Client-ID und Secret ist die Funktion aus */
-    microsoft: {
-      clientId: process.env.MICROSOFT_CLIENT_ID || undefined,
-      clientSecret: process.env.MICROSOFT_CLIENT_SECRET || undefined,
-      /** common = private und Schul-/Arbeitskonten; sonst z. B. organizations oder die ID des eigenen Mandanten */
-      tenant: process.env.MICROSOFT_TENANT || 'common',
-      /** Andere Adressen nur für nationale Clouds (z. B. US Government) und Tests */
-      loginUrl: (process.env.MICROSOFT_LOGIN_URL || 'https://login.microsoftonline.com').replace(/\/+$/, ''),
-      graphUrl: (process.env.MICROSOFT_GRAPH_URL || 'https://graph.microsoft.com').replace(/\/+$/, ''),
-    },
     /** Status der automatischen Updates (schreibt scripts/auto-update.sh, im Container nur lesend eingebunden) */
     updateDir: path.resolve(/*turbopackIgnore: true*/ process.env.UPDATE_STATUS_DIR || path.join(process.cwd(), '.update')),
     /** Hier legt der Admin-Bereich Update-Anfragen ab; der Update-Dienst auf dem Server holt sie ab */

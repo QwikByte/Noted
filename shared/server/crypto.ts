@@ -26,7 +26,7 @@ export function isValidId(id: unknown): id is string {
 let cachedKey: { source: string; key: Buffer } | null = null
 
 /**
- * Schlüssel für die Verschlüsselung von MFA-Geheimnissen und Kalender-Zugängen.
+ * Schlüssel für die Verschlüsselung von MFA-Geheimnissen.
  * Entweder aus SECRET_KEY oder aus einer automatisch erzeugten Datei im Datenverzeichnis.
  */
 function getKey(): Buffer {

@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import {
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   FolderPlus,
@@ -110,6 +111,12 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
 
       <nav className="mt-3 space-y-px px-2">
         <NavItem icon={<Home />} label="Start" active={view.kind === 'home'} onClick={() => app.go({ kind: 'home' })} />
+        <NavItem
+          icon={<CalendarDays />}
+          label="Kalender"
+          active={view.kind === 'calendar'}
+          onClick={() => app.go({ kind: 'calendar' })}
+        />
         <NavItem
           icon={<Layers />}
           label="Karteikarten"

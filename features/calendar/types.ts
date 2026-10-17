@@ -1,42 +1,41 @@
 // Kalender: Typen der API zwischen Server und Browser
 
-export type CalendarInfo = {
-  id: string
-  name: string
-  /** Farbe aus Outlook (#rrggbb) */
-  color: string | null
-  isDefault: boolean
-  /** Termine dieses Kalenders erscheinen im Dashboard */
-  selected: boolean
+/** Farbe eines Termins: 1–6 entspricht --swatch-1 … --swatch-6, null = Akzentfarbe */
+export type EventColor = 1 | 2 | 3 | 4 | 5 | 6
+
+export type EventRepeat = {
+  /** Alle n Wochen (1 = wöchentlich) */
+  weeks: number
+  /** Letzter möglicher Tag (YYYY-MM-DD, einschließlich); null = ohne Ende */
+  until: string | null
 }
 
-export type CalendarStatus =
-  /** Der Admin hat die Microsoft-Anbindung nicht eingerichtet */
-  | { configured: false; connected: false }
-  | { configured: true; connected: false }
-  | {
-      configured: true
-      connected: true
-      account: { name: string; email: string }
-      calendars: CalendarInfo[]
-      /** Hinweis, wenn die Verbindung erneuert werden muss oder Microsoft nicht erreichbar ist */
-      error: string | null
-    }
-
-export type CalendarEvent = {
-  id: string
-  calendarId: string
-  subject: string
-  /** Zeitpunkt in UTC (ISO); bei ganztägigen Terminen nur das Datum (YYYY-MM-DD) */
-  start: string
-  /** Wie start; bei ganztägigen Terminen der Tag nach dem letzten Tag */
-  end: string
+/** Die bearbeitbaren Angaben eines Termins */
+export type EventInput = {
+  title: string
+  location: string
+  notes: string
+  color: EventColor | null
   allDay: boolean
-  location: string | null
-  /** Link zur Online-Besprechung (z. B. Teams) */
-  joinUrl: string | null
-  color: string | null
+  /** Ortszeit ohne Zone: YYYY-MM-DDTHH:mm, ganztägig YYYY-MM-DD */
+  start: string
+  /** Wie start; ganztägig der Tag nach dem letzten Tag */
+  end: string
+  repeat: EventRepeat | null
+  /** Ausgelassene Termine einer Serie (Tag des Beginns, YYYY-MM-DD) */
+  exdates: string[]
 }
 
-/** Längster Zeitraum, den das Dashboard auf einmal abfragt */
-export const MAX_RANGE_DAYS = 62
+export type CalendarEvent = EventInput & { id: string; createdAt: number; updatedAt: number }
+
+/** Termin aus einer .ics-Datei – `uid` verhindert, dass ein zweiter Import ihn doppelt anlegt */
+export type ImportedEvent = EventInput & { uid: string | null }
+
+/** Ein Termin im Kalender – bei Serien eines ihrer Vorkommen */
+export type Occurrence = {
+  event: CalendarEvent
+  /** Tag des Beginns dieses Vorkommens (bei Serien der Schlüssel für Ausnahmen) */
+  date: string
+  start: string
+  end: string
+}

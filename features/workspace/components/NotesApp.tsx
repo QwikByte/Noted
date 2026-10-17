@@ -13,6 +13,7 @@ import { FilesView } from '@/features/attachments/components/FilesView'
 import { NewNoteDialog, MoveDialog, PromptDialog } from '@/features/notes/components/dialogs'
 import { QuickSwitcher } from '@/features/notes/components/QuickSwitcher'
 import { CardsView } from '@/features/flashcards/components/CardsView'
+import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
 import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
@@ -262,6 +263,9 @@ export default function NotesApp() {
     case 'cards':
       main = <CardsView />
       break
+    case 'calendar':
+      main = <CalendarView />
+      break
     case 'deck':
       main = <DeckView key={view.id} id={view.id} />
       break
@@ -273,7 +277,7 @@ export default function NotesApp() {
   }
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study'
-  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck'].includes(view.kind)
+  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar'].includes(view.kind)
   // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')
   const fabSpace = useReservedSpace<HTMLButtonElement>('--bottom-right-height')
