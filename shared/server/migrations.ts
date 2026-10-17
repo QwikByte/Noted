@@ -189,4 +189,21 @@ export const migrations: string[] = [
   ALTER TABLE notes DROP COLUMN format;
   ALTER TABLE notes RENAME COLUMN format_new TO format;
   `,
+
+  /* 6: Verbundener Kalender (Microsoft) je Benutzer – Tokens verschlüsselt (encrypt), calendars = gewählte
+     Kalender als JSON (NULL = Standardkalender), error = Hinweis, wenn die Verbindung erneuert werden muss */ `
+  CREATE TABLE calendar_accounts (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (provider IN ('microsoft')),
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    refresh_token TEXT NOT NULL,
+    access_token TEXT,
+    access_expires_at INTEGER,
+    calendars TEXT,
+    error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ]

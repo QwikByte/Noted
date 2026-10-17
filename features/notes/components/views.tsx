@@ -20,7 +20,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
-import { useUser } from '@/features/auth/client/current-user'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
@@ -87,18 +86,9 @@ function EmptyState({ icon, title, text, action }: { icon: React.ReactNode; titl
   )
 }
 
-function greeting() {
-  const h = new Date().getHours()
-  if (h < 5) return 'Gute Nacht'
-  if (h < 11) return 'Guten Morgen'
-  if (h < 17) return 'Hallo'
-  if (h < 22) return 'Guten Abend'
-  return 'Gute Nacht'
-}
-
-export function HomeView() {
+/** Notizen auf der Startseite: neue Notiz aus Vorlage, angeheftete und zuletzt bearbeitete */
+export function HomeNotes() {
   const app = useApp()
-  const user = useUser()
   const { notes, isLoading, error } = useNotes()
   const { data: folders = [] } = useFolders()
   const pinned = notes.filter((n) => n.pinned)
@@ -112,9 +102,7 @@ export function HomeView() {
   ]
 
   return (
-    <Page>
-      <PageHeader title={`${greeting()}, ${user.displayName.split(' ')[0]}!`} subtitle="Was möchtest du heute festhalten?" />
-
+    <>
       <div className="mb-10 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Neue Notiz aus Vorlage" role="group">
         {quick.map((q) => (
           <button
@@ -173,7 +161,7 @@ export function HomeView() {
           </NoteList>
         )}
       </section>
-    </Page>
+    </>
   )
 }
 

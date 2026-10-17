@@ -42,8 +42,9 @@ tests/          Gemeinsame Testhelfer und Tests für scripts/
 e2e/            Browser-Tests (Playwright) über mehrere Features
 ```
 
-Features: `workspace` (App-Rahmen, setzt die Features zusammen), `notes`, `mindmap`, `canvas`, `attachments`,
-`flashcards`, `focus` (Fokus-Timer), `pdf`, `vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
+Features: `workspace` (App-Rahmen und Startseite, setzt die Features zusammen), `notes`, `mindmap`, `canvas`,
+`attachments`, `flashcards`, `focus` (Fokus-Timer), `calendar` (Microsoft-Kalender), `pdf`, `vault` (Export/Import),
+`auth`, `admin`, `settings`, `updates`.
 
 **Regeln**
 

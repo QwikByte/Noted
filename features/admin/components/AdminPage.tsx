@@ -728,6 +728,8 @@ const EVENTS: Record<string, { label: string; tone: 'neutral' | 'success' | 'war
   sessions_revoked_by_admin: { label: 'Sitzungen beendet (Admin)', tone: 'warning' },
   settings_changed: { label: 'Einstellungen geändert', tone: 'accent' },
   update_requested: { label: 'Update angefordert', tone: 'accent' },
+  calendar_connected: { label: 'Kalender verbunden', tone: 'accent' },
+  calendar_disconnected: { label: 'Kalender getrennt', tone: 'neutral' },
 }
 
 function AuditTab() {

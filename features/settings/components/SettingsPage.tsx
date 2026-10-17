@@ -20,6 +20,7 @@ import { confirmLogout } from '@/features/auth/client/logout'
 import { ThemeSwitch } from '@/shared/ui/theme-switch'
 import { PasswordChangeForm } from '@/features/auth/components/PasswordChangeForm'
 import { MfaSetup } from '@/features/auth/components/MfaSetup'
+import { CalendarSettings } from '@/features/calendar/components/CalendarSettings'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
@@ -48,6 +49,7 @@ export function SettingsPage() {
         <MfaSection />
         <SessionsSection />
         <AppearanceSection />
+        <CalendarSettings />
         <DataSection />
         <Section icon={<LogOut />} title="Abmelden" description={`Angemeldet als @${user.username}.`}>
           <Button onClick={confirmLogout}>
