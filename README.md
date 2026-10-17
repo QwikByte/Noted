@@ -79,6 +79,12 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **.ics-Import und -Export** (Menü ⋮ im Kalender): Stundenplan aus dem Vorlesungsverzeichnis, aus Outlook oder Google einmalig übernehmen. Zeiten aus anderen Zeitzonen rechnet Noted in die Ortszeit des Geräts um. Wöchentliche Serien bleiben Serien, einzelne Ausnahmen und Änderungen werden übernommen; andere Wiederholungen (täglich, monatlich) übernimmt Noted nur mit dem ersten Termin. Ein zweiter Import derselben Datei legt nichts doppelt an. Der Export (`Kalender.ics`) lässt sich in jede Kalender-App einlesen; ob ein Termin eine Klausur ist, steht nicht darin.
 - Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
+**Übungen und Klausurzulassung**
+- Eigener Bereich **Übungen** (Seitenleiste): je Fach die nötige Quote für die Klausurzulassung (z. B. 50 % der Übungspunkte) und, falls bekannt, die Zahl der Blätter im Semester.
+- **Übungsblätter** mit Abgabe (Tag, optional Uhrzeit), erreichbaren und – nach der Korrektur – erreichten Punkten (auch halbe und Zusatzpunkte). Ein neues Blatt übernimmt Punkte und Uhrzeit des letzten, die Abgabe eine Woche später.
+- Fortschrittsbalken gegen die nötige Quote und ein Hinweis wie „Noch 14 Punkte aus 4 Blättern nötig – im Schnitt 3,5 pro Blatt“ – oder dass die Zulassung erreicht bzw. nicht mehr erreichbar ist. Fehlen noch Blätter, schätzt Noted ihre Punkte nach dem Durchschnitt der vorhandenen.
+- **Abgaben im Kalender:** Jede Abgabe ist ein Termin („Abgabe Blatt 3 – Analysis I“) und steht damit im Kalender, auf der Startseite und im .ics-Export. Wird der Termin im Kalender verschoben, gilt das neue Datum; wird er dort gelöscht, hat das Blatt keine Abgabe mehr.
+
 **Werkzeugleiste und Fokus-Timer**
 - Eine kleine Werkzeugleiste sitzt fest unten rechts – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt sie auf, das Kreuz wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
 - Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
@@ -351,6 +357,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
+  coursework/           Übungen: Fächer, Übungsblätter mit Punkten, Klausurzulassung, Abgaben als Termine
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht

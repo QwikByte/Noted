@@ -539,3 +539,56 @@ test('Klausurmodus: Klausur im Kalender, Countdown und Wiederholungen davor', as
   await expect(exams).not.toContainText('fällig')
   await expect(exams.getByRole('button', { name: 'Lernen' })).toHaveCount(0)
 })
+
+test('Übungen: Blätter mit Punkten, Klausurzulassung und Abgaben im Kalender', async ({ page }) => {
+  await login(page)
+  const tomorrow = await page.evaluate(() => {
+    const d = new Date(Date.now() + 86_400_000)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  await page.getByRole('button', { name: 'Übungen' }).click()
+  await expect(page).toHaveURL(/\?v=coursework$/)
+  await page.getByRole('button', { name: 'Erstes Fach anlegen' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill('Analysis I')
+  await expect(dialog.getByLabel('Nötige Quote (%)')).toHaveValue('50')
+  await dialog.getByLabel('Blätter im Semester').fill('4')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toBeHidden()
+  const { courses } = await (await page.request.get('/api/coursework')).json()
+  cleanup.push(`/api/coursework/courses/${courses[0].id}`)
+
+  const course = page.getByTestId('course')
+  const hint = course.getByTestId('admission-hint')
+  await expect(hint).toHaveText('Noch keine Übungsblätter.')
+
+  // Erstes Blatt mit Abgabe morgen um 12 Uhr, schon korrigiert
+  await course.getByRole('button', { name: 'Übungsblatt' }).click()
+  await expect(dialog.getByLabel('Titel')).toHaveValue('Blatt 1')
+  await dialog.getByLabel('Abgabe').fill(tomorrow)
+  await dialog.getByLabel('Uhrzeit').fill('12:00')
+  await dialog.getByLabel('Erreichbare Punkte').fill('20')
+  await dialog.getByLabel('Erreichte Punkte').fill('12')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toBeHidden()
+  // 4 Blätter à 20 Punkte, davon 50 % nötig: Es fehlen 28 Punkte aus den drei übrigen
+  await expect(hint).toHaveText('Noch 28 Punkte aus 3 Blättern nötig – im Schnitt 9,5 pro Blatt.')
+
+  // Das nächste Blatt übernimmt Punkte und Uhrzeit, die Abgabe eine Woche später
+  await course.getByRole('button', { name: 'Übungsblatt' }).click()
+  await expect(dialog.getByLabel('Titel')).toHaveValue('Blatt 2')
+  await expect(dialog.getByLabel('Uhrzeit')).toHaveValue('12:00')
+  await expect(dialog.getByLabel('Erreichbare Punkte')).toHaveValue('20')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(course.getByTestId('sheet')).toHaveCount(2)
+  await course.getByTestId('sheet').filter({ hasText: 'Blatt 2' }).click()
+  await dialog.getByLabel('Erreichte Punkte').fill('20')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(hint).toHaveText('Noch 8 Punkte aus 2 Blättern nötig – im Schnitt 4 pro Blatt.')
+  await expect(course.getByRole('img', { name: '32 von 80 Punkten, nötig sind 40' })).toBeVisible()
+  await shot(page, '49-coursework')
+
+  // Die Abgabe steht auf der Startseite in den Terminen
+  await page.goto('/')
+  await expect(page.getByTestId('agenda').getByTestId('agenda-event').filter({ hasText: 'Abgabe Blatt 1 – Analysis I' })).toContainText('12:00')
+})
