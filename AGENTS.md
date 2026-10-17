@@ -43,8 +43,8 @@ e2e/            Browser-Tests (Playwright) über mehrere Features
 ```
 
 Features: `workspace` (App-Rahmen und Startseite, setzt die Features zusammen), `notes`, `mindmap`, `canvas`,
-`attachments`, `flashcards`, `glossary` (Glossar und Formeln), `focus` (Fokus-Timer), `calendar` (Kalender), `pdf`,
-`vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
+`attachments`, `flashcards`, `glossary` (Glossar und Formeln), `coursework` (Übungsblätter und Klausurzulassung),
+`focus` (Fokus-Timer), `calendar` (Kalender), `pdf`, `vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
 
 **Regeln**
 

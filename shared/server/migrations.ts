@@ -343,4 +343,32 @@ export const migrations: string[] = [
   );
   CREATE INDEX exam_decks_deck ON exam_decks(deck_id);
   `,
+
+  /* 15: Klausurzulassung. Fächer mit nötiger Quote (required_percent) und geplanter Zahl an Übungsblättern;
+     Blätter mit erreichbaren und erreichten Punkten (points NULL = noch nicht korrigiert). Die Abgabe ist ein Termin
+     im Kalender (event_id) – wird er dort gelöscht, hat das Blatt keine Abgabe mehr. */ `
+  CREATE TABLE courses (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    required_percent REAL NOT NULL DEFAULT 50 CHECK (required_percent BETWEEN 0 AND 100),
+    planned_sheets INTEGER CHECK (planned_sheets BETWEEN 1 AND 100),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX courses_user ON courses(user_id);
+  CREATE TABLE exercise_sheets (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    max_points REAL NOT NULL CHECK (max_points > 0),
+    points REAL CHECK (points >= 0),
+    event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX exercise_sheets_user ON exercise_sheets(user_id, course_id);
+  CREATE INDEX exercise_sheets_event ON exercise_sheets(event_id);
+  `,
 ]

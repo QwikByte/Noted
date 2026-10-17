@@ -18,6 +18,7 @@ import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
 import { QuizView } from '@/features/flashcards/components/QuizView'
 import { GlossaryView } from '@/features/glossary/components/GlossaryView'
+import { CourseworkView } from '@/features/coursework/components/CourseworkView'
 import { StatsView } from '@/features/flashcards/components/StatsView'
 import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
 import { CardsFromNoteDialog } from '@/features/flashcards/components/FromNoteDialog'
@@ -284,12 +285,15 @@ export default function NotesApp() {
     case 'glossary':
       main = <GlossaryView key={view.folder ?? ''} folder={view.folder} />
       break
+    case 'coursework':
+      main = <CourseworkView />
+      break
     default:
       main = <Dashboard />
   }
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz'
-  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats'].includes(view.kind)
+  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats', 'coursework'].includes(view.kind)
   // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')
   const fabSpace = useReservedSpace<HTMLButtonElement>('--bottom-right-height')

@@ -23,6 +23,7 @@ const DATA_ROUTES = [
   /^\/api\/calendar$/,
   /^\/api\/glossary$/,
   /^\/api\/stats$/,
+  /^\/api\/coursework$/,
 ]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]
 
