@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { getDb } from '@/shared/server/db'
 import { badRequest, notFound } from '@/shared/server/http'
 import { uuid } from '@/shared/server/crypto'
-import { addDays, dateOf, DATE_RE } from '../dates'
-import { blankEvent, eventError, occurrences } from '../event'
+import { addDays, DATE_RE } from '../dates'
+import { eventError, occurrences } from '../event'
 import { toIcs } from '../ics'
 import {
   MAX_EXAM_DECKS,
@@ -226,37 +226,6 @@ export function changeOccurrence(
     if (single) eventId = insert(userId, single)
   })()
   return { series: getEvent(userId, id), event: eventId ? getEvent(userId, eventId) : null }
-}
-
-/** Frist aus einem anderen Bereich, z. B. die Abgabe eines Übungsblatts – `due`: YYYY-MM-DD oder YYYY-MM-DDTHH:mm */
-export type Deadline = { title: string; due: string }
-
-function findEvent(userId: number, id: string): CalendarEvent | null {
-  const row = getDb().prepare('SELECT * FROM events WHERE id = ? AND user_id = ?').get(id, userId) as EventRow | undefined
-  return row ? toEvents(userId, [row])[0] : null
-}
-
-/** Frist eines Termins – null, wenn es ihn nicht (mehr) gibt */
-export function getDeadline(userId: number, eventId: string): Deadline | null {
-  const e = findEvent(userId, eventId)
-  return e ? { title: e.title, due: e.start } : null
-}
-
-/**
- * Frist als Termin anlegen, ändern oder (`deadline` null) löschen. Ein vorhandener Termin behält Ort, Farbe und
- * Notizen. Gibt die ID des Termins zurück – null ohne Frist.
- */
-export function saveDeadline(userId: number, eventId: string | null, deadline: Deadline | null): string | null {
-  const current = eventId ? findEvent(userId, eventId) : null
-  if (!deadline) {
-    if (current) deleteEvent(userId, current.id)
-    return null
-  }
-  const allDay = DATE_RE.test(deadline.due)
-  const times = { title: deadline.title, allDay, start: deadline.due, end: allDay ? addDays(deadline.due, 1) : deadline.due }
-  if (!current) return createEvent(userId, { ...blankEvent(`${dateOf(deadline.due)}T00:00`), ...times }).id
-  if (current.title === deadline.title && current.start === deadline.due && !current.repeat) return current.id
-  return updateEvent(userId, current.id, { ...current, ...times, repeat: null, exdates: [] }).id
 }
 
 /** Kennung, die Noted beim Export vergibt – so legt der Import eines eigenen Exports nichts doppelt an */
