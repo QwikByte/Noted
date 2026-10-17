@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dayLabel, groupByDay, noteTitleFor, timeLabel } from './agenda'
+import { dayLabel, endedToday, focusMinutes, groupByDay, noteTitleFor, timeLabel } from './agenda'
 import { addDays, addMonths, isoWeek, isValidDate, isValidDateTime, minutesBetween, startOfWeek, weekday } from './dates'
 import { applyToSeries, blankEvent, eventError, occurrences, onDay } from './event'
 import { layoutDay } from './layout'
@@ -280,5 +280,27 @@ describe('Terminliste', () => {
       '2026-10-20',
     )
     expect(noteTitleFor(o)).toBe('2026-10-19 Analysis I- Folgen-Reihen')
+  })
+
+  it('Fokus starten: ganze Dauer, während des Termins die Restzeit', () => {
+    const [block] = occurrences([ev('Lernblock', '2026-10-19T14:00', '2026-10-19T15:30')], today, '2026-10-20')
+    expect(focusMinutes(block, '2026-10-19T09:00')).toBe(90)
+    expect(focusMinutes(block, '2026-10-19T14:50')).toBe(40)
+    expect(focusMinutes(block, '2026-10-19T15:30')).toBeNull()
+    const [allDay] = occurrences([ev('Feiertag', '2026-10-19', '2026-10-20')], today, '2026-10-20')
+    expect(focusMinutes(allDay, '2026-10-19T09:00')).toBeNull()
+  })
+
+  it('findet Termine mit Uhrzeit, die heute schon vorbei sind', () => {
+    const events = [
+      ev('Analysis I', '2026-10-12T08:15', '2026-10-12T09:45', { repeat: { weeks: 1, until: null } }),
+      ev('Lineare Algebra', '2026-10-19T10:15', '2026-10-19T11:45'),
+      ev('Feiertag', '2026-10-19', '2026-10-20'),
+      ev('Gestern', '2026-10-18T08:00', '2026-10-18T09:00'),
+      ev('Über Nacht', '2026-10-18T22:00', '2026-10-19T02:00'),
+    ]
+    expect(endedToday(events, '2026-10-19T08:00')).toEqual([])
+    expect(endedToday(events, '2026-10-19T10:30').map((o) => `${o.event.title} ${o.date}`)).toEqual(['Analysis I 2026-10-19'])
+    expect(endedToday(events, '2026-10-19T12:00').map((o) => o.event.title)).toEqual(['Analysis I', 'Lineare Algebra'])
   })
 })
