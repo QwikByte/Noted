@@ -27,6 +27,7 @@ import {
   type StudyItem,
 } from '../study'
 import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
+import { reviewLogEntry } from '../stats'
 import type { Card, Deck } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
@@ -189,13 +190,16 @@ function StudySession({
           { duration: 8000 },
         )
       }
-      reviewQueue.add({ cardId: current.card.id, side: current.side, ...next })
+      reviewQueue.add(
+        { cardId: current.card.id, side: current.side, ...next },
+        reviewLogEntry(current.card.id, current.side, state, next, rating, shownAt),
+      )
       session.answered(current, next, now)
       setReviewed((n) => n + 1)
       setSeen((prev) => new Set(prev).add(itemKey(current)))
       advance(session)
     },
-    [current, state, session, advance, live.states, toast],
+    [current, state, session, advance, live.states, toast, shownAt],
   )
 
   const practiceAnswer = useCallback(

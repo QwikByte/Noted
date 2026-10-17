@@ -10,10 +10,12 @@ import * as card from '@/app/api/cards/[id]/route'
 import * as cardProgress from '@/app/api/cards/[id]/progress/route'
 import * as reviews from '@/app/api/reviews/route'
 import * as exportRoute from '@/app/api/export/route'
+import * as stats from '@/app/api/stats/route'
+import * as statsExport from '@/app/api/stats/export/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
 import { schedule } from './srs'
-import type { Card, CardReview, Deck, FlashcardData } from './types'
+import type { Card, CardReview, Deck, FlashcardData, ReviewLogEntry, StudyStats } from './types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -222,6 +224,62 @@ describe('Lernstand', () => {
     expect(after.decks.find((x) => x.id === d.id)).toBeUndefined()
     expect(after.cards.find((x) => x.id === c.id)).toBeUndefined()
     expect(after.reviews.find((x) => x.cardId === c.id)).toBeUndefined()
+  })
+})
+
+describe('Bewertungsprotokoll und Statistik', () => {
+  it('protokolliert jede Bewertung einmal und wertet sie nach Tagen in der Zeitzone des Geräts aus', async () => {
+    const d = await newDeck('Statistik')
+    const [c, formula] = (
+      await addCards(d.id, [
+        { type: 'basic', front: 'Frage', back: 'B' },
+        { type: 'basic', front: '=SUMME(A1)', back: 'B' },
+      ])
+    ).data.cards as Card[]
+    // 22:30 UTC ist in Berlin schon der nächste Tag
+    const t = Date.UTC(2026, 9, 13, 22, 30)
+    const entry = (at: number, rating: 1 | 3, phase: ReviewLogEntry['phase']): ReviewLogEntry => ({
+      cardId: c.id,
+      side: 0,
+      rating,
+      phase,
+      intervalBefore: 1,
+      intervalAfter: 2.5,
+      durationMs: 3000,
+      reviewedAt: at,
+    })
+    const log = [entry(t, 3, 'new'), entry(t + 600_000, 1, 'review'), entry(t + 1_200_000, 3, 'review')]
+    const send = (body: object) => call(reviews.POST, '/api/reviews', { cookie: token, body })
+    const first = await send({ reviews: [{ cardId: c.id, side: 0, ...schedule(null, 3, t + 1_200_000) }], log })
+    expect(first.data).toEqual({ saved: 1, logged: 3 })
+    // Erneut gesendet (z. B. Antwort ging verloren) und Einträge fremder Karten: nichts doppelt
+    const again = await send({ reviews: [], log: [...log, { ...log[0], cardId: crypto.randomUUID() }] })
+    expect(again.data).toEqual({ saved: 0, logged: 0 })
+    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).status).toBe(400)
+    // Ältere Geräte senden noch kein Protokoll
+    expect((await send({ reviews: [] })).status).toBe(200)
+
+    const berlin = (await call(stats.GET, '/', { cookie: token, query: { tz: 'Europe/Berlin' } })).data as StudyStats
+    expect(berlin.days.find((x) => x.date === '2026-10-14')).toEqual({ date: '2026-10-14', reviews: 3, again: 1, ms: 9000 })
+    const utc = (await call(stats.GET, '/', { cookie: token, query: { tz: 'UTC' } })).data as StudyStats
+    expect(utc.days.find((x) => x.date === '2026-10-13')?.reviews).toBe(3)
+    expect(berlin.total).toBeGreaterThanOrEqual(3)
+    expect((await call(stats.GET, '/', { cookie: token, query: { tz: 'Mars/Olympus' } })).status).toBe(400)
+
+    // Das Protokoll bleibt, auch wenn die Karte gelöscht wird
+    await call(card.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: c.id } })
+    const { res } = await call(statsExport.GET, '/', { cookie: token })
+    expect(res.headers.get('content-type')).toContain('text/csv')
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    // BOM, damit Excel die Umlaute erkennt
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    const csv = new TextDecoder().decode(bytes)
+    expect(csv.startsWith('Zeitpunkt;Stapel;Karte;')).toBe(true)
+    expect(csv).toContain('2026-10-13T22:30:00.000Z;Statistik;(gelöscht);Vorderseite;Gut;neu;1;2,5;3\r\n')
+    // Formeln am Anfang eines Feldes werden in Tabellenprogrammen nicht ausgeführt
+    await send({ reviews: [], log: [{ ...log[0], cardId: formula.id }] })
+    const again2 = new TextDecoder().decode(await (await call(statsExport.GET, '/', { cookie: token })).res.arrayBuffer())
+    expect(again2).toContain(";'=SUMME(A1);")
   })
 })
 

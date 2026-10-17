@@ -1,0 +1,114 @@
+// Lernstatistik: Einträge fürs Bewertungsprotokoll, Auswertung nach Tagen und Stapeln, Serie und Vorschau fälliger
+// Karten. Reine Logik ohne Browser- oder Server-Abhängigkeit.
+import { DAY, startOfDay, type Rating } from './srs'
+import { reviewKey, sidesOf, type Side, type StateMap } from './study'
+import { MAX_ANSWER_MS } from './limits'
+import type { Card, DeckStudyStats, ReviewLogEntry, SrsState, StudyDay } from './types'
+
+/** Protokolleintrag für eine Bewertung: `shownAt` = Zeitpunkt, zu dem die Karte angezeigt wurde */
+export function reviewLogEntry(
+  cardId: string,
+  side: Side,
+  prev: SrsState | null,
+  next: SrsState,
+  rating: Rating,
+  shownAt: number,
+): ReviewLogEntry {
+  const now = next.reviewedAt
+  return {
+    cardId,
+    side,
+    rating,
+    phase: prev?.phase ?? 'new',
+    intervalBefore: prev ? Math.max(0, (prev.due - prev.reviewedAt) / DAY) : 0,
+    intervalAfter: Math.max(0, (next.due - now) / DAY),
+    durationMs: Math.min(MAX_ANSWER_MS, Math.max(0, Math.round(now - shownAt))),
+    reviewedAt: now,
+  }
+}
+
+export type LogRow = { reviewedAt: number; rating: number; phase: string; deckId: string | null; durationMs: number }
+
+/**
+ * Bewertungen nach Tagen (`dayOf` rechnet in die Ortszeit des Geräts) und – ab `recentSince` – nach Stapeln.
+ * Die Trefferquote zählt nur Wiederholungen gelernter Karten: „Nochmal“ ist dort vergessen, alles andere gewusst.
+ */
+export function aggregateLog(
+  rows: LogRow[],
+  dayOf: (t: number) => string,
+  recentSince: number,
+): { days: StudyDay[]; decks: DeckStudyStats[] } {
+  const days = new Map<string, StudyDay>()
+  const decks = new Map<string, DeckStudyStats>()
+  for (const r of rows) {
+    const date = dayOf(r.reviewedAt)
+    const day = days.get(date) ?? { date, reviews: 0, again: 0, ms: 0 }
+    day.reviews++
+    if (r.rating === 1) day.again++
+    day.ms += r.durationMs
+    days.set(date, day)
+    if (r.reviewedAt < recentSince || !r.deckId) continue
+    const deck = decks.get(r.deckId) ?? { deckId: r.deckId, reviews: 0, ms: 0, matureReviews: 0, matureCorrect: 0 }
+    deck.reviews++
+    deck.ms += r.durationMs
+    if (r.phase === 'review') {
+      deck.matureReviews++
+      if (r.rating > 1) deck.matureCorrect++
+    }
+    decks.set(r.deckId, deck)
+  }
+  return {
+    days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    decks: [...decks.values()],
+  }
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** Datum (YYYY-MM-DD) in der Ortszeit */
+export const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+/** Tag davor bzw. danach (YYYY-MM-DD), unabhängig von der Zeitumstellung */
+export function shiftDay(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d + n))
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
+}
+
+/**
+ * Lernserie: Tage am Stück mit mindestens einer Bewertung. Die aktuelle Serie zählt bis heute – ist heute noch
+ * nichts gelernt, bis gestern (sie reißt erst, wenn der Tag ohne Lernen vorbei ist).
+ */
+export function streaks(dates: Iterable<string>, today: string): { current: number; longest: number } {
+  const set = new Set(dates)
+  let current = 0
+  for (let d = set.has(today) ? today : shiftDay(today, -1); set.has(d); d = shiftDay(d, -1)) current++
+  let longest = 0
+  for (const d of set) {
+    if (set.has(shiftDay(d, -1))) continue
+    let n = 0
+    for (let x = d; set.has(x); x = shiftDay(x, 1)) n++
+    longest = Math.max(longest, n)
+  }
+  return { current, longest }
+}
+
+/**
+ * Vorschau: fällige Kartenseiten je Tag ab heute (Index 0 = heute, Überfälliges eingeschlossen). Neue Karten zählen
+ * nicht mit – wie viele davon dazukommen, regelt das Tageslimit je Stapel. Ausgesetzte Karten zählen nicht.
+ */
+export function dueForecast(cards: Card[], states: StateMap, now: number, days: number): number[] {
+  const out = new Array<number>(days).fill(0)
+  const today = startOfDay(now)
+  for (const card of cards) {
+    if (card.suspended) continue
+    for (const side of sidesOf(card)) {
+      const state = states.get(reviewKey(card.id, side))
+      if (!state) continue
+      // Gerundet, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
+      const index = Math.max(0, Math.round((startOfDay(state.due) - today) / DAY))
+      if (index < days) out[index]++
+    }
+  }
+  return out
+}
