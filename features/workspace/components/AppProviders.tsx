@@ -7,6 +7,7 @@ import { GlobalToolbar } from './GlobalToolbar'
 import { NetworkError, setApiUser } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
+import { focusSessions } from '@/features/focus/client/sessions'
 import { startUpdateWatcher } from '@/features/updates/client/app-update'
 import { applyTheme, type Theme } from '@/shared/client/prefs'
 import { UserProvider } from '@/features/auth/client/current-user'
@@ -31,6 +32,7 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
   useEffect(() => {
     sync.start(user.id)
     reviewQueue.start(user.id, client)
+    focusSessions.start(user.id, client)
     startUpdateWatcher()
     // Systemeinstellung „Dunkel“ live übernehmen
     const mq = matchMedia('(prefers-color-scheme: dark)')

@@ -1,11 +1,15 @@
 'use client'
 import { useId, useState } from 'react'
-import { Pause, Play, RotateCcw, Settings2, SkipForward } from 'lucide-react'
+import { Check, Pause, Play, RotateCcw, Settings2, SkipForward, X } from 'lucide-react'
 import { usePref } from '@/shared/client/prefs'
 import { Button } from '@/shared/ui/button'
 import { Input, Switch } from '@/shared/ui/input'
 import { cn } from '@/shared/ui/cn'
 import { focusTimer, useFocusTimer } from '../client/focus-timer'
+import { focusSessions, GOAL_KEY, SUBJECT_KEY, useFocusSessions, useLocalFocusSessions } from '../client/sessions'
+import { formatStudyTime } from '../sessions'
+import { MAX_GOAL, MAX_SUBJECT } from '../limits'
+import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import {
   PHASE_LABELS,
   SETTING_LIMITS,
@@ -126,6 +130,9 @@ export function FocusTimer() {
         </div>
       ) : null}
 
+      <SubjectFields />
+      <PendingSessions />
+
       {settingsOpen === '1' ? (
         <div className="space-y-4 border-t border-border pt-4" id="focus-settings" aria-label="Einstellungen" role="group">
           {state.mode === 'pomodoro' ? (
@@ -141,6 +148,69 @@ export function FocusTimer() {
           <NotifySetting on={notify} />
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/** Fach und Ziel der Runde – Vorschläge aus früheren Runden und den Stapeln der Karteikarten */
+function SubjectFields() {
+  const listId = useId()
+  const [subject, setSubject] = usePref<string>(SUBJECT_KEY, '')
+  const [goal, setGoal] = usePref<string>(GOAL_KEY, '')
+  const { subjects } = useFocusSessions()
+  const { data: flashcards } = useFlashcards()
+  const suggestions = [...new Set([...subjects, ...(flashcards?.decks.map((d) => d.name) ?? [])])]
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Input
+        list={listId}
+        value={subject}
+        onChange={(e) => setSubject(e.target.value)}
+        placeholder="Fach"
+        aria-label="Fach"
+        maxLength={MAX_SUBJECT}
+        className="h-9 px-2.5 text-sm"
+      />
+      <Input
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        placeholder="Ziel (optional)"
+        aria-label="Ziel"
+        maxLength={MAX_GOAL}
+        className="h-9 px-2.5 text-sm"
+      />
+      <datalist id={listId}>
+        {suggestions.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+    </div>
+  )
+}
+
+/** Abgelaufene Runden: zählen sie für die Lernzeit? */
+function PendingSessions() {
+  const { pending } = useLocalFocusSessions()
+  if (pending.length === 0) return null
+  return (
+    <div className="rounded-lg border border-border p-2" role="group" aria-label="Runden zählen" data-testid="focus-pending">
+      <p className="px-1 pb-1 text-xs font-medium text-muted">Für die Lernzeit zählen?</p>
+      <ul className="space-y-0.5">
+        {[...pending].reverse().map((s) => (
+          <li key={s.id} className="flex items-center gap-1 text-sm">
+            <span className="min-w-0 flex-1 truncate px-1" title={new Date(s.startedAt).toLocaleString('de-DE')}>
+              {formatStudyTime(s.durationMs)} · {s.subject || 'ohne Fach'}
+              {s.goal ? <span className="text-muted"> – {s.goal}</span> : null}
+            </span>
+            <Button variant="ghost" size="icon-sm" aria-label="Zählen" title="Zählen" onClick={() => focusSessions.confirm(s.id)}>
+              <Check className="size-4 text-success" />
+            </Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Verwerfen" title="Verwerfen" onClick={() => focusSessions.discard(s.id)}>
+              <X className="size-4 text-danger" />
+            </Button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

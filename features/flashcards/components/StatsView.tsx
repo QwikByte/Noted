@@ -2,7 +2,7 @@
 // Lernstatistik: Kennzahlen, Lerntage als Heatmap, fällige Karten der nächsten Tage und Trefferquote je Stapel
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarRange, ChartColumn, ChevronRight, Download, Flame, Layers, MoreVertical } from 'lucide-react'
+import { CalendarRange, ChartColumn, ChevronRight, Download, Flame, Layers, MoreVertical, Timer } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Panel } from '@/shared/ui/panel'
@@ -12,11 +12,13 @@ import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
 import { useNow } from '@/shared/client/now'
 import { useFlashcards } from '../client/flashcards'
-import { dayKey, dueForecast, shiftDay, streaks } from '../stats'
+import { addDays, isoWeek, localDate, shortDate, startOfWeek, weekday, weekdayShort } from '@/features/calendar/dates'
+import { useFocusSessions } from '@/features/focus/client/sessions'
+import { formatStudyTime, weeklyBySubject } from '@/features/focus/sessions'
+import { dueForecast, streaks } from '../stats'
 import type { StudyDay, StudyStats } from '../types'
 
 const WEEKS = 53
-const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
 /** Heatmap: eine Farbe, je mehr Bewertungen desto kräftiger (Stufen nach den Vierteln der Lerntage) */
@@ -30,11 +32,6 @@ const LEVEL_COLORS = [
 
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
-const shortDate = (date: string) => `${Number(date.slice(8, 10))}.${Number(date.slice(5, 7))}.`
-const weekdayOf = (date: string) => {
-  const [y, m, d] = date.split('-').map(Number)
-  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7
-}
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString('de-DE')} ${n === 1 ? one : many}`
 
 function formatDuration(ms: number): string {
@@ -48,7 +45,7 @@ export function StatsView() {
   const app = useApp()
   const { data: flashcards } = useFlashcards()
   const now = useNow()
-  const today = dayKey(new Date(now))
+  const today = localDate(new Date(now))
   const { data, isLoading, error } = useQuery({
     queryKey: ['stats'],
     queryFn: () => api<StudyStats>(`/api/stats?tz=${encodeURIComponent(timeZone())}`),
@@ -91,6 +88,7 @@ export function StatsView() {
           <Heatmap days={data.days} today={today} />
           {flashcards ? <Forecast now={now} /> : null}
           <DeckTable stats={data} />
+          <FocusTime today={today} />
         </div>
       ) : isLoading ? null : (
         <p className="rounded-xl border border-border p-4 text-sm text-muted">
@@ -125,7 +123,7 @@ function Figures({ stats, today }: { stats: StudyStats; today: string }) {
     (s, d) => ({ reviews: s.reviews + d.reviews, ms: s.ms + d.ms, mature: s.mature + d.matureReviews, correct: s.correct + d.matureCorrect }),
     { reviews: 0, ms: 0, mature: 0, correct: 0 },
   )
-  const studyDays = stats.days.filter((d) => d.date > shiftDay(today, -30)).length
+  const studyDays = stats.days.filter((d) => d.date > addDays(today, -30)).length
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="stats-figures">
       <Tile label="Heute" value={todayCount.toLocaleString('de-DE')} hint={todayCount === 1 ? 'Bewertung' : 'Bewertungen'} />
@@ -161,8 +159,8 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
   }, [days])
   const level = (n: number) => (n === 0 ? 0 : n <= thresholds[0] ? 1 : n <= thresholds[1] ? 2 : n <= thresholds[2] ? 3 : 4)
 
-  const start = shiftDay(today, -(WEEKS - 1) * 7 - weekdayOf(today))
-  const weeks = Array.from({ length: WEEKS }, (_, w) => Array.from({ length: 7 }, (_, d) => shiftDay(start, w * 7 + d)))
+  const start = addDays(today, -(WEEKS - 1) * 7 - weekday(today))
+  const weeks = Array.from({ length: WEEKS }, (_, w) => Array.from({ length: 7 }, (_, d) => addDays(start, w * 7 + d)))
   const active = days.filter((d) => d.date >= start).length
 
   return (
@@ -172,8 +170,8 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
         <div dir="ltr" className="flex w-max gap-[3px] pb-1">
           <div className="mr-1 grid grid-rows-[14px_repeat(7,11px)] gap-[3px] text-[10px] leading-[11px] text-faint">
             <span />
-            {WEEKDAYS.map((d, i) => (
-              <span key={d}>{i % 2 === 0 ? d : ''}</span>
+            {weeks[0].map((date, i) => (
+              <span key={date}>{i % 2 === 0 ? weekdayShort(date) : ''}</span>
             ))}
           </div>
           {weeks.map((week) => {
@@ -227,14 +225,14 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {Array.from({ length: 30 }, (_, i) => shiftDay(today, -i))
+            {Array.from({ length: 30 }, (_, i) => addDays(today, -i))
               .filter((date) => byDate.has(date))
               .map((date) => {
                 const d = byDate.get(date)!
                 return (
                   <tr key={date}>
                     <td className="py-1">
-                      {WEEKDAYS[weekdayOf(date)]}, {shortDate(date)}
+                      {weekdayShort(date)}, {shortDate(date)}
                     </td>
                     <td className="py-1 text-right">{d.reviews}</td>
                     <td className="py-1 text-right">{d.again}</td>
@@ -256,10 +254,10 @@ function Forecast({ now, className }: { now: number; className?: string }) {
   const counts = useMemo(() => (data ? dueForecast(data.cards, data.states, now, range) : []), [data, now, range])
   const max = Math.max(1, ...counts)
   const total = counts.reduce((s, n) => s + n, 0)
-  const today = dayKey(new Date(now))
+  const today = localDate(new Date(now))
   const label = (i: number) => {
-    const date = shiftDay(today, i)
-    return i === 0 ? 'Heute' : i === 1 ? 'Morgen' : `${WEEKDAYS[weekdayOf(date)]}, ${shortDate(date)}`
+    const date = addDays(today, i)
+    return i === 0 ? 'Heute' : i === 1 ? 'Morgen' : `${weekdayShort(date)}, ${shortDate(date)}`
   }
   const peak = counts.indexOf(Math.max(...counts))
 
@@ -306,10 +304,66 @@ function Forecast({ now, className }: { now: number; className?: string }) {
       <div className="mt-1 flex gap-[2px] text-[11px] text-faint">
         {counts.map((_, i) => (
           <span key={i} className="min-w-0 flex-1 truncate text-center">
-            {range === 7 ? (i === 0 ? 'Heute' : WEEKDAYS[weekdayOf(shiftDay(today, i))]) : i % 7 === 0 ? (i === 0 ? 'Heute' : shortDate(shiftDay(today, i))) : ''}
+            {range === 7 ? (i === 0 ? 'Heute' : weekdayShort(addDays(today, i))) : i % 7 === 0 ? (i === 0 ? 'Heute' : shortDate(addDays(today, i))) : ''}
           </span>
         ))}
       </div>
+    </Panel>
+  )
+}
+
+const FOCUS_WEEKS = 4
+
+/** Lernzeit aus gezählten Runden des Fokus-Timers je Fach in den letzten vier Wochen */
+function FocusTime({ today }: { today: string }) {
+  const { sessions, isLoading } = useFocusSessions()
+  const thisWeek = startOfWeek(today)
+  const weeks = Array.from({ length: FOCUS_WEEKS }, (_, i) => addDays(thisWeek, -7 * (FOCUS_WEEKS - 1 - i)))
+  const rows = weeklyBySubject(sessions, weeks)
+  const total = rows.reduce((s, r) => s + r.weeks[FOCUS_WEEKS - 1], 0)
+  if (isLoading) return null
+  return (
+    <Panel
+      icon={<Timer />}
+      title="Lernzeit mit dem Fokus-Timer"
+      testId="stats-focus"
+      actions={rows.length ? <span className="text-sm text-muted">Diese Woche: {formatStudyTime(total)}</span> : undefined}
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">
+          Noch keine gezählten Runden. Trag im Fokus-Timer ein Fach ein und bestätige nach der Runde, dass sie zählen soll – dann
+          siehst du hier, wie viel Zeit in welches Fach geflossen ist.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs text-muted">
+              <tr>
+                <th className="py-1.5 pr-3 font-medium">Fach</th>
+                {weeks.map((w, i) => (
+                  <th key={w} className="py-1.5 pr-3 text-right font-medium whitespace-nowrap" title={`Woche ab ${shortDate(w)}`}>
+                    {i === FOCUS_WEEKS - 1 ? 'Diese Woche' : `KW ${isoWeek(w)}`}
+                  </th>
+                ))}
+                <th className="py-1.5 text-right font-medium">Summe</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border tabular-nums">
+              {rows.map((r) => (
+                <tr key={r.subject || '–'}>
+                  <td className="max-w-48 truncate py-1.5 pr-3">{r.subject || <span className="text-muted">ohne Fach</span>}</td>
+                  {r.weeks.map((ms, i) => (
+                    <td key={weeks[i]} className="py-1.5 pr-3 text-right whitespace-nowrap">
+                      {ms ? formatStudyTime(ms) : '–'}
+                    </td>
+                  ))}
+                  <td className="py-1.5 text-right font-medium whitespace-nowrap">{formatStudyTime(r.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Panel>
   )
 }

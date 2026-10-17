@@ -260,4 +260,18 @@ export const migrations: string[] = [
   CREATE UNIQUE INDEX review_log_once ON review_log(user_id, card_id, side, reviewed_at);
   CREATE INDEX review_log_user ON review_log(user_id, reviewed_at);
   `,
+
+  /* 11: Gezählte Runden des Fokus-Timers (Lernzeit pro Fach). Die ID vergibt das Gerät – so kommt eine offline
+     gesammelte Runde auch beim erneuten Senden nur einmal an. subject = Fach (freier Text), goal = Ziel der Runde */ `
+  CREATE TABLE focus_sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL DEFAULT '',
+    goal TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX focus_sessions_user ON focus_sessions(user_id, started_at);
+  `,
 ]

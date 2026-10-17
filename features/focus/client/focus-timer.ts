@@ -1,8 +1,7 @@
 'use client'
 // Laufender Fokus-Timer. Der Zustand liegt im localStorage: Er übersteht Neuladen und gilt für alle offenen Tabs.
 // Am Ende einer Phase: Ton, Meldung in der App und auf Wunsch eine Systembenachrichtigung.
-import { useEffect, useSyncExternalStore } from 'react'
-import { useToast } from '@/shared/ui/toast'
+import { useSyncExternalStore } from 'react'
 import {
   DEFAULT_SETTINGS,
   LATE_MS,
@@ -12,9 +11,11 @@ import {
   normalizeSettings,
   parseState,
   pause,
+  phaseMs,
   settle,
   skip,
   start,
+  type Phase,
   type TimerMode,
   type TimerSettings,
   type TimerState,
@@ -33,7 +34,11 @@ type FocusSnapshot = {
   now: number
 }
 
-type EndMessage = { title: string; body: string }
+/** Meldung am Ende einer Phase – `endedAt` verbindet sie mit der Runde, die gezählt werden kann */
+export type EndMessage = { title: string; body: string; endedAt: number }
+
+/** Abgelaufene Phase (auch wenn niemand da war, als sie endete) */
+export type EndedPhase = { phase: Phase; startedAt: number; endedAt: number; durationMs: number }
 
 const SERVER_SNAPSHOT: FocusSnapshot = {
   state: initialState('pomodoro', DEFAULT_SETTINGS),
@@ -68,6 +73,7 @@ function writeItem(key: string, value: string) {
 
 const listeners = new Set<() => void>()
 const endListeners = new Set<(message: EndMessage) => void>()
+const phaseListeners = new Set<(ended: EndedPhase) => void>()
 let cache: FocusSnapshot | null = null
 let endTimer: ReturnType<typeof setTimeout> | undefined
 let ticker: ReturnType<typeof setInterval> | undefined
@@ -127,7 +133,13 @@ function settleNow() {
     return
   }
   save(result.state)
-  if (now - result.ended.at < LATE_MS) signal(endMessage(result.ended.phase, result.state, settings), notify)
+  // Zuerst festhalten (Runde zum Zählen), dann melden – die Meldung bietet „Zählen“ an
+  const ms = phaseMs(settings, result.ended.phase)
+  const ended: EndedPhase = { phase: result.ended.phase, startedAt: result.ended.at - ms, endedAt: result.ended.at, durationMs: ms }
+  for (const fn of phaseListeners) fn(ended)
+  if (now - result.ended.at < LATE_MS) {
+    signal({ ...endMessage(result.ended.phase, result.state, settings), endedAt: result.ended.at }, notify)
+  }
 }
 
 function onStorage(e: StorageEvent) {
@@ -261,14 +273,18 @@ export function useFocusTimer(): FocusSnapshot {
   return useSyncExternalStore(subscribe, snapshot, () => SERVER_SNAPSHOT)
 }
 
-/** Meldung in der App, wenn eine Phase vorbei ist */
-export function useFocusAlerts() {
-  const toast = useToast()
-  useEffect(() => {
-    const show = ({ title, body }: EndMessage) => toast.show(`${title} – ${body}`, { tone: 'success', duration: 8000 })
-    endListeners.add(show)
-    return () => {
-      endListeners.delete(show)
-    }
-  }, [toast])
+/** Meldung, wenn eine Phase vorbei ist (nur, wer gerade da ist) */
+export function onFocusEnd(fn: (message: EndMessage) => void): () => void {
+  endListeners.add(fn)
+  return () => {
+    endListeners.delete(fn)
+  }
+}
+
+/** Jede abgelaufene Phase – im Tab, der sie weiterschaltet */
+export function onPhaseEnded(fn: (ended: EndedPhase) => void): () => void {
+  phaseListeners.add(fn)
+  return () => {
+    phaseListeners.delete(fn)
+  }
 }
