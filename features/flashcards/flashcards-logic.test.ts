@@ -9,6 +9,7 @@ import {
   isCorrectSelection,
   isProblemCard,
   reviewKey,
+  sidesOf,
   stateMap,
 } from './study'
 import { cardToMarkdown, deckToMarkdown, deckTag, parseCardsFromNote } from './card-markdown'
@@ -305,6 +306,42 @@ describe('Karten in Notizen erkennen', () => {
     expect(bySource('heading')[0][0]).toBe('Definitionen')
   })
 
+  it('erkennt Lückentexte: {{Lücke}} eindeutig, ==Markierung== als Vorschlag', () => {
+    const note = [
+      '# Ableitungen',
+      'Die Ableitung von {{sin}} ist {{cos}}.',
+      '',
+      'Wichtig: ==Kettenregel== nicht vergessen',
+      'und ==Produktregel== auch.',
+      '',
+      'Begriff::Erklärung mit ==Markierung==',
+      '**Fett**: mit ==Markierung==',
+      '```',
+      'Code mit {{kein}} Lückentext',
+      '```',
+      'Vorlage vom {{date}}',
+    ].join('\n')
+    const cards = parseCardsFromNote(note).filter((c) => c.type === 'cloze')
+    expect(cards.map((c) => [c.source, c.front, c.line])).toEqual([
+      ['cloze', 'Die Ableitung von ==sin== ist ==cos==.', 1],
+      ['highlight', 'Wichtig: ==Kettenregel== nicht vergessen\nund ==Produktregel== auch.', 3],
+    ])
+  })
+
+  it('fragt jede Lücke für sich ab – höchstens eine neue Lücke je Karte und Tag', () => {
+    const cloze = card('c1', { type: 'cloze', front: '==a== ==b== ==c==', back: '' })
+    expect(sidesOf(cloze)).toEqual([0, 1, 2])
+    expect(sidesOf(card('c2', { type: 'cloze', front: 'ohne Lücke' }))).toEqual([])
+    const fresh = new LearnSession([{ id: 'd1', newPerDay: 20 }], [cloze], new Map(), NOW)
+    expect(fresh.size).toBe(1)
+    // Gestern Lücke 1 gelernt: heute kommt Lücke 2 dazu, Lücke 3 erst morgen
+    const reviews: CardReview[] = [{ cardId: 'c1', side: 0, ...schedule(null, 4, NOW - 2 * DAY) }]
+    const later = new LearnSession([{ id: 'd1', newPerDay: 20 }], [cloze], stateMap(reviews), NOW)
+    const items: number[] = []
+    for (let item = later.next(NOW); item; item = later.next(NOW)) items.push(item.side)
+    expect(items).toEqual([1])
+  })
+
   it('liest tabulatorgetrennte Listen (Import aus Quizlet/Anki)', () => {
     const cards = parseCardsFromNote('Haus\thouse\nBaum\ttree\n\tEingerückt', { tabs: true })
     expect(cards.map((c) => [c.front, c.back])).toEqual([
@@ -328,11 +365,13 @@ describe('Karten in Notizen erkennen', () => {
         ],
       }),
       card('c5', { front: 'C++: Namensraum::Name?', back: 'Qualifizierter Name' }),
+      card('c6', { type: 'cloze', front: 'Die Hauptstadt von ==Frankreich== ist ==Paris==.', back: 'Seit 987' }),
     ]
     const md = deckToMarkdown({ name: 'Analysis I', description: 'Klausur WS' }, cards)
     expect(md).toContain('  - flashcards/Analysis-I\n')
     expect(cardToMarkdown(cards[0])).toBe('Hauptstadt von Frankreich::Paris')
     expect(cardToMarkdown(cards[1])).toBe('Haus:::house')
+    expect(cardToMarkdown(cards[5])).toBe('Die Hauptstadt von ==Frankreich== ist ==Paris==.\nSeit 987')
     const parsed = parseCardsFromNote(md).filter((c) => c.source === 'syntax')
     expect(parsed.map(({ type, front, back, options }) => ({ type, front, back, options }))).toEqual([
       { type: 'basic', front: 'Hauptstadt von Frankreich', back: 'Paris', options: [] },

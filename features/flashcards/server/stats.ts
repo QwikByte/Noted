@@ -63,7 +63,7 @@ export function reviewLogCsv(userId: number): string {
   const rows = getDb()
     .prepare(
       `SELECT l.reviewed_at, l.rating, l.phase, l.side, l.interval_before, l.interval_after, l.duration_ms,
-              d.name AS deck, c.front
+              d.name AS deck, c.front, c.type
        FROM review_log l
        LEFT JOIN decks d ON d.id = l.deck_id AND d.user_id = l.user_id
        LEFT JOIN cards c ON c.id = l.card_id AND c.user_id = l.user_id
@@ -79,6 +79,7 @@ export function reviewLogCsv(userId: number): string {
     duration_ms: number
     deck: string | null
     front: string | null
+    type: string | null
   }[]
   const header = ['Zeitpunkt', 'Stapel', 'Karte', 'Seite', 'Bewertung', 'Phase', 'Abstand vorher (Tage)', 'Abstand nachher (Tage)', 'Dauer (s)']
   const lines = rows.map((r) =>
@@ -86,7 +87,7 @@ export function reviewLogCsv(userId: number): string {
       new Date(r.reviewed_at).toISOString(),
       r.deck ?? '(gelöscht)',
       (r.front ?? '(gelöscht)').split('\n')[0].slice(0, 200),
-      r.side === 1 ? 'Rückseite' : 'Vorderseite',
+      r.type === 'cloze' ? `Lücke ${r.side + 1}` : r.side === 1 ? 'Rückseite' : 'Vorderseite',
       RATING_LABELS[r.rating] ?? String(r.rating),
       PHASE_LABELS[r.phase] ?? r.phase,
       decimal(r.interval_before),

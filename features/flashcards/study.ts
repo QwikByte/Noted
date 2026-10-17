@@ -1,8 +1,10 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
+import { clozeCount } from './cloze'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
-export type Side = 0 | 1
+/** Abgefragte Seite: 0 = Vorderseite, 1 = Rückseite (beidseitig), bei Lückentexten die Nummer der Lücke */
+export type Side = number
 export type ItemKind = 'new' | 'learning' | 'review'
 export type StudyItem = { card: Card; side: Side; kind: ItemKind }
 export type StateMap = Map<string, SrsState>
@@ -10,8 +12,9 @@ export type StateMap = Map<string, SrsState>
 export const reviewKey = (cardId: string, side: Side) => `${cardId}:${side}`
 export const itemKey = (item: { card: Card; side: Side }) => reviewKey(item.card.id, item.side)
 
-/** Abgefragte Seiten einer Karte: beidseitige Karten werden in beide Richtungen gelernt. */
-export function sidesOf(card: Pick<Card, 'type'>): Side[] {
+/** Abgefragte Seiten einer Karte: beidseitige Karten in beide Richtungen, Lückentexte jede Lücke für sich. */
+export function sidesOf(card: Pick<Card, 'type' | 'front'>): Side[] {
+  if (card.type === 'cloze') return Array.from({ length: clozeCount(card.front) }, (_, i) => i)
   return card.type === 'reversed' ? [0, 1] : [0]
 }
 
@@ -28,12 +31,13 @@ export function byPosition(a: Card, b: Card) {
   return a.position - b.position || a.createdAt - b.createdAt
 }
 
-/** Wie oft die Karte vergessen wurde – bei beidseitigen Karten die schwächere Seite */
-export function cardLapses(card: Pick<Card, 'id' | 'type'>, states: StateMap): number {
-  return Math.max(...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
+/** Wie oft die Karte vergessen wurde – bei beidseitigen Karten und Lückentexten die schwächste Seite */
+export function cardLapses(card: Pick<Card, 'id' | 'type' | 'front'>, states: StateMap): number {
+  return Math.max(0, ...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
 }
 
-export const isProblemCard = (card: Pick<Card, 'id' | 'type'>, states: StateMap) => cardLapses(card, states) >= LEECH_LAPSES
+export const isProblemCard = (card: Pick<Card, 'id' | 'type' | 'front'>, states: StateMap) =>
+  cardLapses(card, states) >= LEECH_LAPSES
 
 export type DeckCounts = {
   /** Abzufragende Seiten insgesamt */
@@ -83,10 +87,11 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
       total++
       if (!state) {
         newTotal++
-        // Rückseite einer beidseitigen Karte erst, wenn die Vorderseite nicht mehr ganz neu ist
-        if (side === 1) {
-          const front = states.get(reviewKey(card.id, 0))
-          if (!front || front.introducedAt >= today) continue
+        // Rückseite einer beidseitigen Karte bzw. nächste Lücke erst, wenn die vorige nicht mehr ganz neu ist –
+        // so kommt je Karte höchstens eine neue Seite pro Tag dazu
+        if (side > 0) {
+          const previous = states.get(reviewKey(card.id, side - 1))
+          if (!previous || previous.introducedAt >= today) continue
         }
         candidates.push({ card, side, kind: 'new' })
         continue

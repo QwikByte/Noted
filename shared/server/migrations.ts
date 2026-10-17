@@ -274,4 +274,54 @@ export const migrations: string[] = [
   );
   CREATE INDEX focus_sessions_user ON focus_sessions(user_id, started_at);
   `,
+
+  /* 12: Lückentext-Karten. Neue Kartenart 'cloze' (CHECK erweitern wie in Migration 5); jede Lücke hat einen eigenen
+     Lernstand – side ist bei Lückentexten die Nummer der Lücke (0 … 49). side gehört zum Primärschlüssel bzw. zu einem
+     Index und lässt sich nicht per DROP COLUMN ersetzen: Lernstand und Protokoll werden daher neu angelegt und
+     umkopiert (beide werden von keiner anderen Tabelle referenziert). */ `
+  ALTER TABLE cards ADD COLUMN type_new TEXT NOT NULL DEFAULT 'basic' CHECK (type_new IN ('basic', 'reversed', 'mc', 'cloze'));
+  UPDATE cards SET type_new = type;
+  ALTER TABLE cards DROP COLUMN type;
+  ALTER TABLE cards RENAME COLUMN type_new TO type;
+
+  CREATE TABLE card_reviews_new (
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    side INTEGER NOT NULL CHECK (side BETWEEN 0 AND 49),
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('learning', 'review', 'relearning')),
+    step INTEGER NOT NULL DEFAULT 0,
+    interval REAL NOT NULL DEFAULT 0,
+    ease REAL NOT NULL,
+    reps INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    due INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL,
+    introduced_at INTEGER NOT NULL,
+    PRIMARY KEY (card_id, side)
+  );
+  INSERT INTO card_reviews_new (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at)
+    SELECT card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at FROM card_reviews;
+  DROP TABLE card_reviews;
+  ALTER TABLE card_reviews_new RENAME TO card_reviews;
+  CREATE INDEX card_reviews_user ON card_reviews(user_id);
+
+  CREATE TABLE review_log_new (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    card_id TEXT NOT NULL,
+    deck_id TEXT,
+    side INTEGER NOT NULL CHECK (side BETWEEN 0 AND 49),
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 4),
+    phase TEXT NOT NULL CHECK (phase IN ('new', 'learning', 'review', 'relearning')),
+    interval_before REAL NOT NULL,
+    interval_after REAL NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL
+  );
+  INSERT INTO review_log_new SELECT * FROM review_log;
+  DROP TABLE review_log;
+  ALTER TABLE review_log_new RENAME TO review_log;
+  CREATE UNIQUE INDEX review_log_once ON review_log(user_id, card_id, side, reviewed_at);
+  CREATE INDEX review_log_user ON review_log(user_id, reviewed_at);
+  `,
 ]
