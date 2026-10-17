@@ -62,25 +62,26 @@ export function compareAnswer(typed: string, expected: string): TypedResult {
     push(parts, 'missing', b.join(''))
     return { correct, parts }
   }
-  // Längste gemeinsame Teilfolge, von hinten berechnet – dann von vorn ablesen
+  // Längste gemeinsame Teilfolge der Anfänge, von hinten abgelesen: Übereinstimmungen liegen so möglichst weit hinten
+  // („the house“ gegen „house“ ergibt „the “ + „house“), bei einem falschen Zeichen steht das falsche vor dem richtigen
   const lcs = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1))
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      lcs[i][j] = sameChar(a[i], b[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      lcs[i][j] = sameChar(a[i - 1], b[j - 1]) ? lcs[i - 1][j - 1] + 1 : Math.max(lcs[i - 1][j], lcs[i][j - 1])
     }
   }
-  let i = 0
-  let j = 0
-  while (i < n && j < m) {
-    // Ein Zeichen nur zuordnen, wenn es später nicht genauso gut passt – sonst zerfällt „the house“ gegen „house“
-    // in „h“ + „e h“ + „ouse“ statt „the “ + „house“
-    if (sameChar(a[i], b[j]) && lcs[i + 1][j] < lcs[i][j] && lcs[i][j + 1] < lcs[i][j]) {
-      push(parts, 'same', a[i++])
-      j++
-    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) push(parts, 'extra', a[i++])
-    else push(parts, 'missing', b[j++])
+  const reversed: DiffPart[] = []
+  let i = n
+  let j = m
+  while (i > 0 && j > 0) {
+    if (sameChar(a[i - 1], b[j - 1])) {
+      reversed.push({ kind: 'same', text: a[--i] })
+      j--
+    } else if (lcs[i][j - 1] >= lcs[i - 1][j]) reversed.push({ kind: 'missing', text: b[--j] })
+    else reversed.push({ kind: 'extra', text: a[--i] })
   }
-  push(parts, 'extra', a.slice(i).join(''))
-  push(parts, 'missing', b.slice(j).join(''))
+  push(parts, 'extra', a.slice(0, i).join(''))
+  push(parts, 'missing', b.slice(0, j).join(''))
+  for (const part of reversed.reverse()) push(parts, part.kind, part.text)
   return { correct, parts }
 }
