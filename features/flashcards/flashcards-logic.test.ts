@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { DAY, MINUTE, formatInterval, previewIntervals, schedule, cardStatus, type Rating } from './srs'
-import { LearnSession, PracticeSession, deckCounts, isCorrectSelection, reviewKey, stateMap, allItems } from './study'
+import {
+  LearnSession,
+  PracticeSession,
+  allItems,
+  cardLapses,
+  deckCounts,
+  isCorrectSelection,
+  isProblemCard,
+  reviewKey,
+  stateMap,
+} from './study'
 import { cardToMarkdown, deckToMarkdown, deckTag, parseCardsFromNote } from './card-markdown'
 import type { Card, CardReview, SrsState } from './types'
 
@@ -16,6 +26,7 @@ function card(id: string, patch: Partial<Card> = {}): Card {
     back: `Antwort ${id}`,
     options: [],
     position: Number(id.replace(/\D/g, '')) || 0,
+    suspended: false,
     createdAt: 0,
     updatedAt: 0,
     ...patch,
@@ -157,6 +168,28 @@ describe('Lernsitzung', () => {
     const later = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, stateMap(reviews), NOW)
     const item = later.next(NOW)!
     expect(reviewKey(item.card.id, item.side)).toBe('c1:1')
+  })
+
+  it('lässt ausgesetzte Karten beim Lernen und Üben weg', () => {
+    const cards = [card('c1'), card('c2', { suspended: true }), card('c3', { suspended: true })]
+    const reviews: CardReview[] = [{ cardId: 'c3', side: 0, ...run([4], NOW - 10 * DAY) }]
+    expect(deckCounts(deck, cards, stateMap(reviews), NOW)).toMatchObject({ total: 1, newTotal: 1, review: 0, due: 1 })
+    const session = new LearnSession([deck], cards, stateMap(reviews), NOW)
+    expect(session.next(NOW)!.card.id).toBe('c1')
+    expect(session.next(NOW)).toBeNull()
+    expect(allItems(cards).map((i) => i.card.id)).toEqual(['c1'])
+  })
+
+  it('erkennt Problemkarten ab 6-mal vergessen – bei beidseitigen Karten an der schwächeren Seite', () => {
+    const forgotten = (lapses: number): SrsState => ({ ...run([4], NOW - DAY), lapses })
+    const cards = [card('c1'), card('c2', { type: 'reversed' }), card('c3')]
+    const states = stateMap([
+      { cardId: 'c1', side: 0, ...forgotten(5) },
+      { cardId: 'c2', side: 0, ...forgotten(1) },
+      { cardId: 'c2', side: 1, ...forgotten(7) },
+    ])
+    expect(cards.map((c) => cardLapses(c, states))).toEqual([5, 7, 0])
+    expect(cards.map((c) => isProblemCard(c, states))).toEqual([false, true, false])
   })
 
   it('Übungsmodus: falsche Antworten kommen wieder, gezählt wird der erste Versuch', () => {

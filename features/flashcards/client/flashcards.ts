@@ -303,13 +303,25 @@ export async function createCards(qc: QueryClient, deckId: string, cards: CardIn
   return res.cards
 }
 
-export async function updateCard(qc: QueryClient, id: string, input: Partial<CardInput> & { deckId?: string }): Promise<Card> {
+export async function updateCard(
+  qc: QueryClient,
+  id: string,
+  input: Partial<CardInput> & { deckId?: string; suspended?: boolean },
+): Promise<Card> {
   const { card } = await api<{ card: Card }>(`/api/cards/${id}`, { method: 'PATCH', body: input })
   patch(qc, (d) => ({
     ...d,
     cards: d.cards.map((c) => (c.id === id ? card : c)),
     reviews: card.type === 'reversed' ? d.reviews : d.reviews.filter((r) => r.cardId !== id || r.side === 0),
   }))
+  return card
+}
+
+/** Karte neu lernen: Lernstand zurücksetzen und Aussetzen aufheben */
+export async function resetCardProgress(qc: QueryClient, id: string): Promise<Card> {
+  const { card } = await api<{ card: Card }>(`/api/cards/${id}/progress`, { method: 'DELETE' })
+  reviewQueue.drop(new Set([id]))
+  patch(qc, (d) => ({ ...d, cards: d.cards.map((c) => (c.id === id ? card : c)), reviews: d.reviews.filter((r) => r.cardId !== id) }))
   return card
 }
 

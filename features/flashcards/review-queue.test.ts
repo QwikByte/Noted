@@ -58,7 +58,7 @@ describe('Warteschlange für Bewertungen', () => {
     await q.flush()
     const data = (reviews: CardReview[]): FlashcardData => ({
       decks: [],
-      cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], position: 0, createdAt: 0, updatedAt: 0 }],
+      cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], position: 0, suspended: false, createdAt: 0, updatedAt: 0 }],
       reviews,
     })
     // Veraltete Daten (z. B. aus dem Offline-Cache): Überlagerung bleibt

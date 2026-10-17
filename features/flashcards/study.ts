@@ -1,5 +1,5 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
-import { endOfDay, startOfDay } from './srs'
+import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
 export type Side = 0 | 1
@@ -28,6 +28,13 @@ export function byPosition(a: Card, b: Card) {
   return a.position - b.position || a.createdAt - b.createdAt
 }
 
+/** Wie oft die Karte vergessen wurde – bei beidseitigen Karten die schwächere Seite */
+export function cardLapses(card: Pick<Card, 'id' | 'type'>, states: StateMap): number {
+  return Math.max(...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
+}
+
+export const isProblemCard = (card: Pick<Card, 'id' | 'type'>, states: StateMap) => cardLapses(card, states) >= LEECH_LAPSES
+
 export type DeckCounts = {
   /** Abzufragende Seiten insgesamt */
   total: number
@@ -51,7 +58,7 @@ type Plan = { fresh: StudyItem[]; learning: StudyItem[]; review: StudyItem[]; co
 
 /**
  * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
- * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel.
+ * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen nicht dran.
  */
 function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
   const today = startOfDay(now)
@@ -68,7 +75,7 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
   const candidates: StudyItem[] = []
 
   for (const card of [...cards].sort(byPosition)) {
-    const counted = !inScope || inScope(card)
+    const counted = !card.suspended && (!inScope || inScope(card))
     for (const side of sidesOf(card)) {
       const state = states.get(reviewKey(card.id, side))
       if (state && state.introducedAt >= today) introducedToday++
@@ -251,9 +258,12 @@ export class PracticeSession {
   }
 }
 
-/** Alle abzufragenden Seiten der Karten (für den Übungsmodus). */
+/** Alle abzufragenden Seiten der Karten ohne die ausgesetzten (für den Übungsmodus). */
 export function allItems(cards: Card[]): StudyItem[] {
-  return [...cards].sort(byPosition).flatMap((card) => sidesOf(card).map((side) => ({ card, side, kind: 'review' as const })))
+  return cards
+    .filter((card) => !card.suspended)
+    .sort(byPosition)
+    .flatMap((card) => sidesOf(card).map((side) => ({ card, side, kind: 'review' as const })))
 }
 
 /** Multiple Choice: Ist die Auswahl genau die Menge der richtigen Antworten? */

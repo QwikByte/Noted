@@ -28,6 +28,8 @@ export type Card = {
   back: string
   options: CardOption[]
   position: number
+  /** Ausgesetzt: kommt beim Lernen und Üben nicht dran (z. B. eine Problemkarte bis zur Überarbeitung) */
+  suspended: boolean
   createdAt: number
   updatedAt: number
 }

@@ -7,6 +7,7 @@ import * as deck from '@/app/api/decks/[id]/route'
 import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import * as progress from '@/app/api/decks/[id]/progress/route'
 import * as card from '@/app/api/cards/[id]/route'
+import * as cardProgress from '@/app/api/cards/[id]/progress/route'
 import * as reviews from '@/app/api/reviews/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as users from '@/app/api/admin/users/route'
@@ -177,6 +178,40 @@ describe('Lernstand', () => {
     expect((await data()).reviews.find((r) => r.cardId === c.id)).toBeUndefined()
   })
 
+  it('setzt Karten aus und lernt einzelne Karten neu', async () => {
+    const d = await newDeck('Problemkarten')
+    const [c, other] = (
+      await addCards(d.id, [
+        { type: 'basic', front: 'Schwer', back: 'Lang und unklar' },
+        { type: 'basic', front: 'Leicht', back: 'Kurz' },
+      ])
+    ).data.cards as Card[]
+    expect(c.suspended).toBe(false)
+    const now = Date.now()
+    await call(reviews.POST, '/api/reviews', {
+      cookie: token,
+      body: {
+        reviews: [
+          { cardId: c.id, side: 0, ...schedule(null, 3, now), lapses: 6 },
+          { cardId: other.id, side: 0, ...schedule(null, 3, now) },
+        ],
+      },
+    })
+    const off = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { suspended: true } })
+    expect(off.data.card).toMatchObject({ suspended: true, front: 'Schwer' })
+    // Bearbeiten lässt das Aussetzen stehen
+    const edited = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { back: 'Kurz und klar' } })
+    expect(edited.data.card).toMatchObject({ suspended: true, back: 'Kurz und klar' })
+
+    const reset = await call(cardProgress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: c.id } })
+    expect(reset.status).toBe(200)
+    expect(reset.data.card).toMatchObject({ id: c.id, suspended: false })
+    const after = await data()
+    expect(after.reviews.find((r) => r.cardId === c.id)).toBeUndefined()
+    expect(after.reviews.find((r) => r.cardId === other.id)).toBeDefined()
+    expect((await call(cardProgress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: crypto.randomUUID() } })).status).toBe(404)
+  })
+
   it('löscht beim Löschen eines Stapels Karten und Lernstand', async () => {
     const d = await newDeck('Wegwerfen')
     const [c] = (await addCards(d.id, [{ type: 'basic', front: 'A', back: 'B' }])).data.cards as Card[]
@@ -206,6 +241,8 @@ describe('Trennung der Konten und Export', () => {
     expect((await addCards(d.id, [{ type: 'basic', front: 'x', back: 'y' }], tom)).status).toBe(404)
     expect((await call(card.PATCH, '/', { method: 'PATCH', cookie: tom, params: { id: c.id }, body: { front: 'x' } })).status).toBe(404)
     expect((await call(deck.DELETE, '/', { method: 'DELETE', cookie: tom, params: { id: d.id } })).status).toBe(404)
+    expect((await call(card.PATCH, '/', { method: 'PATCH', cookie: tom, params: { id: c.id }, body: { suspended: true } })).status).toBe(404)
+    expect((await call(cardProgress.DELETE, '/', { method: 'DELETE', cookie: tom, params: { id: c.id } })).status).toBe(404)
     const rv = await call(reviews.POST, '/api/reviews', { cookie: tom, body: { reviews: [{ cardId: c.id, side: 0, ...schedule(null, 3, Date.now()) }] } })
     expect(rv.data.saved).toBe(0)
   })

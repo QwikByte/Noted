@@ -33,6 +33,8 @@ const LAPSE_FACTOR = 0.5
 const MAX_INTERVAL = 36_500
 /** Ab diesem Abstand (Tage) gilt eine Karte als „sicher“ */
 const MATURE_INTERVAL = 21
+/** So oft vergessen, gilt eine Karte als Problemkarte (bei Anki „Leech“) – meist ist die Karte selbst das Problem */
+export const LEECH_LAPSES = 6
 export const DEFAULT_NEW_PER_DAY = 20
 
 const clampEase = (e: number) => Math.max(MIN_EASE, Math.round(e * 100) / 100)

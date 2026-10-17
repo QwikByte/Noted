@@ -31,6 +31,7 @@ type CardRow = {
   back: string
   options: string
   position: number
+  suspended: 0 | 1
   created_at: number
   updated_at: number
 }
@@ -78,6 +79,7 @@ const toCard = (r: CardRow): Card => ({
   back: r.back,
   options: parseOptions(r.options),
   position: r.position,
+  suspended: r.suspended === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -256,7 +258,11 @@ export function createCards(userId: number, deckId: string, inputs: CardInput[])
   return ids.map((id) => toCard(getCardRow(userId, id)))
 }
 
-export function updateCard(userId: number, id: string, patch: Partial<CardInput> & { deckId?: string }): Card {
+export function updateCard(
+  userId: number,
+  id: string,
+  patch: Partial<CardInput> & { deckId?: string; suspended?: boolean },
+): Card {
   const row = getCardRow(userId, id)
   const current = toCard(row)
   const next = cleanCard({
@@ -274,13 +280,38 @@ export function updateCard(userId: number, id: string, patch: Partial<CardInput>
     deckId = patch.deckId
     position = nextPosition(deckId)
   }
+  const suspended = patch.suspended !== undefined ? (patch.suspended ? 1 : 0) : row.suspended
   db.transaction(() => {
     db.prepare(
-      `UPDATE cards SET deck_id = ?, note_id = ?, type = ?, front = ?, back = ?, options = ?, position = ?, updated_at = ?
+      `UPDATE cards SET deck_id = ?, note_id = ?, type = ?, front = ?, back = ?, options = ?, position = ?, suspended = ?,
+         updated_at = ?
        WHERE id = ? AND user_id = ?`,
-    ).run(deckId, next.noteId, next.type, next.front, next.back, JSON.stringify(next.options), position, Date.now(), id, userId)
+    ).run(
+      deckId,
+      next.noteId,
+      next.type,
+      next.front,
+      next.back,
+      JSON.stringify(next.options),
+      position,
+      suspended,
+      Date.now(),
+      id,
+      userId,
+    )
     // Aus einer beidseitigen wird eine einseitige Karte: Lernstand der Rückseite verwerfen
     if (next.type !== 'reversed') db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side = 1').run(id)
+  })()
+  return toCard(getCardRow(userId, id))
+}
+
+/** Karte neu lernen (z. B. nach dem Überarbeiten einer Problemkarte): Lernstand weg, Aussetzen aufgehoben. */
+export function resetCardProgress(userId: number, id: string): Card {
+  getCardRow(userId, id)
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND user_id = ?').run(id, userId)
+    db.prepare('UPDATE cards SET suspended = 0, updated_at = ? WHERE id = ? AND user_id = ?').run(Date.now(), id, userId)
   })()
   return toCard(getCardRow(userId, id))
 }

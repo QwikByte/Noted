@@ -3,7 +3,7 @@ import { json, parseJson } from '@/shared/server/http'
 import { route } from '@/features/auth/server/route'
 import { cardSchema, deleteCard, updateCard } from '@/features/flashcards/server/flashcards'
 
-const schema = cardSchema.partial().extend({ deckId: z.string().uuid().optional() })
+const schema = cardSchema.partial().extend({ deckId: z.string().uuid().optional(), suspended: z.boolean().optional() })
 
 export const PATCH = route<{ id: string }>('user', async ({ req, user, params }) => {
   const body = await parseJson(req, schema)
