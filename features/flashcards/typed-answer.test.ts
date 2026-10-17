@@ -36,6 +36,15 @@ describe('Antwort eintippen', () => {
       { kind: 'same', text: 'Hous' },
       { kind: 'missing', text: 'e' },
     ])
+    expect(compareAnswer('trea', 'tree').parts).toEqual([
+      { kind: 'same', text: 'tre' },
+      { kind: 'extra', text: 'a' },
+      { kind: 'missing', text: 'e' },
+    ])
+    expect(compareAnswer('house', 'the house').parts).toEqual([
+      { kind: 'missing', text: 'the ' },
+      { kind: 'same', text: 'house' },
+    ])
     expect(compareAnswer('the house', 'house').parts).toEqual([
       { kind: 'extra', text: 'the ' },
       { kind: 'same', text: 'house' },
