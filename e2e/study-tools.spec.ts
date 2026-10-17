@@ -355,3 +355,30 @@ test('Lernstatistik: Bewertungen werden protokolliert und ausgewertet', async ({
   await forecast.getByRole('radio', { name: '30 Tage' }).click()
   await expect(forecast.getByRole('listitem')).toHaveCount(30)
 })
+
+test('Fokus-Runden mit Fach zählen und in der Lernstatistik sehen', async ({ page }) => {
+  await page.clock.install()
+  await login(page)
+  const bar = page.getByTestId('global-toolbar')
+  await bar.getByRole('button', { name: 'Werkzeuge' }).click()
+  await bar.getByRole('button', { name: 'Fokus-Timer' }).click()
+  const win = page.getByTestId('window-focus')
+  await win.getByRole('radio', { name: 'Countdown' }).click()
+  await win.getByRole('button', { name: '5 min', exact: true }).click()
+  await win.getByLabel('Fach').fill('Analysis I')
+  await win.getByLabel('Ziel').fill('Kapitel 3')
+  await win.getByRole('button', { name: 'Start' }).click()
+  await page.clock.fastForward('05:01')
+
+  // Die Runde ist offen, bis sie bestätigt ist – in der Meldung oder im Fenster
+  const pending = win.getByTestId('focus-pending')
+  await expect(pending).toContainText('5 min · Analysis I – Kapitel 3')
+  await shot(page, '53-focus-pending')
+  await page.getByRole('status').getByRole('button', { name: 'Zählen' }).click()
+  await expect(pending).toHaveCount(0)
+
+  await page.goto('/?v=stats')
+  const focus = page.getByTestId('stats-focus')
+  await expect(focus).toContainText('Analysis I')
+  await expect(focus).toContainText('Diese Woche: 5 min')
+})

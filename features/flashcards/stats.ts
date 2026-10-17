@@ -1,5 +1,6 @@
 // Lernstatistik: Einträge fürs Bewertungsprotokoll, Auswertung nach Tagen und Stapeln, Serie und Vorschau fälliger
 // Karten. Reine Logik ohne Browser- oder Server-Abhängigkeit.
+import { addDays } from '@/features/calendar/dates'
 import { DAY, startOfDay, type Rating } from './srs'
 import { reviewKey, sidesOf, type Side, type StateMap } from './study'
 import { MAX_ANSWER_MS } from './limits'
@@ -63,18 +64,6 @@ export function aggregateLog(
   }
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
-/** Datum (YYYY-MM-DD) in der Ortszeit */
-export const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-
-/** Tag davor bzw. danach (YYYY-MM-DD), unabhängig von der Zeitumstellung */
-export function shiftDay(date: string, n: number): string {
-  const [y, m, d] = date.split('-').map(Number)
-  const t = new Date(Date.UTC(y, m - 1, d + n))
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
-}
-
 /**
  * Lernserie: Tage am Stück mit mindestens einer Bewertung. Die aktuelle Serie zählt bis heute – ist heute noch
  * nichts gelernt, bis gestern (sie reißt erst, wenn der Tag ohne Lernen vorbei ist).
@@ -82,12 +71,12 @@ export function shiftDay(date: string, n: number): string {
 export function streaks(dates: Iterable<string>, today: string): { current: number; longest: number } {
   const set = new Set(dates)
   let current = 0
-  for (let d = set.has(today) ? today : shiftDay(today, -1); set.has(d); d = shiftDay(d, -1)) current++
+  for (let d = set.has(today) ? today : addDays(today, -1); set.has(d); d = addDays(d, -1)) current++
   let longest = 0
   for (const d of set) {
-    if (set.has(shiftDay(d, -1))) continue
+    if (set.has(addDays(d, -1))) continue
     let n = 0
-    for (let x = d; set.has(x); x = shiftDay(x, 1)) n++
+    for (let x = d; set.has(x); x = addDays(x, 1)) n++
     longest = Math.max(longest, n)
   }
   return { current, longest }

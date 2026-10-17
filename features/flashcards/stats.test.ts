@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DAY, MINUTE, schedule } from './srs'
-import { aggregateLog, dayKey, dueForecast, reviewLogEntry, shiftDay, streaks, type LogRow } from './stats'
+import { localDate } from '@/features/calendar/dates'
+import { aggregateLog, dueForecast, reviewLogEntry, streaks, type LogRow } from './stats'
 import { stateMap } from './study'
 import type { Card, CardReview } from './types'
 
@@ -51,7 +52,7 @@ describe('Auswertung', () => {
   })
 
   it('zählt je Tag und – für die letzten 30 Tage – je Stapel mit Trefferquote gelernter Karten', () => {
-    const dayOf = (t: number) => dayKey(new Date(t))
+    const dayOf = (t: number) => localDate(new Date(t))
     const { days, decks } = aggregateLog(
       [
         row(NOW - 40 * DAY, 3),
@@ -85,7 +86,6 @@ describe('Auswertung', () => {
     expect(streaks([], '2026-10-15')).toEqual({ current: 0, longest: 0 })
     // Monats- und Jahreswechsel
     expect(streaks(['2025-12-31', '2026-01-01'], '2026-01-01').current).toBe(2)
-    expect(shiftDay('2026-03-01', -1)).toBe('2026-02-28')
   })
 
   it('Vorschau: fällige Kartenseiten je Tag, Überfälliges heute, ohne neue und ausgesetzte Karten', () => {

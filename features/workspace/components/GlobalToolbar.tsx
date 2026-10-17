@@ -6,7 +6,7 @@ import { Timer, Wrench, X, type LucideIcon } from 'lucide-react'
 import { usePref } from '@/shared/client/prefs'
 import { cn } from '@/shared/ui/cn'
 import { FocusMiniTimer, FocusTimer, FocusTimerSettingsToggle } from '@/features/focus/components/FocusTimer'
-import { useFocusAlerts } from '@/features/focus/client/focus-timer'
+import { useFocusAlerts } from '@/features/focus/client/alerts'
 import { FloatingWindow } from './FloatingWindow'
 
 type Tool = {
