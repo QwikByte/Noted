@@ -29,8 +29,8 @@ export const SOURCE_LABELS: Record<CandidateSource, string> = {
 /** Quellen, die eindeutig als Karte gemeint sind (im Dialog vorausgewählt) */
 export const EXPLICIT_SOURCES: CandidateSource[] = ['syntax', 'question']
 
-const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
-const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/
+export const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
+export const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t#]*$/
 const CALLOUT_RE = /^>[ \t]*\[!([\w-]+)\][+-]?[ \t]*(.*)$/
 const TASK_RE = /^[ \t]*[-*+][ \t]+\[([ xX])\][ \t]+(.*)$/
 const LIST_PREFIX_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/

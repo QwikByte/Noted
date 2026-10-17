@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
-import { AppContext, type AppActions, type CardEditorInit, type NewNoteOptions } from '../client/context'
+import { AppContext, type AppActions, type CardEditorInit, type CardsFromNoteInit, type NewNoteOptions } from '../client/context'
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
 import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
@@ -16,6 +16,7 @@ import { CardsView } from '@/features/flashcards/components/CardsView'
 import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
+import { QuizView } from '@/features/flashcards/components/QuizView'
 import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
 import { CardsFromNoteDialog } from '@/features/flashcards/components/FromNoteDialog'
 import { SplitPane } from '@/features/pdf/components/SplitPane'
@@ -67,7 +68,7 @@ export default function NotesApp() {
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [cardEditor, setCardEditor] = useState<{ init: CardEditorInit; n: number } | null>(null)
-  const [fromNote, setFromNote] = useState<{ id: string; title: string; content: string } | null>(null)
+  const [fromNote, setFromNote] = useState<CardsFromNoteInit | null>(null)
 
   // PDF neben der aktuellen Ansicht – bleibt beim Wechseln der Notiz und nach dem Neuladen offen
   const [pdfPref, setPdfPref] = usePref<string>('noted:pdf', '')
@@ -272,11 +273,14 @@ export default function NotesApp() {
     case 'study':
       main = <StudyView key={`${view.scope}:${view.mode}`} scope={view.scope} mode={view.mode} />
       break
+    case 'quiz':
+      main = <QuizView key={view.id} id={view.id} />
+      break
     default:
       main = <Dashboard />
   }
 
-  const showTopBar = view.kind !== 'note' && view.kind !== 'study'
+  const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz'
   const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar'].includes(view.kind)
   // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')

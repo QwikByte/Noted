@@ -14,6 +14,8 @@ export type View =
   | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
   | { kind: 'study'; scope: StudyScope; mode: StudyMode }
+  /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten */
+  | { kind: 'quiz'; id: string }
 
 /** Was gelernt wird: alle Stapel, ein Stapel oder die Karten aus einer Notiz */
 export type StudyScope = 'all' | `deck:${string}` | `note:${string}`
@@ -33,6 +35,8 @@ function viewFromParams(params: URLSearchParams): View {
   if (s === 'all' || /^(deck|note):[\w-]+$/.test(s ?? '')) {
     return { kind: 'study', scope: s as StudyScope, mode: params.get('m') === 'practice' ? 'practice' : 'learn' }
   }
+  const quiz = params.get('quiz')
+  if (quiz) return { kind: 'quiz', id: quiz }
   const q = params.get('q')
   if (q !== null) return { kind: 'search', q }
   const v = params.get('v')
@@ -65,6 +69,8 @@ function viewToUrl(view: View): string {
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':
       return `/?s=${encodeURIComponent(view.scope)}${view.mode === 'practice' ? '&m=practice' : ''}`
+    case 'quiz':
+      return `/?quiz=${encodeURIComponent(view.id)}`
     default:
       return '/'
   }
