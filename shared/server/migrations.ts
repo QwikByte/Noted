@@ -324,4 +324,12 @@ export const migrations: string[] = [
   CREATE UNIQUE INDEX review_log_once ON review_log(user_id, card_id, side, reviewed_at);
   CREATE INDEX review_log_user ON review_log(user_id, reviewed_at);
   `,
+
+  /* 13: Wiederholungsplan mit FSRS, wählbar je Stapel (scheduler, retention = gewünschte Behaltensrate). Mit FSRS
+     geplante Kartenseiten haben zusätzlich Stabilität und Schwierigkeit; bei SM-2 bleiben beide leer. */ `
+  ALTER TABLE decks ADD COLUMN scheduler TEXT NOT NULL DEFAULT 'sm2' CHECK (scheduler IN ('sm2', 'fsrs'));
+  ALTER TABLE decks ADD COLUMN retention REAL NOT NULL DEFAULT 0.9 CHECK (retention BETWEEN 0.7 AND 0.99);
+  ALTER TABLE card_reviews ADD COLUMN stability REAL;
+  ALTER TABLE card_reviews ADD COLUMN difficulty REAL;
+  `,
 ]

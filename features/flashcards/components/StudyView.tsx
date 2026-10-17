@@ -13,7 +13,7 @@ import { errorMessage } from '@/shared/client/api'
 import { reviewQueue, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
-import { LEECH_LAPSES, formatInterval, previewIntervals, RATINGS, schedule, type Rating } from '../srs'
+import { LEECH_LAPSES, SM2, formatInterval, previewIntervals, RATINGS, schedule, type Plan, type Rating } from '../srs'
 import {
   LearnSession,
   PracticeSession,
@@ -171,7 +171,15 @@ function StudySession({
   const isMc = card?.type === 'mc' && card.options.length >= 2
   const singleChoice = isMc && card!.options.filter((o) => o.correct).length === 1
   const correct = isMc && answer.checked ? isCorrectSelection(card!.options, answer.selected) : null
-  const intervals = useMemo(() => (current && mode === 'learn' ? previewIntervals(state, shownAt) : null), [current, state, mode, shownAt])
+  // Wiederholungsplan des Stapels (SM-2 oder FSRS)
+  const deck = card ? live.decks.find((d) => d.id === card.deckId) : undefined
+  const scheduler = deck?.scheduler
+  const retention = deck?.retention
+  const plan = useMemo<Plan>(() => (scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention } : SM2), [scheduler, retention])
+  const intervals = useMemo(
+    () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan) : null),
+    [current, state, mode, shownAt, plan],
+  )
   const isCloze = card?.type === 'cloze'
   // Lückentext: Die Lücke wird beim Aufdecken im Satz ausgefüllt, darunter steht nur der Zusatz
   const question = !card
@@ -191,7 +199,7 @@ function StudySession({
     () => (card && isCloze ? answerText(clozeText(card.front, side)) : answerText(solution)),
     [card, isCloze, side, solution],
   )
-  const typing = !!card && card.type !== 'mc' && expected !== '' && !!live.decks.find((d) => d.id === card.deckId)?.typeAnswer
+  const typing = !!card && card.type !== 'mc' && expected !== '' && !!deck?.typeAnswer
   // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“
   const typedWrong = answer.result?.correct === false
 
@@ -199,7 +207,7 @@ function StudySession({
     (rating: Rating) => {
       if (!current || !(session instanceof LearnSession)) return
       const now = Date.now()
-      const next = schedule(state, rating, now)
+      const next = schedule(state, rating, now, plan)
       if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
         toast.show(
           `Diese Karte hast du jetzt ${next.lapses}-mal vergessen. Am besten überarbeitest oder teilst du sie – im Stapel unter „Problemkarten“.`,
@@ -215,7 +223,7 @@ function StudySession({
       setSeen((prev) => new Set(prev).add(itemKey(current)))
       advance(session)
     },
-    [current, state, session, advance, live.states, toast, shownAt],
+    [current, state, session, advance, live.states, toast, shownAt, plan],
   )
 
   const practiceAnswer = useCallback(

@@ -6,7 +6,7 @@ import { isValidId, uuid } from '@/shared/server/crypto'
 import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_CLOZES, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
 import { clozeCount, normalizeCloze } from '../cloze'
 import { sidesOf } from '../study'
-import { DEFAULT_NEW_PER_DAY } from '../srs'
+import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
 import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
@@ -19,6 +19,8 @@ type DeckRow = {
   description: string
   new_per_day: number
   type_answer: 0 | 1
+  scheduler: 'sm2' | 'fsrs'
+  retention: number
   created_at: number
   updated_at: number
 }
@@ -51,6 +53,8 @@ type ReviewRow = {
   due: number
   reviewed_at: number
   introduced_at: number
+  stability: number | null
+  difficulty: number | null
 }
 
 const toDeck = (r: DeckRow): Deck => ({
@@ -59,6 +63,8 @@ const toDeck = (r: DeckRow): Deck => ({
   description: r.description,
   newPerDay: r.new_per_day,
   typeAnswer: r.type_answer === 1,
+  scheduler: r.scheduler,
+  retention: r.retention,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -98,6 +104,7 @@ const toReview = (r: ReviewRow): CardReview => ({
   due: r.due,
   reviewedAt: r.reviewed_at,
   introducedAt: r.introduced_at,
+  ...(r.stability != null && r.difficulty != null ? { stability: r.stability, difficulty: r.difficulty } : {}),
 })
 
 /** Alles auf einmal – der Browser berechnet daraus fällige Karten und Lernsitzungen (auch offline). */
@@ -132,7 +139,15 @@ function checkDeckName(userId: number, name: string, excludeId?: string): string
   return clean
 }
 
-export type DeckInput = { id?: string; name: string; description?: string; newPerDay?: number; typeAnswer?: boolean }
+export type DeckInput = {
+  id?: string
+  name: string
+  description?: string
+  newPerDay?: number
+  typeAnswer?: boolean
+  scheduler?: Deck['scheduler']
+  retention?: number
+}
 
 export function createDeck(userId: number, input: DeckInput): Deck {
   const name = checkDeckName(userId, input.name)
@@ -140,10 +155,21 @@ export function createDeck(userId: number, input: DeckInput): Deck {
   const t = Date.now()
   getDb()
     .prepare(
-      `INSERT INTO decks (id, user_id, name, description, new_per_day, type_answer, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO decks (id, user_id, name, description, new_per_day, type_answer, scheduler, retention, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, userId, name, (input.description ?? '').trim(), input.newPerDay ?? DEFAULT_NEW_PER_DAY, input.typeAnswer ? 1 : 0, t, t)
+    .run(
+      id,
+      userId,
+      name,
+      (input.description ?? '').trim(),
+      input.newPerDay ?? DEFAULT_NEW_PER_DAY,
+      input.typeAnswer ? 1 : 0,
+      input.scheduler ?? 'sm2',
+      input.retention ?? DEFAULT_RETENTION,
+      t,
+      t,
+    )
   return toDeck(getDeckRow(userId, id))
 }
 
@@ -152,13 +178,16 @@ export function updateDeck(userId: number, id: string, patch: Partial<Omit<DeckI
   const name = patch.name !== undefined ? checkDeckName(userId, patch.name, id) : deck.name
   getDb()
     .prepare(
-      'UPDATE decks SET name = ?, description = ?, new_per_day = ?, type_answer = ?, updated_at = ? WHERE id = ? AND user_id = ?',
+      `UPDATE decks SET name = ?, description = ?, new_per_day = ?, type_answer = ?, scheduler = ?, retention = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
     )
     .run(
       name,
       patch.description !== undefined ? patch.description.trim() : deck.description,
       patch.newPerDay ?? deck.new_per_day,
       patch.typeAnswer !== undefined ? (patch.typeAnswer ? 1 : 0) : deck.type_answer,
+      patch.scheduler ?? deck.scheduler,
+      patch.retention ?? deck.retention,
       Date.now(),
       id,
       userId,
@@ -345,11 +374,14 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
   const db = getDb()
   const cardInfo = db.prepare('SELECT type, front, deck_id FROM cards WHERE id = ? AND user_id = ?')
   const upsert = db.prepare(
-    `INSERT INTO card_reviews (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at)
-     VALUES (@cardId, @side, @userId, @phase, @step, @interval, @ease, @reps, @lapses, @due, @reviewedAt, @introducedAt)
+    `INSERT INTO card_reviews
+       (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at, stability, difficulty)
+     VALUES (@cardId, @side, @userId, @phase, @step, @interval, @ease, @reps, @lapses, @due, @reviewedAt, @introducedAt,
+       @stability, @difficulty)
      ON CONFLICT (card_id, side) DO UPDATE SET
        phase = excluded.phase, step = excluded.step, interval = excluded.interval, ease = excluded.ease,
        reps = excluded.reps, lapses = excluded.lapses, due = excluded.due, reviewed_at = excluded.reviewed_at,
+       stability = excluded.stability, difficulty = excluded.difficulty,
        introduced_at = MIN(card_reviews.introduced_at, excluded.introduced_at)
      WHERE excluded.reviewed_at > card_reviews.reviewed_at`,
   )
@@ -367,7 +399,9 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
       return c && side < sidesOf(c).length ? c : null
     }
     for (const r of reviews) {
-      if (card(r.cardId, r.side)) saved += upsert.run({ ...r, userId }).changes
+      if (card(r.cardId, r.side)) {
+        saved += upsert.run({ ...r, userId, stability: r.stability ?? null, difficulty: r.difficulty ?? null }).changes
+      }
     }
     for (const e of log) {
       const c = card(e.cardId, e.side)
@@ -386,6 +420,8 @@ export const deckSchema = z.object({
   description: z.string().max(5000).optional(),
   newPerDay: z.number().int().min(0).max(9999).optional(),
   typeAnswer: z.boolean().optional(),
+  scheduler: z.enum(['sm2', 'fsrs']).optional(),
+  retention: z.number().min(0.7).max(0.99).optional(),
 })
 
 export const cardSchema = z.object({
@@ -415,6 +451,8 @@ export const reviewSchema = z.object({
   due: time,
   reviewedAt: time,
   introducedAt: time,
+  stability: z.number().min(0.01).max(36_500).nullable().optional(),
+  difficulty: z.number().min(1).max(10).nullable().optional(),
 })
 
 export const reviewLogSchema = z.object({

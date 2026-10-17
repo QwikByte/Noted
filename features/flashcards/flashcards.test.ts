@@ -66,6 +66,32 @@ describe('Stapel', () => {
     expect(bad.status).toBe(400)
   })
 
+  it('speichert den Wiederholungsplan je Stapel und den FSRS-Lernstand je Kartenseite', async () => {
+    const d = await newDeck('FSRS', { scheduler: 'fsrs', retention: 0.85 })
+    expect(d).toMatchObject({ scheduler: 'fsrs', retention: 0.85 })
+    expect((await newDeck('Standard')).scheduler).toBe('sm2')
+    const bad = await call(deck.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: d.id }, body: { retention: 0.5 } })
+    expect(bad.status).toBe(400)
+
+    const [c, old] = (
+      await addCards(d.id, [
+        { type: 'basic', front: 'A', back: 'B' },
+        { type: 'basic', front: 'C', back: 'D' },
+      ])
+    ).data.cards as Card[]
+    const plan = { kind: 'fsrs', retention: 0.85 } as const
+    const t = Date.now()
+    const withMemory = { cardId: c.id, side: 0, ...schedule(null, 4, t, plan) }
+    expect(withMemory.stability).toBeGreaterThan(0)
+    // Ältere Geräte schicken keine Stabilität mit
+    const withoutMemory = { cardId: old.id, side: 0, ...schedule(null, 4, t) }
+    const r = await call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [withMemory, withoutMemory] } })
+    expect(r.data.saved).toBe(2)
+    const stored = (await data()).reviews
+    expect(stored.find((x) => x.cardId === c.id)).toMatchObject({ stability: withMemory.stability, difficulty: withMemory.difficulty })
+    expect(stored.find((x) => x.cardId === old.id)).not.toHaveProperty('stability')
+  })
+
   it('ist ohne Anmeldung und ohne CSRF-Header nicht nutzbar', async () => {
     expect((await call(flashcards.GET, '/api/flashcards')).status).toBe(401)
     expect((await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'X' }, csrf: false })).status).toBe(403)

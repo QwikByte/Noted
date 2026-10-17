@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Field, Input, Switch } from '@/shared/ui/input'
+import { Field, Input, Select, Switch } from '@/shared/ui/input'
 import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
@@ -10,10 +10,10 @@ import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, updateDeck } fro
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
-import { DEFAULT_NEW_PER_DAY } from '../srs'
+import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
 import type { AnkiImportResult, Deck } from '../types'
 
-/** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit und „Antwort eintippen“ ändern. */
+/** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit, „Antwort eintippen“ und Wiederholungsplan ändern. */
 export function DeckSettingsDialog({
   deck,
   onClose,
@@ -28,6 +28,8 @@ export function DeckSettingsDialog({
   const [description, setDescription] = useState(deck?.description ?? '')
   const [limit, setLimit] = useState(String(deck?.newPerDay ?? DEFAULT_NEW_PER_DAY))
   const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
+  const [scheduler, setScheduler] = useState<Deck['scheduler']>(deck?.scheduler ?? 'sm2')
+  const [retention, setRetention] = useState(String(Math.round((deck?.retention ?? DEFAULT_RETENTION) * 100)))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -35,9 +37,13 @@ export function DeckSettingsDialog({
     const newPerDay = Number(limit)
     if (!name.trim()) return setError('Bitte gib einen Namen ein.')
     if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > 9999) return setError('Das Tageslimit muss zwischen 0 und 9999 liegen.')
+    const percent = Number(retention)
+    if (scheduler === 'fsrs' && (!Number.isInteger(percent) || percent < 70 || percent > 99)) {
+      return setError('Die Behaltensrate muss zwischen 70 und 99 % liegen.')
+    }
     setSaving(true)
     try {
-      const input = { name: name.trim(), description, newPerDay, typeAnswer }
+      const input = { name: name.trim(), description, newPerDay, typeAnswer, scheduler, ...(scheduler === 'fsrs' ? { retention: percent / 100 } : {}) }
       const saved = deck ? await updateDeck(qc, deck.id, input) : await createDeck(qc, input)
       onSaved?.(saved)
       onClose()
@@ -80,6 +86,30 @@ export function DeckSettingsDialog({
         <Field label="Neue Karten pro Tag" hint="So viele noch nie gelernte Karten kommen im Lernmodus täglich höchstens dazu. Üben geht immer mit allen Karten.">
           {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={9999} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
         </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Wiederholungsplan"
+            hint={
+              scheduler === 'fsrs'
+                ? 'FSRS plant nach Stabilität und Schwierigkeit jeder Karte – meist weniger Wiederholungen bei gleicher Behaltensrate. Der bisherige Lernstand bleibt erhalten.'
+                : 'SM-2 wie in Anki: Die Abstände wachsen mit der Leichtigkeit jeder Karte.'
+            }
+          >
+            {(id) => (
+              <Select id={id} value={scheduler} onChange={(e) => setScheduler(e.target.value as Deck['scheduler'])}>
+                <option value="sm2">SM-2 (wie Anki)</option>
+                <option value="fsrs">FSRS</option>
+              </Select>
+            )}
+          </Field>
+          {scheduler === 'fsrs' ? (
+            <Field label="Gewünschte Behaltensrate (%)" hint="Höher heißt: mehr Wiederholungen, dafür seltener vergessen. 90 % ist ein guter Wert.">
+              {(id) => (
+                <Input id={id} type="number" inputMode="numeric" min={70} max={99} value={retention} onChange={(e) => setRetention(e.target.value)} className="w-32" />
+              )}
+            </Field>
+          ) : null}
+        </div>
         <Switch
           checked={typeAnswer}
           onChange={setTypeAnswer}
