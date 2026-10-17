@@ -49,17 +49,22 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Eigener Bereich **Karteikarten** mit Stapeln (z. B. pro Fach). Kartenarten: Grundkarte (Frage → Antwort), beidseitig (wird in beide Richtungen abgefragt) und **Multiple Choice** mit einer oder mehreren richtigen Antworten und optionaler Erklärung. Karten können Markdown, LaTeX-Formeln, Bilder und Links auf Notizen oder PDF-Seiten enthalten.
 - **Lernmodus mit Wiederholungsplan** (Spaced Repetition nach dem Vorbild von Anki/SM-2): Neue Karten durchlaufen kurze Lernschritte (1 und 10 Minuten), danach kommen sie in wachsenden Abständen wieder. Du bewertest mit *Nochmal*, *Schwer*, *Gut* oder *Einfach*; auf den Knöpfen steht, wann die Karte wiederkommt. Vergessene Karten werden neu gelernt. Je Stapel gibt es ein Tageslimit für neue Karten (Standard 20).
 - **Übungsmodus** (z. B. kurz vor der Klausur): alle Karten in zufälliger Reihenfolge, ohne den Lernplan zu verändern. Falsch beantwortete Karten kommen wieder; am Ende siehst du deine Quote und kannst die Fehler wiederholen.
+- **Antwort eintippen** (pro Stapel unter **⋮ → Stapel bearbeiten** einschaltbar): Bei Grund- und beidseitigen Karten tippst du die Antwort ein, bevor sie aufgedeckt wird. Noted markiert die Unterschiede zur richtigen Antwort Zeichen für Zeichen; Groß- und Kleinschreibung, Leerzeichen und Satzzeichen am Ende zählen nicht, Akzente und Umlaute schon. Bewerten musst du weiterhin selbst – bei richtiger Eingabe ist *Gut* vorausgewählt, bei falscher *Nochmal*.
+- **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
+- **Notiz abfragen** (**⋮ → Abfragen** in einer Notiz): ein Selbsttest direkt aus der Mitschrift, ohne vorher Karten anzulegen. Jede Überschrift mit Text darunter wird zur Frage, der Abschnitt ist verdeckt, bis du ihn aufdeckst und selbst bewertest. Am Ende siehst du, was du nicht wusstest, kannst es wiederholen oder als Karteikarten übernehmen. Ohne Einfluss auf den Wiederholungsplan; geht mit Markdown, formatiertem Text, Mindmaps und Canvas.
 - Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort` oder tabulatorgetrennt, z. B. aus Quizlet oder Anki kopiert).
 - **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen.
 - Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
-- Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut*, `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten.
+- Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut* (nach einer falsch eingetippten Antwort *Nochmal*), `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten. Beim Abfragen einer Notiz: `Leertaste`/`Enter` deckt auf bzw. „gewusst“, `1` „nicht gewusst“.
 
 **Startseite und Kalender**
 - Die Startseite zeigt auf einen Blick deine Termine von heute und den nächsten Tagen und die fälligen Karteikarten je Stapel (ein Klick startet das Lernen). Darunter stehen wie gewohnt Vorlagen, angeheftete und zuletzt bearbeitete Notizen.
+- Ist heute eine Vorlesung vorbei, zu der es eine Mitschrift ohne Karteikarten gibt, schlägt die Startseite vor, Karteikarten daraus zu erstellen. Weggeklickt bleibt der Hinweis auf diesem Gerät verschwunden.
 - **Eigener Kalender** (Seitenleiste → **Kalender**): Wochenansicht mit Stundenraster und Monatsansicht. Auf dem Handy zeigt die Woche einen Tag; Wischen blättert zum nächsten bzw. vorigen Tag, im Monat führt ein Tipp auf den Tag dorthin.
 - Termine mit Uhrzeit oder ganztägig (auch über mehrere Tage), mit Ort, Farbe und Notizen. Ein Klick ins Raster legt einen Termin zur angeklickten Zeit an, ein Klick auf einen Termin öffnet ihn.
 - **Stundenplan als Serie:** Termine wiederholen sich jede Woche oder alle 2, 3 oder 4 Wochen, auf Wunsch bis zu einem Datum (z. B. Vorlesungsende). Bei einer Serie gilt eine Änderung zunächst **nur für diesen Termin** (z. B. Raumwechsel oder eine ausfallende Vorlesung); **Alle Termine** ändert die ganze Serie.
 - **Mitschrift zum Termin:** Ein Klick legt eine Notiz mit der Vorlage „Vorlesung“ an, Titel aus Datum und Termin (z. B. `2026-10-19 Analysis I`). Gibt es sie schon, öffnet der Knopf sie – auf der Startseite und im Termin.
+- **Fokus starten:** Im Termin startet ein Klick den Fokus-Timer als Countdown mit der Dauer des Termins – praktisch für eingeplante Lernblöcke. Läuft der Termin schon, zählt die Restzeit.
 - **.ics-Import und -Export** (Menü ⋮ im Kalender): Stundenplan aus dem Vorlesungsverzeichnis, aus Outlook oder Google einmalig übernehmen. Zeiten aus anderen Zeitzonen rechnet Noted in die Ortszeit des Geräts um. Wöchentliche Serien bleiben Serien, einzelne Ausnahmen und Änderungen werden übernommen; andere Wiederholungen (täglich, monatlich) übernimmt Noted nur mit dem ersten Termin. Ein zweiter Import derselben Datei legt nichts doppelt an. Der Export (`Kalender.ics`) lässt sich in jede Kalender-App einlesen.
 - Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
@@ -69,7 +74,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Leiste und Mini-Timer verdecken nichts: Sie setzen sich über die Bewertungsknöpfe beim Lernen, über „Neue Notiz“ auf dem Handy und über die Zoom-Knöpfe in Mindmap und Canvas.
 - **Fokus-Timer:**
   - *Pomodoro*: 25 Minuten Fokus, 5 Minuten Pause, nach 4 Runden eine lange Pause von 15 Minuten. Alle Zeiten sind einstellbar, Fokus und Pausen wechseln automatisch.
-  - *Countdown*: 5 bis 90 Minuten oder eine eigene Dauer.
+  - *Countdown*: 5 bis 90 Minuten oder eine eigene Dauer – oder direkt aus einem Termin im Kalender mit dessen Dauer.
   - Die Einstellungen öffnest du über das Symbol im Fensterkopf neben „Schließen“.
   - Schließt du das Fenster, während der Timer läuft, bleibt er klein unten links sichtbar – am Desktop direkt neben der Seitenleiste. Ein Klick darauf öffnet ihn wieder.
   - Am Ende einer Phase gibt es einen Ton und eine Meldung. Auf Wunsch kommt zusätzlich eine Systembenachrichtigung, wenn du gerade nicht in Noted bist.
@@ -332,7 +337,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
-  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown
+  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Karten ↔ Markdown, Notiz abfragen
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
