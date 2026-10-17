@@ -10,6 +10,9 @@ export type EventRepeat = {
   until: string | null
 }
 
+/** Klausur: Die verknüpften Karteikarten-Stapel werden bis zum Termin wiederholt */
+export type EventExam = { deckIds: string[] }
+
 /** Die bearbeitbaren Angaben eines Termins */
 export type EventInput = {
   title: string
@@ -24,6 +27,8 @@ export type EventInput = {
   repeat: EventRepeat | null
   /** Ausgelassene Termine einer Serie (Tag des Beginns, YYYY-MM-DD) */
   exdates: string[]
+  /** null = keine Klausur; Klausuren wiederholen sich nicht */
+  exam: EventExam | null
 }
 
 export type CalendarEvent = EventInput & { id: string; createdAt: number; updatedAt: number }

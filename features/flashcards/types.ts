@@ -21,7 +21,12 @@ export type Deck = {
   retention: number
   createdAt: number
   updatedAt: number
+  /** Nur im Browser, aus dem Kalender ergänzt: Klausuren, auf die der Stapel vorbereitet (nach Datum) */
+  exams?: DeckExam[]
 }
+
+/** Klausur im Kalender, mit der ein Stapel verknüpft ist – `date`: Tag der Klausur (YYYY-MM-DD) */
+export type DeckExam = { id: string; title: string; date: string }
 
 export type Card = {
   id: string

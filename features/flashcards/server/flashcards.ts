@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { getDb } from '@/shared/server/db'
 import { ApiError, badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
-import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_CLOZES, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
+import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_CLOZES, MAX_NEW_PER_DAY, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
 import { clozeCount, normalizeCloze } from '../cloze'
 import { sidesOf } from '../study'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
@@ -418,7 +418,7 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
 export const deckSchema = z.object({
   name: z.string().max(1000),
   description: z.string().max(5000).optional(),
-  newPerDay: z.number().int().min(0).max(9999).optional(),
+  newPerDay: z.number().int().min(0).max(MAX_NEW_PER_DAY).optional(),
   typeAnswer: z.boolean().optional(),
   scheduler: z.enum(['sm2', 'fsrs']).optional(),
   retention: z.number().min(0.7).max(0.99).optional(),

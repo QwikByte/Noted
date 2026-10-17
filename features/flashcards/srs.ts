@@ -102,6 +102,14 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
       hard = Math.min(fsrsDays(2), fsrsDays(3))
       good = Math.min(MAX_INTERVAL, Math.max(fsrsDays(3), hard + 1))
       easy = Math.min(MAX_INTERVAL, Math.max(fsrsDays(4), good + 1))
+    } else if (prev && prev.due - now > DAY) {
+      // Vorgezogen (vor einer Klausur): Der Abstand wächst nur um die tatsächlich vergangene Zeit, bei „Gut“ und
+      // „Einfach“ wird er aber nicht kürzer als bisher – wie bei Anki
+      const elapsed = (now - prev.reviewedAt) / DAY
+      hard = clampInterval(Math.max((s.interval * HARD_FACTOR) / 2, elapsed * HARD_FACTOR))
+      good = Math.min(MAX_INTERVAL, Math.max(hard + 1, s.interval, Math.round(elapsed * s.ease)))
+      const easyBonus = (1 + EASY_BONUS) / 2
+      easy = Math.min(MAX_INTERVAL, Math.max(good + 1, Math.round(Math.max(s.interval, elapsed * s.ease) * easyBonus)))
     } else {
       // Zu spät wiederholte Karten wurden trotzdem gewusst – das zählt teilweise mit
       const overdue = Math.max(0, (now - (prev?.due ?? now)) / DAY)

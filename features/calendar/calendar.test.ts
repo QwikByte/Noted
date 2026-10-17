@@ -7,6 +7,8 @@ import * as importRoute from '@/app/api/calendar/import/route'
 import * as exportRoute from '@/app/api/calendar/export/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
+import * as decks from '@/app/api/decks/route'
+import * as deckRoute from '@/app/api/decks/[id]/route'
 import { getDb } from '@/shared/server/db'
 import { parseIcs } from './ics'
 import { occurrences } from './event'
@@ -34,6 +36,7 @@ const lecture: EventInput = {
   end: '2026-10-19T11:45',
   repeat: { weeks: 1, until: '2027-02-08' },
   exdates: [],
+  exam: null,
 }
 
 async function create(input: EventInput, cookie = token) {
@@ -215,5 +218,80 @@ describe('.ics-Import und -Export', () => {
     })
     expect(r.status).toBe(400)
     expect(await list()).toEqual([])
+  })
+})
+
+describe('Klausuren', () => {
+  const exam: EventInput = {
+    ...lecture,
+    title: 'Klausur Analysis I',
+    start: '2027-02-15T09:00',
+    end: '2027-02-15T11:00',
+    repeat: null,
+    exam: { deckIds: [] },
+  }
+
+  async function deck(name: string, cookie = token) {
+    const r = await call(decks.POST, '/api/decks', { cookie, body: { name } })
+    expect(r.status).toBe(201)
+    return r.data.deck.id as string
+  }
+
+  const put = (id: string, body: EventInput) => call(eventRoute.PUT, '/', { method: 'PUT', cookie: token, params: { id }, body })
+  const links = () => (getDb().prepare('SELECT COUNT(*) AS n FROM exam_decks').get() as { n: number }).n
+
+  it('verknüpft nur eigene Stapel und löst die Verknüpfung mit Stapel, Klausur oder Termin wieder', async () => {
+    const analysis = await deck('Analysis I')
+    const algebra = await deck('Lineare Algebra I')
+    expect((await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'carla', password: 'Geheimes-Wort-12' } })).status).toBe(201)
+    const carla = await loginAs('carla', 'Geheimes-Wort-12')
+    await call(password.POST, '/', { cookie: carla, body: { currentPassword: 'Geheimes-Wort-12', newPassword: 'Geheimes-Wort-34' } })
+    const foreign = await deck('Fremder Stapel', carla)
+
+    const e = await create({ ...exam, exam: { deckIds: [analysis, algebra, analysis, foreign, 'gibt-es-nicht'] } })
+    expect(e.exam?.deckIds.toSorted()).toEqual([analysis, algebra].toSorted())
+    expect(await list()).toEqual([e])
+
+    // Gelöschter Stapel fällt aus der Klausur
+    expect((await call(deckRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: algebra } })).status).toBe(200)
+    expect((await list())[0].exam).toEqual({ deckIds: [analysis] })
+
+    // Keine Klausur mehr – und wieder eine
+    expect((await put(e.id, { ...exam, exam: null })).data.event.exam).toBeNull()
+    expect(links()).toBe(0)
+    expect((await put(e.id, { ...exam, exam: { deckIds: [analysis] } })).data.event.exam).toEqual({ deckIds: [analysis] })
+
+    // Ein fremder Termin lässt sich nicht zur Klausur machen
+    expect((await call(eventRoute.PUT, '/', { method: 'PUT', cookie: carla, params: { id: e.id }, body: exam })).status).toBe(404)
+
+    expect((await call(eventRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: e.id } })).status).toBe(200)
+    expect(links()).toBe(0)
+    await call(deckRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: analysis } })
+  })
+
+  it('lässt Klausuren sich nicht wiederholen und nimmt Termine älterer App-Versionen ohne Angabe an', async () => {
+    const series = await call(calendar.POST, '/api/calendar', { cookie: token, body: { ...lecture, exam: { deckIds: [] } } })
+    expect(series.status).toBe(400)
+    expect(series.data.message).toBe('Eine Klausur kann sich nicht wiederholen.')
+
+    const old: Partial<EventInput> = { ...lecture }
+    delete old.exam
+    const r = await call(calendar.POST, '/api/calendar', { cookie: token, body: old })
+    expect(r.status).toBe(201)
+    expect(r.data.event.exam).toBeNull()
+  })
+
+  it('macht aus dem geänderten Termin einer Serie auf Wunsch eine Klausur', async () => {
+    const d = await deck('Numerik')
+    const s = await create(lecture)
+    const r = await call(occurrence.POST, '/', {
+      cookie: token,
+      params: { id: s.id },
+      body: { date: '2026-10-26', event: { ...lecture, start: '2026-10-26T10:15', end: '2026-10-26T11:45', repeat: null, exam: { deckIds: [d] } } },
+    })
+    expect(r.status).toBe(200)
+    expect(r.data.event.exam).toEqual({ deckIds: [d] })
+    expect(r.data.series.exam).toBeNull()
+    await call(deckRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: d } })
   })
 })

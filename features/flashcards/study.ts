@@ -1,6 +1,7 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
 import { clozeCount } from './cloze'
+import { examDue, nextExam } from './exam'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
 /** Abgefragte Seite: 0 = Vorderseite, 1 = Rückseite (beidseitig), bei Lückentexten die Nummer der Lücke */
@@ -54,18 +55,24 @@ export type DeckCounts = {
   due: number
   /** Heute schon abgefragt */
   reviewedToday: number
+  /** Heute zum ersten Mal gelernt (zählt für das Tageslimit) */
+  introducedToday: number
   /** Morgen fällig (ohne neue Karten) */
   dueTomorrow: number
 }
 
 type Plan = { fresh: StudyItem[]; learning: StudyItem[]; review: StudyItem[]; counts: DeckCounts }
 
+type PlannedDeck = Pick<Deck, 'newPerDay' | 'exams'>
+
 /**
  * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
  * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen nicht dran.
+ * Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts).
  */
-function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
+function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
   const today = startOfDay(now)
+  const exam = nextExam(deck.exams, now)
   const eod = endOfDay(now)
   const eot = eod + 86_400_000
   const fresh: StudyItem[] = []
@@ -97,10 +104,11 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
         continue
       }
       if (state.reviewedAt >= today) reviewedToday++
-      if (state.due <= eod) {
+      const due = exam ? examDue(state, reviewKey(card.id, side), exam, now) : state.due
+      if (due <= eod) {
         if (state.phase === 'review') review.push({ card, side, kind: 'review' })
         else learning.push({ card, side, kind: 'learning' })
-      } else if (state.due <= eot) dueTomorrow++
+      } else if (due <= eot) dueTomorrow++
     }
   }
   const newToday = Math.max(0, Math.min(candidates.length, deck.newPerDay - introducedToday))
@@ -120,12 +128,13 @@ function planDeck(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap
       review: review.length,
       due: newToday + learning.length + review.length,
       reviewedToday,
+      introducedToday,
       dueTomorrow,
     },
   }
 }
 
-export function deckCounts(deck: Pick<Deck, 'newPerDay'>, cards: Card[], states: StateMap, now: number): DeckCounts {
+export function deckCounts(deck: PlannedDeck, cards: Card[], states: StateMap, now: number): DeckCounts {
   return planDeck(deck, cards, states, now).counts
 }
 
@@ -155,7 +164,7 @@ export class LearnSession {
 
   /** `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden */
   constructor(
-    decks: Pick<Deck, 'id' | 'newPerDay'>[],
+    decks: (PlannedDeck & Pick<Deck, 'id'>)[],
     cards: Card[],
     states: StateMap,
     now: number,

@@ -1,11 +1,13 @@
 'use client'
 // Karteikarten im Browser: Daten laden, Änderungen an den Server schicken und Bewertungen aus Lernsitzungen
 // lokal sammeln. Bewertungen funktionieren auch offline – sie liegen bis zum Senden im localStorage, zusammen mit
-// ihrem Eintrag fürs Bewertungsprotokoll (Statistik).
+// ihrem Eintrag fürs Bewertungsprotokoll (Statistik). Klausuren aus dem Kalender werden an ihre Stapel gehängt.
 
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError, NetworkError } from '@/shared/client/api'
+import { useEvents } from '@/features/calendar/client/calendar'
+import { examsByDeck } from '../exam'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
 import type { AnkiImportResult, Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
@@ -266,7 +268,7 @@ export type Flashcards = FlashcardData & { states: StateMap }
 
 const NO_PENDING: CardReview[] = []
 
-/** Stapel, Karten und Lernstand (inkl. noch nicht gesendeter Bewertungen). */
+/** Stapel (mit ihren Klausuren), Karten und Lernstand (inkl. noch nicht gesendeter Bewertungen). */
 export function useFlashcards() {
   const query = useQuery({
     queryKey: flashcardsKey,
@@ -277,11 +279,14 @@ export function useFlashcards() {
     },
   })
   const pending = useSyncExternalStore(reviewQueue.subscribe, reviewQueue.getSnapshot, () => NO_PENDING)
+  const { data: events } = useEvents()
   const data = useMemo<Flashcards | null>(() => {
     if (!query.data) return null
     const reviews = pending.length ? mergeReviews(query.data.reviews, pending) : query.data.reviews
-    return { ...query.data, reviews, states: stateMap(reviews) }
-  }, [query.data, pending])
+    const exams = examsByDeck(events ?? [])
+    const decks = exams.size ? query.data.decks.map((d) => ({ ...d, exams: exams.get(d.id) })) : query.data.decks
+    return { ...query.data, decks, reviews, states: stateMap(reviews) }
+  }, [query.data, pending, events])
   return { ...query, data }
 }
 

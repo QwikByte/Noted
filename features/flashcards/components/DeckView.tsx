@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  CalendarClock,
   ChevronRight,
   Copy,
   Dumbbell,
@@ -40,26 +41,36 @@ import {
   resetCardProgress,
   resetDeckProgress,
   updateCard,
+  updateDeck,
   useFlashcards,
 } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import { copyText } from '@/shared/client/clipboard'
 import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
+import { daysUntil, examDue, examNewPerDay, nextExam } from '../exam'
+import { MAX_NEW_PER_DAY } from '../limits'
+import { longDate } from '@/features/calendar/dates'
 import { LEECH_LAPSES, endOfDay, formatInterval } from '../srs'
-import { byPosition, cardLapses, deckCounts, isProblemCard, reviewKey, sidesOf, type StateMap } from '../study'
-import type { Card } from '../types'
+import { byPosition, cardLapses, deckCounts, isProblemCard, reviewKey, sidesOf, type DeckCounts, type StateMap } from '../study'
+import type { Card, Deck, DeckExam } from '../types'
 
 const PAGE = 100
 
 type CardFilter = 'all' | 'problem' | 'suspended'
 
-function dueLabel(card: Card, states: StateMap, now: number): { text: string; tone: 'accent' | 'neutral' | 'warning' } {
+/** Nächste Abfrage der Karte – vor einer Klausur wie im Lernmodus vorgezogen */
+function dueLabel(
+  card: Card,
+  states: StateMap,
+  now: number,
+  exam: DeckExam | null,
+): { text: string; tone: 'accent' | 'neutral' | 'warning' } {
   let earliest = Infinity
   for (const side of sidesOf(card)) {
     const s = states.get(reviewKey(card.id, side))
     if (!s) return { text: 'Neu', tone: 'accent' }
-    earliest = Math.min(earliest, s.due)
+    earliest = Math.min(earliest, exam ? examDue(s, reviewKey(card.id, side), exam, now) : s.due)
   }
   if (earliest <= endOfDay(now)) return { text: 'Heute fällig', tone: 'warning' }
   return { text: `in ${formatInterval(earliest - now)}`, tone: 'neutral' }
@@ -82,6 +93,7 @@ export function DeckView({ id }: { id: string }) {
   const deck = data?.decks.find((d) => d.id === id)
   const cards = useMemo(() => (data ? data.cards.filter((c) => c.deckId === id).sort(byPosition) : []), [data, id])
   const counts = data && deck ? deckCounts(deck, cards, data.states, now) : null
+  const exam = nextExam(deck?.exams, now)
   const status = useMemo(() => statusCounts(cards, data?.states ?? new Map()), [cards, data])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
   const problems = useMemo(() => new Set(data ? cards.filter((c) => isProblemCard(c, data.states)).map((c) => c.id) : []), [cards, data])
@@ -219,6 +231,7 @@ export function DeckView({ id }: { id: string }) {
             <Legend counts={status} />
           </div>
         ) : null}
+        {exam && cards.length > 0 ? <ExamPlan deck={deck} counts={counts} exam={exam} now={now} /> : null}
       </div>
 
       <div className="mb-3 flex items-center gap-2">
@@ -298,7 +311,7 @@ export function DeckView({ id }: { id: string }) {
       ) : (
         <ul className="space-y-2" data-testid="card-list">
           {filtered.slice(0, limit).map((card) => {
-            const due = dueLabel(card, data.states, now)
+            const due = dueLabel(card, data.states, now, exam)
             const noteTitle = card.noteId ? noteTitles.get(card.noteId) : undefined
             const problem = problems.has(card.id)
             const learned = sidesOf(card).some((side) => data.states.has(reviewKey(card.id, side)))
@@ -426,5 +439,40 @@ export function DeckView({ id }: { id: string }) {
         }}
       />
     </Page>
+  )
+}
+
+/** Klausurmodus: Was bis zur Klausur passiert – und wie viele neue Karten pro Tag es braucht, um alle zu schaffen */
+function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts; exam: DeckExam; now: number }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const days = daysUntil(exam, now)
+  const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now))
+  const short = counts.newTotal > 0 && perDay > deck.newPerDay
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3 text-sm" data-testid="exam-plan">
+      <CalendarClock className="size-4 shrink-0 text-accent-text" />
+      <p className="min-w-0 flex-1 text-muted">
+        <span className="font-medium text-fg">{exam.title}</span> {days === 1 ? 'morgen' : `in ${days} Tagen`} ({longDate(exam.date)}):
+        Bis dahin kommt jede gelernte Karte noch einmal dran.
+        {counts.newTotal === 0
+          ? null
+          : short
+            ? ` Um alle ${counts.newTotal} neuen Karten rechtzeitig einmal zu lernen, sind ${perDay} pro Tag nötig (Tageslimit: ${deck.newPerDay}).`
+            : ` Mit ${deck.newPerDay} neuen Karten pro Tag lernst du alle ${counts.newTotal} neuen rechtzeitig.`}
+      </p>
+      {short ? (
+        <Button
+          size="sm"
+          onClick={() =>
+            void updateDeck(qc, deck.id, { newPerDay: perDay })
+              .then(() => toast.success(`Tageslimit: ${perDay} neue Karten.`))
+              .catch((err: unknown) => toast.error(errorMessage(err)))
+          }
+        >
+          {perDay} pro Tag übernehmen
+        </Button>
+      ) : null}
+    </div>
   )
 }

@@ -18,6 +18,7 @@ function ev(title: string, start: string, end: string, extra: Partial<CalendarEv
     end,
     repeat: null,
     exdates: [],
+    exam: null,
     createdAt: 0,
     updatedAt: 0,
     ...extra,
@@ -71,6 +72,7 @@ describe('Termine prüfen', () => {
     end: '2026-10-19T11:45',
     repeat: null,
     exdates: [],
+    exam: null,
   }
 
   it('nimmt gültige Termine an', () => {

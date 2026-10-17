@@ -21,8 +21,8 @@ export type View =
   /** Glossar und Formeln – aller Notizen oder eines Ordners samt Unterordnern */
   | { kind: 'glossary'; folder?: string }
 
-/** Was gelernt wird: alle Stapel, ein Stapel oder die Karten aus einer Notiz */
-export type StudyScope = 'all' | `deck:${string}` | `note:${string}`
+/** Was gelernt wird: alles, ein Stapel, die Karten einer Notiz oder die Stapel einer Klausur (Termin-ID) */
+export type StudyScope = 'all' | `deck:${string}` | `note:${string}` | `exam:${string}`
 /** learn: Lernmodus mit Wiederholungsplan · practice: Üben ohne Einfluss auf den Plan */
 export type StudyMode = 'learn' | 'practice'
 
@@ -36,7 +36,7 @@ function viewFromParams(params: URLSearchParams): View {
   const d = params.get('d')
   if (d) return { kind: 'deck', id: d }
   const s = params.get('s')
-  if (s === 'all' || /^(deck|note):[\w-]+$/.test(s ?? '')) {
+  if (s === 'all' || /^(deck|note|exam):[\w-]+$/.test(s ?? '')) {
     return { kind: 'study', scope: s as StudyScope, mode: params.get('m') === 'practice' ? 'practice' : 'learn' }
   }
   const quiz = params.get('quiz')
