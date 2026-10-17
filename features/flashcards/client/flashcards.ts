@@ -7,7 +7,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError, NetworkError } from '@/shared/client/api'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
-import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
+import type { AnkiImportResult, Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
 const flashcardsKey = ['flashcards'] as const
 
@@ -361,6 +361,16 @@ export async function resetCardProgress(qc: QueryClient, id: string): Promise<Ca
   reviewQueue.drop(new Set([id]))
   patch(qc, (d) => ({ ...d, cards: d.cards.map((c) => (c.id === id ? card : c)), reviews: d.reviews.filter((r) => r.cardId !== id) }))
   return card
+}
+
+/** Anki-Paket importieren – danach Stapel und Karten neu laden */
+export async function importAnki(qc: QueryClient, file: File, progress: boolean): Promise<AnkiImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  if (progress) form.append('progress', '1')
+  const result = await api<AnkiImportResult>('/api/flashcards/anki', { method: 'POST', form })
+  await qc.invalidateQueries({ queryKey: flashcardsKey })
+  return result
 }
 
 export async function deleteCard(qc: QueryClient, id: string) {

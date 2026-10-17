@@ -1,12 +1,13 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { ChartColumn, CloudOff, Dumbbell, GraduationCap, Layers, Loader2, Plus } from 'lucide-react'
+import { ChartColumn, CloudOff, Dumbbell, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
+import { Menu, MenuItem } from '@/shared/ui/menu'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { ProgressBar, statusCounts } from './common'
 import { useNow } from '@/shared/client/now'
-import { DeckSettingsDialog } from './DeckDialogs'
+import { AnkiImportDialog, DeckSettingsDialog } from './DeckDialogs'
 import { useFlashcards } from '../client/flashcards'
 import { NetworkError } from '@/shared/client/api'
 import { deckCounts, type DeckCounts } from '../study'
@@ -37,6 +38,7 @@ export function CardsView() {
   const { data, isLoading, error } = useFlashcards()
   const now = useNow()
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -74,6 +76,17 @@ export function CardsView() {
             <Button size="sm" onClick={() => setCreating(true)} variant={due > 0 ? 'secondary' : 'primary'}>
               <Plus className="size-4" /> <span className="max-sm:hidden">Neuer</span> Stapel
             </Button>
+            <Menu
+              trigger={(p) => (
+                <Button variant="ghost" size="icon-sm" aria-label="Weitere Aktionen" {...p}>
+                  <MoreVertical className="size-4" />
+                </Button>
+              )}
+            >
+              <MenuItem icon={<Upload />} onSelect={() => setImporting(true)}>
+                Anki-Deck importieren …
+              </MenuItem>
+            </Menu>
           </>
         }
       />
@@ -90,12 +103,17 @@ export function CardsView() {
           <Layers className="mb-3 size-9 stroke-[1.5] text-faint" />
           <p className="font-semibold">Noch keine Karteikarten</p>
           <p className="mt-1 max-w-md text-sm text-muted">
-            Lege einen Stapel an, z. B. pro Fach. Karten kannst du direkt schreiben – als Frage/Antwort, beidseitig oder Multiple
-            Choice – oder aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“).
+            Lege einen Stapel an, z. B. pro Fach. Karten kannst du direkt schreiben – als Frage/Antwort, beidseitig, Lückentext oder
+            Multiple Choice –, aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“) oder aus Anki übernehmen.
           </p>
-          <Button variant="primary" className="mt-4" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Ersten Stapel anlegen
-          </Button>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus className="size-4" /> Ersten Stapel anlegen
+            </Button>
+            <Button onClick={() => setImporting(true)}>
+              <Upload className="size-4" /> Aus Anki importieren
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2" data-testid="deck-list">
@@ -118,6 +136,7 @@ export function CardsView() {
       {creating ? (
         <DeckSettingsDialog onClose={() => setCreating(false)} onSaved={(deck) => app.go({ kind: 'deck', id: deck.id })} />
       ) : null}
+      {importing ? <AnkiImportDialog onClose={() => setImporting(false)} /> : null}
     </Page>
   )
 }

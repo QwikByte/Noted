@@ -75,6 +75,9 @@ export type ReviewLogEntry = {
   reviewedAt: number
 }
 
+/** Ergebnis eines Anki-Imports – `skipped`: Hinweise auf übersprungene Karten und Dateien (gekürzt) */
+export type AnkiImportResult = { decks: number; cards: number; media: number; skipped: string[] }
+
 /** Ein Tag mit Bewertungen (Datum in der Ortszeit des Geräts) */
 export type StudyDay = { date: string; reviews: number; again: number; ms: number }
 
