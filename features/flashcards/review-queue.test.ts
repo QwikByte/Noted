@@ -98,3 +98,45 @@ describe('Warteschlange für Bewertungen', () => {
     expect(q.getSnapshot().map((r) => r.cardId)).toEqual(['b'])
   })
 })
+
+describe('Bewertungsprotokoll in der Warteschlange', () => {
+  const entry = (cardId: string, at: number) => ({
+    cardId,
+    side: 0 as const,
+    rating: 3 as const,
+    phase: 'new' as const,
+    intervalBefore: 0,
+    intervalAfter: 0.007,
+    durationMs: 4000,
+    reviewedAt: at,
+  })
+  const storedLog = () => (JSON.parse(store.get(KEY) ?? '{}').log ?? []) as { reviewedAt: number }[]
+
+  it('protokolliert jede Bewertung – auch mehrere derselben Karte – und sendet sie mit', async () => {
+    const q = started()
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('offline')).mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock)
+    q.add(review('a', 1000), entry('a', 1000))
+    q.add(review('a', 61_000), entry('a', 61_000))
+    await q.flush()
+    // Offline: Lernstand nur der letzte, im Protokoll beide
+    expect(stored().pending).toHaveLength(1)
+    expect(storedLog().map((e) => e.reviewedAt)).toEqual([1000, 61_000])
+    await q.flush()
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body as string)
+    expect(body.log.map((e: { reviewedAt: number }) => e.reviewedAt)).toEqual([1000, 61_000])
+    expect(storedLog()).toEqual([])
+  })
+
+  it('holt gesendete Einträge nicht aus dem Speicher eines anderen Tabs zurück', async () => {
+    const q = started()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok()))
+    q.add(review('a', 1000), entry('a', 1000))
+    const old = store.get(KEY)!
+    await q.flush()
+    // Ein anderer Tab schreibt seinen älteren Stand zurück
+    store.set(KEY, old)
+    q.add(review('b', 2000), entry('b', 2000))
+    expect(storedLog().map((e) => e.reviewedAt)).toEqual([2000])
+  })
+})

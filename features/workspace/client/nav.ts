@@ -15,6 +15,7 @@ export type View =
   | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
   | { kind: 'study'; scope: StudyScope; mode: StudyMode }
+  | { kind: 'stats' }
   /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten */
   | { kind: 'quiz'; id: string }
   /** Glossar und Formeln – aller Notizen oder eines Ordners samt Unterordnern */
@@ -46,6 +47,7 @@ function viewFromParams(params: URLSearchParams): View {
   if (v === 'trash') return { kind: 'trash' }
   if (v === 'files') return { kind: 'files' }
   if (v === 'cards') return { kind: 'cards' }
+  if (v === 'stats') return { kind: 'stats' }
   if (v === 'calendar') return { kind: 'calendar' }
   if (v === 'glossary') return { kind: 'glossary', folder: params.get('in') || undefined }
   return { kind: 'home' }
@@ -67,6 +69,8 @@ function viewToUrl(view: View): string {
       return '/?v=files'
     case 'cards':
       return '/?v=cards'
+    case 'stats':
+      return '/?v=stats'
     case 'calendar':
       return '/?v=calendar'
     case 'glossary':

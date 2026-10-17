@@ -6,3 +6,5 @@ export const MAX_CARD_TEXT = 20_000
 export const MAX_OPTIONS = 12
 /** Zeichen pro Multiple-Choice-Antwort */
 export const MAX_OPTION_TEXT = 2_000
+/** Längste gezählte Antwortzeit pro Karte – wer länger braucht, war meist abgelenkt */
+export const MAX_ANSWER_MS = 120_000

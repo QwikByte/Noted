@@ -56,3 +56,33 @@ export type SrsState = {
 export type CardReview = SrsState & { cardId: string; side: 0 | 1 }
 
 export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[] }
+
+/** Eintrag im Bewertungsprotokoll: jede Bewertung im Lernmodus, auch offline gesammelte */
+export type ReviewLogEntry = {
+  cardId: string
+  side: 0 | 1
+  rating: 1 | 2 | 3 | 4
+  /** Phase vor der Bewertung – 'new' bei der ersten Abfrage */
+  phase: CardPhase | 'new'
+  /** Abstand bis zur Fälligkeit in Tagen – wie er vorher geplant war und wie er nachher geplant ist */
+  intervalBefore: number
+  intervalAfter: number
+  /** Zeit von der Anzeige der Karte bis zur Bewertung (gekappt, siehe MAX_ANSWER_MS) */
+  durationMs: number
+  reviewedAt: number
+}
+
+/** Ein Tag mit Bewertungen (Datum in der Ortszeit des Geräts) */
+export type StudyDay = { date: string; reviews: number; again: number; ms: number }
+
+/** Stapel in den letzten 30 Tagen – `mature…`: Wiederholungen gelernter Karten (für die Trefferquote) */
+export type DeckStudyStats = { deckId: string; reviews: number; ms: number; matureReviews: number; matureCorrect: number }
+
+export type StudyStats = {
+  /** Tage mit Bewertungen im letzten Jahr */
+  days: StudyDay[]
+  decks: DeckStudyStats[]
+  /** Bewertungen insgesamt und Zeitpunkt der ersten */
+  total: number
+  since: number | null
+}

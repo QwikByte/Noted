@@ -239,4 +239,25 @@ export const migrations: string[] = [
   /* 9: Ausgesetzte Karten (z. B. Problemkarten bis zur Überarbeitung) – kommen beim Lernen und Üben nicht dran */ `
   ALTER TABLE cards ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0 CHECK (suspended IN (0, 1));
   `,
+
+  /* 10: Bewertungsprotokoll – jede Bewertung im Lernmodus (für Statistik, später Klausurmodus und FSRS). Bleibt beim
+     Löschen von Karten und beim Zurücksetzen des Lernstands erhalten; deck_id ist der Stapel zum Zeitpunkt der
+     Bewertung. phase = Phase vor der Bewertung ('new' bei der ersten Abfrage), Abstände in Tagen. Der eindeutige
+     Index verhindert doppelte Einträge, wenn ein Gerät dieselben Bewertungen erneut sendet. */ `
+  CREATE TABLE review_log (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    card_id TEXT NOT NULL,
+    deck_id TEXT,
+    side INTEGER NOT NULL CHECK (side IN (0, 1)),
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 4),
+    phase TEXT NOT NULL CHECK (phase IN ('new', 'learning', 'review', 'relearning')),
+    interval_before REAL NOT NULL,
+    interval_after REAL NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX review_log_once ON review_log(user_id, card_id, side, reviewed_at);
+  CREATE INDEX review_log_user ON review_log(user_id, reviewed_at);
+  `,
 ]

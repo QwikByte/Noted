@@ -3,9 +3,9 @@ import { z } from 'zod'
 import { getDb } from '@/shared/server/db'
 import { ApiError, badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
-import { MAX_CARD_TEXT, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
+import { MAX_ANSWER_MS, MAX_CARD_TEXT, MAX_OPTION_TEXT, MAX_OPTIONS } from '../limits'
 import { DEFAULT_NEW_PER_DAY } from '../srs'
-import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData } from '../types'
+import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
 const MAX_DECK_NAME = 200
@@ -328,11 +328,12 @@ export function deleteCard(userId: number, id: string) {
 /**
  * Übernimmt Bewertungen (auch offline gesammelte). Pro Kartenseite gewinnt die jüngste Bewertung –
  * so kann ein Gerät, das länger offline war, keinen neueren Stand eines anderen Geräts überschreiben.
+ * `log` kommt ins Bewertungsprotokoll; doppelt gesendete Einträge zählen nur einmal.
  * Bewertungen gelöschter Karten werden ignoriert.
  */
-export function saveReviews(userId: number, reviews: CardReview[]): { saved: number } {
+export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLogEntry[] = []): { saved: number; logged: number } {
   const db = getDb()
-  const cardType = db.prepare('SELECT type FROM cards WHERE id = ? AND user_id = ?')
+  const cardType = db.prepare('SELECT type, deck_id FROM cards WHERE id = ? AND user_id = ?')
   const upsert = db.prepare(
     `INSERT INTO card_reviews (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at)
      VALUES (@cardId, @side, @userId, @phase, @step, @interval, @ease, @reps, @lapses, @due, @reviewedAt, @introducedAt)
@@ -342,15 +343,26 @@ export function saveReviews(userId: number, reviews: CardReview[]): { saved: num
        introduced_at = MIN(card_reviews.introduced_at, excluded.introduced_at)
      WHERE excluded.reviewed_at > card_reviews.reviewed_at`,
   )
+  const insertLog = db.prepare(
+    `INSERT OR IGNORE INTO review_log
+       (user_id, card_id, deck_id, side, rating, phase, interval_before, interval_after, duration_ms, reviewed_at)
+     VALUES (@userId, @cardId, @deckId, @side, @rating, @phase, @intervalBefore, @intervalAfter, @durationMs, @reviewedAt)`,
+  )
   let saved = 0
+  let logged = 0
   db.transaction(() => {
     for (const r of reviews) {
       const card = cardType.get(r.cardId, userId) as { type: CardType } | undefined
       if (!card || (r.side === 1 && card.type !== 'reversed')) continue
       saved += upsert.run({ ...r, userId }).changes
     }
+    for (const e of log) {
+      const card = cardType.get(e.cardId, userId) as { type: CardType; deck_id: string } | undefined
+      if (!card || (e.side === 1 && card.type !== 'reversed')) continue
+      logged += insertLog.run({ ...e, userId, deckId: card.deck_id }).changes
+    }
   })()
-  return { saved }
+  return { saved, logged }
 }
 
 // ---------------------------------------------------------------------------
@@ -389,4 +401,15 @@ export const reviewSchema = z.object({
   due: time,
   reviewedAt: time,
   introducedAt: time,
+})
+
+export const reviewLogSchema = z.object({
+  cardId: z.string().uuid(),
+  side: z.union([z.literal(0), z.literal(1)]),
+  rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  phase: z.enum(['new', 'learning', 'review', 'relearning']),
+  intervalBefore: z.number().min(0).max(100_000),
+  intervalAfter: z.number().min(0).max(100_000),
+  durationMs: z.number().int().min(0).max(MAX_ANSWER_MS),
+  reviewedAt: time,
 })

@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { CloudOff, Dumbbell, GraduationCap, Layers, Loader2, Plus } from 'lucide-react'
+import { ChartColumn, CloudOff, Dumbbell, GraduationCap, Layers, Loader2, Plus } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
@@ -68,6 +68,9 @@ export function CardsView() {
                 <GraduationCap className="size-4" /> Alle lernen
               </Button>
             ) : null}
+            <Button size="sm" onClick={() => app.go({ kind: 'stats' })} aria-label="Lernstatistik" title="Lernstatistik">
+              <ChartColumn className="size-4" /> <span className="max-sm:hidden">Statistik</span>
+            </Button>
             <Button size="sm" onClick={() => setCreating(true)} variant={due > 0 ? 'secondary' : 'primary'}>
               <Plus className="size-4" /> <span className="max-sm:hidden">Neuer</span> Stapel
             </Button>

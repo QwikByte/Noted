@@ -305,3 +305,53 @@ test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen'
   await formulas.getByRole('button', { name: 'Reihen' }).click()
   await expect(page).toHaveURL(new RegExp(`n=${inside.id}&h=Reihen$`))
 })
+
+test('Lernstatistik: Bewertungen werden protokolliert und ausgewertet', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Statistik-Stapel' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const [one, two] = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: [{ type: 'basic', front: 'Eins', back: '1' }, { type: 'basic', front: 'Zwei', back: '2' }] },
+    'cards',
+  )
+  // Gestern und vorgestern gelernt – so, wie es ein anderes Gerät nachträglich sendet
+  const now = Date.now()
+  const entry = (cardId: string, daysAgo: number, rating: number) => ({
+    cardId,
+    side: 0,
+    rating,
+    phase: 'review',
+    intervalBefore: 1,
+    intervalAfter: 2,
+    durationMs: 5000,
+    reviewedAt: now - daysAgo * DAY,
+  })
+  await post(page, '/api/reviews', { reviews: [], log: [entry(one.id, 1, 3), entry(two.id, 1, 1), entry(one.id, 2, 3)] }, 'logged')
+
+  // Heute eine Karte im Lernmodus – landet im Protokoll
+  await page.goto(`/?s=deck:${deck.id}`)
+  await expect(page.getByTestId('study-card')).toContainText('Eins')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect
+    .poll(async () => {
+      const s = await page.evaluate(() => fetch('/api/stats?tz=Europe/Berlin').then((r) => r.json()))
+      return s.decks.find((d: { deckId: string }) => d.deckId === deck.id)?.reviews
+    })
+    .toBe(4)
+
+  await page.goto('/?v=cards')
+  await page.getByRole('button', { name: 'Lernstatistik' }).click()
+  await expect(page.getByTestId('stats-figures')).toContainText('3 Tage')
+  await expect(page.getByTestId('stats-heatmap').getByRole('img', { name: /: 2 Bewertungen, 1× Nochmal$/ })).toHaveCount(1)
+  const row = page.getByTestId('stats-decks').locator('tr', { hasText: 'Statistik-Stapel' })
+  await expect(row).toContainText('4')
+  await expect(row).toContainText('67 %')
+  const forecast = page.getByTestId('stats-forecast')
+  await expect(forecast.getByRole('listitem')).toHaveCount(7)
+  await shot(page, '38-stats')
+  await forecast.getByRole('radio', { name: '30 Tage' }).click()
+  await expect(forecast.getByRole('listitem')).toHaveCount(30)
+})

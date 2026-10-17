@@ -1,19 +1,25 @@
 'use client'
 // Karteikarten im Browser: Daten laden, Änderungen an den Server schicken und Bewertungen aus Lernsitzungen
-// lokal sammeln. Bewertungen funktionieren auch offline – sie liegen bis zum Senden im localStorage.
+// lokal sammeln. Bewertungen funktionieren auch offline – sie liegen bis zum Senden im localStorage, zusammen mit
+// ihrem Eintrag fürs Bewertungsprotokoll (Statistik).
 
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError, NetworkError } from '@/shared/client/api'
 import { reviewKey, stateMap, type StateMap } from '../study'
-import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData } from '../types'
+import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, ReviewLogEntry } from '../types'
 
 const flashcardsKey = ['flashcards'] as const
 
 const FLUSH_DELAY = 1500
 const RETRY_INTERVAL = 30_000
+/** Höchstens so viele Protokolleinträge pro Anfrage bzw. im Speicher (älteste fallen zuerst weg) */
+const LOG_BATCH = 5000
+const MAX_LOG = 20_000
 
-type Stored = { pending: CardReview[]; acked: CardReview[] }
+type Stored = { pending: CardReview[]; acked: CardReview[]; log?: ReviewLogEntry[] }
+
+const logKey = (e: ReviewLogEntry) => `${e.cardId}:${e.side}:${e.reviewedAt}`
 
 /** Jüngere Bewertung einer Kartenseite übernehmen */
 function upsert(map: Map<string, CardReview>, r: CardReview): boolean {
@@ -29,12 +35,18 @@ function upsert(map: Map<string, CardReview>, r: CardReview): boolean {
  *  - pending: noch nicht gesendet
  *  - acked:   gesendet, aber evtl. noch nicht in den Daten, die der Service Worker für offline zwischengespeichert
  *             hat – bleiben deshalb als Überlagerung, bis eine Antwort vom Server sie enthält
- * Mehrere Tabs teilen sich den Speicher und führen ihren Stand zusammen.
+ *  - log:     noch nicht gesendete Einträge fürs Bewertungsprotokoll – anders als `pending` jede einzelne Bewertung,
+ *             nicht nur die letzte je Kartenseite
+ * Mehrere Tabs teilen sich den Speicher und führen ihren Stand zusammen. Doppelt gesendete Protokolleinträge
+ * verwirft der Server.
  */
 export class ReviewQueue {
   private storageKey = ''
   private pending = new Map<string, CardReview>()
   private acked = new Map<string, CardReview>()
+  private log = new Map<string, ReviewLogEntry>()
+  /** In dieser Sitzung gesendete Protokolleinträge – nicht aus dem Speicher eines anderen Tabs zurückholen */
+  private sentLog = new Set<string>()
   /** In dieser Sitzung verworfene Karten (gelöscht, Lernstand zurückgesetzt) – nicht aus anderen Tabs zurückholen */
   private dropped = new Set<string>()
   /** Erledigte Einträge je Kartenseite (bis zu diesem Zeitpunkt) – nicht aus dem Speicher zurückholen */
@@ -83,7 +95,7 @@ export class ReviewQueue {
     try {
       const raw = JSON.parse(localStorage.getItem(this.storageKey) ?? 'null')
       if (Array.isArray(raw)) return { pending: raw, acked: [] } // älteres Format
-      return { pending: raw?.pending ?? [], acked: raw?.acked ?? [] }
+      return { pending: raw?.pending ?? [], acked: raw?.acked ?? [], log: Array.isArray(raw?.log) ? raw.log : [] }
     } catch {
       return { pending: [], acked: [] }
     }
@@ -96,6 +108,15 @@ export class ReviewQueue {
       !this.dropped.has(r.cardId) && (this.forgotten.get(reviewKey(r.cardId, r.side)) ?? -1) < r.reviewedAt
     for (const r of stored.acked) if (keep(r)) upsert(this.acked, r)
     for (const r of stored.pending) if (keep(r)) upsert(this.pending, r)
+    for (const e of stored.log ?? []) {
+      const key = logKey(e)
+      if (!this.sentLog.has(key) && !this.log.has(key)) this.log.set(key, e)
+    }
+    // Ältere Einträge fallen weg, falls lange nichts gesendet werden konnte
+    for (const key of this.log.keys()) {
+      if (this.log.size <= MAX_LOG) break
+      this.log.delete(key)
+    }
     // Was ein anderer Tab schon gesendet hat, nicht noch einmal senden
     for (const [key, r] of this.pending) {
       const sent = this.acked.get(key)
@@ -107,9 +128,9 @@ export class ReviewQueue {
     if (!this.storageKey) return
     this.load()
     try {
-      if (this.pending.size === 0 && this.acked.size === 0) localStorage.removeItem(this.storageKey)
+      if (this.pending.size === 0 && this.acked.size === 0 && this.log.size === 0) localStorage.removeItem(this.storageKey)
       else {
-        const stored: Stored = { pending: [...this.pending.values()], acked: [...this.acked.values()] }
+        const stored: Stored = { pending: [...this.pending.values()], acked: [...this.acked.values()], log: [...this.log.values()] }
         localStorage.setItem(this.storageKey, JSON.stringify(stored))
       }
     } catch {
@@ -117,9 +138,11 @@ export class ReviewQueue {
     }
   }
 
-  add(review: CardReview) {
+  /** Neuer Lernstand einer Kartenseite – `entry`: die Bewertung fürs Protokoll */
+  add(review: CardReview, entry?: ReviewLogEntry) {
     this.dropped.delete(review.cardId)
     this.pending.set(reviewKey(review.cardId, review.side), review)
+    if (entry) this.log.set(logKey(entry), entry)
     this.persist()
     this.emit()
     clearTimeout(this.timer)
@@ -163,20 +186,23 @@ export class ReviewQueue {
   async flush(): Promise<void> {
     if (!this.storageKey || this.flushing) return
     this.load()
-    if (this.pending.size === 0) return
+    if (this.pending.size === 0 && this.log.size === 0) return
     this.flushing = true
     const batch = [...this.pending.values()]
+    const logBatch = [...this.log.values()].slice(0, LOG_BATCH)
     try {
-      await api('/api/reviews', { method: 'POST', body: { reviews: batch } })
+      await api('/api/reviews', { method: 'POST', body: { reviews: batch, log: logBatch } })
+      this.settleLog(logBatch)
       this.settle(batch, true)
       // Während des Sendens neu bewertete Karten gleich hinterherschicken
-      if (this.pending.size > 0) {
+      if (this.pending.size > 0 || this.log.size > 0) {
         clearTimeout(this.timer)
         this.timer = setTimeout(() => void this.flush(), FLUSH_DELAY)
       }
     } catch (err) {
       // Offline oder Serverfehler: später erneut. Als ungültig abgelehnt: verwerfen, sonst hinge es ewig fest.
       if (!(err instanceof NetworkError) && err instanceof ApiError && (err.status === 400 || err.status === 413)) {
+        this.settleLog(logBatch)
         this.settle(batch, false)
       }
     } finally {
@@ -201,6 +227,15 @@ export class ReviewQueue {
     this.emit()
   }
 
+  /** Gesendete (oder abgelehnte) Protokolleinträge nicht noch einmal senden */
+  private settleLog(entries: ReviewLogEntry[]) {
+    for (const e of entries) {
+      const key = logKey(e)
+      this.log.delete(key)
+      this.sentLog.add(key)
+    }
+  }
+
   private forget(map: Map<string, CardReview>, key: string, r: CardReview) {
     map.delete(key)
     this.forgotten.set(key, Math.max(this.forgotten.get(key) ?? -1, r.reviewedAt))
@@ -209,6 +244,7 @@ export class ReviewQueue {
   clearAll() {
     this.pending.clear()
     this.acked.clear()
+    this.log.clear()
     if (this.storageKey) localStorage.removeItem(this.storageKey)
     this.emit()
   }
