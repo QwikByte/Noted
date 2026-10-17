@@ -235,4 +235,8 @@ export const migrations: string[] = [
   /* 8: Stapel mit „Antwort eintippen“ – bei Grund- und beidseitigen Karten erscheint beim Lernen ein Eingabefeld */ `
   ALTER TABLE decks ADD COLUMN type_answer INTEGER NOT NULL DEFAULT 0 CHECK (type_answer IN (0, 1));
   `,
+
+  /* 9: Ausgesetzte Karten (z. B. Problemkarten bis zur Überarbeitung) – kommen beim Lernen und Üben nicht dran */ `
+  ALTER TABLE cards ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0 CHECK (suspended IN (0, 1));
+  `,
 ]

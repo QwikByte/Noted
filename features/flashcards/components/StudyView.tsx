@@ -1,24 +1,26 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, CheckCircle2, Dumbbell, FileText, Loader2, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, Dumbbell, FileText, Loader2, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from '@/shared/client/now'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
+import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
 import { reviewQueue, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
-import { formatInterval, previewIntervals, RATINGS, schedule, type Rating } from '../srs'
+import { LEECH_LAPSES, formatInterval, previewIntervals, RATINGS, schedule, type Rating } from '../srs'
 import {
   LearnSession,
   PracticeSession,
   allItems,
   deckCounts,
   isCorrectSelection,
+  isProblemCard,
   itemKey,
   shuffle,
   type ItemKind,
@@ -115,6 +117,7 @@ function StudySession({
   live: Flashcards
 }) {
   const app = useApp()
+  const toast = useToast()
   const { notes } = useNotes()
   const { title, back } = snapshot.scope
 
@@ -180,13 +183,19 @@ function StudySession({
       if (!current || !(session instanceof LearnSession)) return
       const now = Date.now()
       const next = schedule(state, rating, now)
+      if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
+        toast.show(
+          `Diese Karte hast du jetzt ${next.lapses}-mal vergessen. Am besten überarbeitest oder teilst du sie – im Stapel unter „Problemkarten“.`,
+          { duration: 8000 },
+        )
+      }
       reviewQueue.add({ cardId: current.card.id, side: current.side, ...next })
       session.answered(current, next, now)
       setReviewed((n) => n + 1)
       setSeen((prev) => new Set(prev).add(itemKey(current)))
       advance(session)
     },
-    [current, state, session, advance],
+    [current, state, session, advance, live.states, toast],
   )
 
   const practiceAnswer = useCallback(
@@ -345,6 +354,11 @@ function StudySession({
                     {current.kind === 'new' ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-text">Neu</span> : null}
                     {card.type === 'reversed' ? <span>{side === 1 ? 'Rückseite → Vorderseite' : 'Vorderseite → Rückseite'}</span> : null}
                     {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
+                    {isProblemCard(card, live.states) ? (
+                      <span className="inline-flex items-center gap-1 text-warning" title={`Mindestens ${LEECH_LAPSES}-mal vergessen`}>
+                        <AlertTriangle className="size-3.5" /> Problemkarte
+                      </span>
+                    ) : null}
                   </div>
                   <CardMarkdown text={question} className="study-question" />
                 </div>

@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   ChevronRight,
   Copy,
   Dumbbell,
@@ -10,7 +11,9 @@ import {
   Layers,
   Loader2,
   MoreVertical,
+  Pause,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Search,
@@ -29,16 +32,27 @@ import { Badge } from '@/shared/ui/badge'
 import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
-import { CARD_TYPE_LABELS, deleteCard, deleteDeck, resetDeckProgress, useFlashcards } from '../client/flashcards'
+import { cn } from '@/shared/ui/cn'
+import {
+  CARD_TYPE_LABELS,
+  deleteCard,
+  deleteDeck,
+  resetCardProgress,
+  resetDeckProgress,
+  updateCard,
+  useFlashcards,
+} from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import { copyText } from '@/shared/client/clipboard'
 import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
-import { endOfDay, formatInterval } from '../srs'
-import { byPosition, deckCounts, reviewKey, sidesOf, type StateMap } from '../study'
+import { LEECH_LAPSES, endOfDay, formatInterval } from '../srs'
+import { byPosition, cardLapses, deckCounts, isProblemCard, reviewKey, sidesOf, type StateMap } from '../study'
 import type { Card } from '../types'
 
 const PAGE = 100
+
+type CardFilter = 'all' | 'problem' | 'suspended'
 
 function dueLabel(card: Card, states: StateMap, now: number): { text: string; tone: 'accent' | 'neutral' | 'warning' } {
   let earliest = Infinity
@@ -59,6 +73,7 @@ export function DeckView({ id }: { id: string }) {
   const { notes } = useNotes()
   const now = useNow()
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<CardFilter>('all')
   const [limit, setLimit] = useState(PAGE)
   const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | null>(null)
   const [toDelete, setToDelete] = useState<Card | null>(null)
@@ -69,12 +84,19 @@ export function DeckView({ id }: { id: string }) {
   const counts = data && deck ? deckCounts(deck, cards, data.states, now) : null
   const status = useMemo(() => statusCounts(cards, data?.states ?? new Map()), [cards, data])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
+  const problems = useMemo(() => new Set(data ? cards.filter((c) => isProblemCard(c, data.states)).map((c) => c.id) : []), [cards, data])
+  const suspended = cards.filter((c) => c.suspended).length
+  // Ist der Filter leer geworden (z. B. alle Problemkarten neu gelernt), wieder alle Karten zeigen
+  const shownFilter: CardFilter =
+    (filter === 'problem' && problems.size === 0) || (filter === 'suspended' && suspended === 0) ? 'all' : filter
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return cards
-    return cards.filter((c) => [c.front, c.back, ...c.options.map((o) => o.text)].some((t) => t.toLowerCase().includes(q)))
-  }, [cards, query])
+    const pool =
+      shownFilter === 'problem' ? cards.filter((c) => problems.has(c.id)) : shownFilter === 'suspended' ? cards.filter((c) => c.suspended) : cards
+    if (!q) return pool
+    return pool.filter((c) => [c.front, c.back, ...c.options.map((o) => o.text)].some((t) => t.toLowerCase().includes(q)))
+  }, [cards, query, shownFilter, problems])
 
   if (!deck || !data || !counts) {
     return (
@@ -92,6 +114,15 @@ export function DeckView({ id }: { id: string }) {
   }
 
   const scope = `deck:${deck.id}` as const
+
+  async function cardAction(action: () => Promise<unknown>, done: string) {
+    try {
+      await action()
+      toast.success(done)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
 
   async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true)
@@ -210,6 +241,45 @@ export function DeckView({ id }: { id: string }) {
         </Button>
       </div>
 
+      {problems.size > 0 || suspended > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Karten filtern">
+          {(
+            [
+              ['all', 'Alle', cards.length],
+              ['problem', 'Problemkarten', problems.size],
+              ['suspended', 'Ausgesetzt', suspended],
+            ] as const
+          )
+            .filter(([value, , n]) => value === 'all' || n > 0)
+            .map(([value, label, n]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shownFilter === value}
+                onClick={() => {
+                  setFilter(value)
+                  setLimit(PAGE)
+                }}
+                className={cn(
+                  'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors',
+                  shownFilter === value ? 'border-accent bg-accent-soft font-medium text-accent-text' : 'border-border text-muted hover:bg-hover hover:text-fg',
+                )}
+              >
+                {value === 'problem' ? <AlertTriangle className="size-3.5 text-warning" /> : null}
+                {label} <span className="tabular-nums">{n}</span>
+              </button>
+            ))}
+        </div>
+      ) : null}
+      {shownFilter === 'problem' ? (
+        <p className="mb-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
+          Diese Karten hast du mindestens {LEECH_LAPSES}-mal vergessen. Meist liegt es an der Karte selbst: zu viel auf einmal
+          oder unklar formuliert. Überarbeite sie oder teile sie in mehrere kleine Karten auf und lerne sie dann neu. Bis dahin
+          kannst du sie aussetzen – dann kommt sie beim Lernen nicht mehr dran.
+        </p>
+      ) : null}
+
       {cards.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border-strong px-6 py-10 text-center text-sm text-muted">
           <p className="font-medium text-fg">Noch keine Karten in diesem Stapel</p>
@@ -230,6 +300,8 @@ export function DeckView({ id }: { id: string }) {
           {filtered.slice(0, limit).map((card) => {
             const due = dueLabel(card, data.states, now)
             const noteTitle = card.noteId ? noteTitles.get(card.noteId) : undefined
+            const problem = problems.has(card.id)
+            const learned = sidesOf(card).some((side) => data.states.has(reviewKey(card.id, side)))
             return (
               <li key={card.id} className="group rounded-xl border border-border bg-elevated p-3 sm:p-4">
                 <div className="flex items-start gap-3">
@@ -241,7 +313,12 @@ export function DeckView({ id }: { id: string }) {
                     />
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <Badge>{CARD_TYPE_LABELS[card.type]}</Badge>
-                      <Badge tone={due.tone}>{due.text}</Badge>
+                      {card.suspended ? <Badge>Ausgesetzt</Badge> : <Badge tone={due.tone}>{due.text}</Badge>}
+                      {problem ? (
+                        <Badge tone="warning">
+                          <AlertTriangle className="size-3" /> Problemkarte · {cardLapses(card, data.states)}× vergessen
+                        </Badge>
+                      ) : null}
                       {noteTitle ? (
                         <button
                           type="button"
@@ -253,6 +330,33 @@ export function DeckView({ id }: { id: string }) {
                         </button>
                       ) : null}
                     </div>
+                    {problem || card.suspended ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="subtle"
+                          onClick={() =>
+                            void cardAction(
+                              () => updateCard(qc, card.id, { suspended: !card.suspended }),
+                              card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt – sie kommt beim Lernen nicht mehr dran.',
+                            )
+                          }
+                        >
+                          {card.suspended ? <Play className="size-4" /> : <Pause className="size-4" />}
+                          {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
+                        </Button>
+                        {learned ? (
+                          <Button
+                            size="sm"
+                            variant="subtle"
+                            onClick={() => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.')}
+                            title="Lernstand dieser Karte zurücksetzen, z. B. nach dem Überarbeiten"
+                          >
+                            <RotateCcw className="size-4" /> Neu lernen
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 gap-0.5">
                     <Button variant="ghost" size="icon-sm" onClick={() => app.openCardEditor({ card })} aria-label="Karte bearbeiten" title="Bearbeiten">
