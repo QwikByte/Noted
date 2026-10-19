@@ -21,7 +21,7 @@ export function Modal({
   description?: React.ReactNode
   children?: React.ReactNode
   footer?: React.ReactNode
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -49,6 +49,7 @@ export function Modal({
         size === 'sm' && 'max-w-sm',
         size === 'md' && 'max-w-lg',
         size === 'lg' && 'max-w-2xl',
+        size === 'xl' && 'max-w-5xl',
         className,
       )}
     >

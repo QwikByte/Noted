@@ -18,6 +18,7 @@ import {
   FileText,
   FolderInput,
   GraduationCap,
+  History,
   Info,
   Layers,
   Link2,
@@ -38,6 +39,7 @@ import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
+import { HistoryDialog } from './dialogs'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
@@ -216,6 +218,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [mode, setModeState] = useState<EditorMode>(() => (note.content.trim() === '' ? 'edit' : storedMode))
   const [infoOpen, setInfoOpen] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
@@ -704,6 +707,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
               Format …
             </MenuItem>
+            <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
+              Verlauf …
+            </MenuItem>
             <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
               Informationen
             </MenuItem>
@@ -835,6 +841,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }}
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
+      <HistoryDialog
+        noteId={note.id}
+        title={title}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={(restored) => {
+          loadedVersion.current = restored.version
+          applyRemote(restored)
+        }}
+      />
       <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Informationen" size="sm">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-muted">Erstellt</dt>

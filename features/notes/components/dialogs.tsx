@@ -1,15 +1,15 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, FileText, Folder as FolderIcon, LayoutTemplate } from 'lucide-react'
+import { Check, FileText, Folder as FolderIcon, History, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react'
 import { useApp, type NewNoteOptions } from '@/features/workspace/client/context'
-import { Modal } from '@/shared/ui/modal'
+import { ConfirmModal, Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { Field, Input, Select } from '@/shared/ui/input'
 import { ErrorText, useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
-import { keys, useFolders, useNotes } from '../client/queries'
+import { applySavedNote, keys, useFolders, useNotes, useNoteVersion, useNoteVersions } from '../client/queries'
 import { buildTree, descendantFolderIds, type FolderNode } from '../tree'
 import { sync } from '../client/sync'
 import { BUILTIN_TEMPLATES, TEMPLATE_FOLDER_NAMES, applyTemplate } from '../templates'
@@ -17,7 +17,11 @@ import { validateName } from '@/shared/lib/names'
 import { escapeHtml } from '@/shared/lib/html'
 import { useDefaultNoteFormat } from '../client/default-format'
 import { FormatPicker } from './FormatPicker'
-import type { Folder, Note, NoteFormat, NoteSummary } from '../types'
+import { Preview } from './Preview'
+import { PlainTextView, RichTextView } from './ReadView'
+import { formatBytes, formatDateTime, formatRelative } from '@/shared/lib/format'
+import { NOTE_FORMAT_LABELS } from '../format'
+import type { Folder, Note, NoteFormat, NoteSummary, NoteVersion, NoteVersionReason } from '../types'
 
 /** Ordnerliste mit Einrückung für Auswahlfelder. */
 function useFolderOptions(exclude?: Set<string>) {
@@ -368,5 +372,202 @@ export function PromptDialog({
         </Field>
       </form>
     </Modal>
+  )
+}
+
+const REASON_LABELS: Record<NoteVersionReason, string> = {
+  edit: 'Automatisch gesichert',
+  format: 'Vor dem Formatwechsel',
+  conflict: 'Vor dem Überschreiben (Konflikt)',
+  restore: 'Vor dem Wiederherstellen',
+}
+
+const ignore = () => {}
+
+/** Verlauf einer Notiz: ältere Stände ansehen und wiederherstellen */
+export function HistoryDialog({
+  noteId,
+  title,
+  open,
+  onClose,
+  onRestored,
+}: {
+  noteId: string
+  /** Aktueller Titel – ältere Stände mit anderem Titel zeigen ihren Titel an */
+  title: string
+  open: boolean
+  onClose: () => void
+  /** Wiederhergestellten Stand in den Editor übernehmen */
+  onRestored: (note: Note) => void
+}) {
+  const app = useApp()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const list = useNoteVersions(noteId, open)
+  const versions = list.data ?? []
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) setSelectedId(null)
+  }
+
+  const selected = versions.find((v) => v.id === selectedId) ?? versions[0] ?? null
+  const detail = useNoteVersion(noteId, open && selected ? selected.id : null)
+  const resolveNote = useCallback(
+    (target: string) => {
+      const n = app.resolveTitle(target)
+      return n ? { id: n.id, title: n.title } : null
+    },
+    [app],
+  )
+
+  async function restore() {
+    if (!selected) return
+    setRestoring(true)
+    try {
+      // Offene Änderungen zuerst speichern – so landen auch sie im Verlauf, bevor der alte Stand sie ersetzt
+      if (sync.getDraft(noteId)) await sync.flush(noteId)
+      const res = await api<{ note: Note; linksUpdated: number }>(
+        `/api/notes/${noteId}/versions/${selected.id}/restore`,
+        { method: 'POST' },
+      )
+      sync.discard(noteId)
+      sync.setKnownVersion(noteId, res.note.version)
+      onRestored(res.note)
+      applySavedNote(qc, res.note)
+      void qc.invalidateQueries({ queryKey: keys.versions(noteId) })
+      void qc.invalidateQueries({ queryKey: keys.tags })
+      if (res.linksUpdated > 0) {
+        void qc.invalidateQueries({ queryKey: keys.notes })
+        void qc.invalidateQueries({ queryKey: ['note'] })
+      }
+      toast.success(`Stand vom ${formatDateTime(selected.createdAt)} wiederhergestellt.`)
+      setConfirming(false)
+      onClose()
+    } catch (err) {
+      toast.error(`Wiederherstellen fehlgeschlagen: ${errorMessage(err)}`)
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Verlauf"
+      description="Ältere Stände der Notiz – gesichert beim Weiterschreiben (höchstens alle 10 Minuten) und vor Formatwechsel, Konflikt oder Wiederherstellen."
+      size="xl"
+    >
+      {list.isLoading ? (
+        <Loader2 className="mx-auto my-8 size-6 animate-spin text-faint" />
+      ) : list.error ? (
+        <ErrorText>Der Verlauf konnte nicht geladen werden. {errorMessage(list.error)}</ErrorText>
+      ) : versions.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border-strong px-6 py-10 text-center text-sm text-muted">
+          <History className="mx-auto mb-2 size-8 text-faint" />
+          Noch keine älteren Stände.
+        </div>
+      ) : (
+        <div className="grid gap-4 md:h-[min(60vh,36rem)] md:grid-cols-[16rem_1fr]">
+          <ul
+            className="max-h-48 space-y-1 overflow-y-auto md:max-h-none"
+            aria-label="Gesicherte Stände"
+            data-testid="history-list"
+          >
+            {versions.map((v) => (
+              <li key={v.id}>
+                <VersionItem version={v} title={title} active={v.id === selected?.id} onSelect={() => setSelectedId(v.id)} />
+              </li>
+            ))}
+          </ul>
+          <div className="flex min-h-0 flex-col rounded-xl border border-border">
+            {selected ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{selected.title}</p>
+                  <p className="text-xs text-faint">
+                    {formatDateTime(selected.createdAt)} · {NOTE_FORMAT_LABELS[selected.format].label}
+                  </p>
+                </div>
+                <Button size="sm" variant="primary" onClick={() => setConfirming(true)} disabled={!detail.data}>
+                  <RotateCcw className="size-4" /> Diesen Stand wiederherstellen
+                </Button>
+              </div>
+            ) : null}
+            <div className="history-preview min-h-48 flex-1 overflow-y-auto p-3" data-testid="history-preview">
+              {detail.isLoading ? (
+                <Loader2 className="mx-auto my-8 size-5 animate-spin text-faint" />
+              ) : detail.error ? (
+                <ErrorText>{errorMessage(detail.error)}</ErrorText>
+              ) : detail.data ? (
+                detail.data.format === 'markdown' || detail.data.format === 'mindmap' ? (
+                  <Preview
+                    content={detail.data.content}
+                    resolveNote={resolveNote}
+                    onOpenNote={ignore}
+                    onCreateNote={ignore}
+                    onOpenTag={ignore}
+                  />
+                ) : detail.data.format === 'richtext' ? (
+                  <RichTextView html={detail.data.content} onOpenPdf={ignore} />
+                ) : (
+                  <PlainTextView text={detail.data.content} />
+                )
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+      <ConfirmModal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => void restore()}
+        loading={restoring}
+        title="Diesen Stand wiederherstellen?"
+        description={
+          selected
+            ? `Titel, Format und Inhalt werden auf den Stand vom ${formatDateTime(selected.createdAt)} zurückgesetzt. Der jetzige Stand bleibt im Verlauf erhalten.`
+            : undefined
+        }
+        confirmLabel="Wiederherstellen"
+      />
+    </Modal>
+  )
+}
+
+function VersionItem({
+  version,
+  title,
+  active,
+  onSelect,
+}: {
+  version: NoteVersion
+  title: string
+  active: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'w-full rounded-lg px-3 py-2 text-left transition-colors',
+        active ? 'bg-active' : 'hover:bg-hover',
+      )}
+    >
+      <span className="block text-sm font-medium" title={formatDateTime(version.createdAt)}>
+        {formatRelative(version.createdAt)}
+      </span>
+      <span className="block text-xs text-muted">
+        {REASON_LABELS[version.reason]} · {formatBytes(version.size)}
+      </span>
+      {version.title !== title ? <span className="block truncate text-xs text-faint">„{version.title}“</span> : null}
+    </button>
   )
 }

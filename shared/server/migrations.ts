@@ -408,4 +408,20 @@ export const migrations: string[] = [
   DROP TABLE exercise_sheets;
   DROP TABLE courses;
   `,
+
+  /* 19: Versionsverlauf. Gesichert wird jeweils der bisherige Stand einer Notiz, bevor er überschrieben wird
+     (reason: Bearbeiten nach einer Pause, Konflikt, Wiederherstellen, Formatwechsel). */ `
+  CREATE TABLE note_versions (
+    id INTEGER PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL,
+    content TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('edit', 'conflict', 'restore', 'format')),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX note_versions_note ON note_versions(note_id, created_at);
+  `,
 ]

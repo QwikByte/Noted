@@ -161,3 +161,50 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   await expect(mobile).toHaveURL(new RegExp(`f=${optimierung.id}`))
   await context.close()
 })
+
+test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const content = '# Hauptsätze\n\nErster Hauptsatz'
+  const data = { title: 'Verlauf Thermodynamik', content, folderId: null }
+  const note = (await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }
+  cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+  // Ein Formatwechsel sichert den bisherigen Stand sofort – beim Tippen erst nach 10 Minuten
+  await page.request.put(`/api/notes/${note.id}`, { headers, data: { format: 'text', content: 'Hauptsätze' } })
+
+  await page.goto(`/?n=${note.id}`)
+  const editor = page.locator('.cm-content')
+  await expect(editor).toContainText('Hauptsätze')
+  await editor.click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.insertText('\nAus Versehen überschrieben')
+  await expect(page.getByTestId('save-status')).toContainText('Gespeichert', { timeout: 10_000 })
+
+  const openHistory = async () => {
+    await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+    await page.getByRole('menuitem', { name: 'Verlauf …' }).click()
+  }
+  await openHistory()
+  const list = page.getByTestId('history-list')
+  const preview = page.getByTestId('history-preview')
+  await expect(list.getByRole('button')).toHaveCount(1)
+  await expect(list).toContainText('Vor dem Formatwechsel')
+  await expect(preview.getByRole('heading', { name: 'Hauptsätze' })).toBeVisible()
+  await shot(page, '92-history')
+  await page.getByRole('button', { name: 'Diesen Stand wiederherstellen' }).click()
+  const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Diesen Stand wiederherstellen?' }) })
+  await confirm.getByRole('button', { name: 'Wiederherstellen', exact: true }).click()
+  await expect(page.getByText(/^Stand vom .* wiederhergestellt\.$/)).toBeVisible()
+
+  // Editor und Server zeigen wieder den alten Stand – samt Format
+  await expect(editor).toContainText('# Hauptsätze')
+  await expect(editor).not.toContainText('Aus Versehen')
+  const restored = (await (await page.request.get(`/api/notes/${note.id}`)).json()).note
+  expect(restored).toMatchObject({ format: 'markdown', content })
+
+  // Der überschriebene Stand bleibt im Verlauf
+  await openHistory()
+  await expect(list.getByRole('button')).toHaveCount(2)
+  await expect(list.getByRole('button').first()).toContainText('Vor dem Wiederherstellen')
+  await expect(preview).toContainText('Aus Versehen überschrieben')
+})

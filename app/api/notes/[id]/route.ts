@@ -14,6 +14,8 @@ const schema = z.object({
   pinned: z.boolean().optional(),
   baseVersion: z.number().int().optional(),
   autoRename: z.boolean().optional(),
+  /** Eigene Version überschreibt nach einem Konflikt den Server-Stand (dieser wird im Verlauf gesichert) */
+  reason: z.literal('conflict').optional(),
 })
 
 export const PUT = route<{ id: string }>('user', async ({ req, user, params }) => {

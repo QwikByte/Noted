@@ -8,7 +8,17 @@ import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdo
 import { uniqueName, validateName } from '@/shared/lib/names'
 import { noteText } from '../format'
 import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
-import type { Folder, Note, NoteFormat, NoteSummary, SearchResult, TagCount, TrashedNote } from '../types'
+import { getVersion, snapshotIfDue } from './versions'
+import type {
+  Folder,
+  Note,
+  NoteFormat,
+  NoteSummary,
+  NoteVersionReason,
+  SearchResult,
+  TagCount,
+  TrashedNote,
+} from '../types'
 
 export const MAX_NOTE_LENGTH = 2_000_000 // ca. 2 MB Text pro Notiz
 
@@ -295,6 +305,12 @@ export type NotePatch = {
   baseVersion?: number
   /** Bei Titel-Konflikt automatisch einen freien Namen wählen statt Fehler */
   autoRename?: boolean
+  /**
+   * Anlass, wenn es kein gewöhnliches Bearbeiten ist – der bisherige Stand wird dann immer im Verlauf gesichert:
+   * conflict – die eigene Version überschreibt nach einem Konflikt den Server-Stand · restore – ein älterer Stand
+   * wird wiederhergestellt
+   */
+  reason?: 'conflict' | 'restore'
 }
 
 export function updateNote(userId: number, id: string, patch: NotePatch): { note: Note; linksUpdated: number } {
@@ -337,8 +353,11 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   let linksUpdated = 0
 
   const text = contentChanged || bump ? noteText(format, content) : ''
+  const snapshotReason: NoteVersionReason | null =
+    patch.reason && bump ? patch.reason : format !== current.format ? 'format' : contentChanged ? 'edit' : null
 
   db.transaction(() => {
+    if (snapshotReason) snapshotIfDue(db, current, snapshotReason)
     db.prepare(
       `UPDATE notes SET title = ?, folder_id = ?, content = ?, format = ?, excerpt = ?, pinned = ?,
          version = version + ?, updated_at = ?
@@ -359,6 +378,12 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
     if (title !== current.title) linksUpdated = rewriteLinks(db, userId, id, current.title, title)
   })()
   return { note: getNote(userId, id), linksUpdated }
+}
+
+/** Älteren Stand zurückholen – ein gewöhnliches Speichern, dabei wird der bisherige Stand gesichert ('restore') */
+export function restoreVersion(userId: number, noteId: string, versionId: number) {
+  const { title, format, content } = getVersion(userId, noteId, versionId)
+  return updateNote(userId, noteId, { title, format, content, reason: 'restore', autoRename: true })
 }
 
 function escapeRegExp(s: string) {

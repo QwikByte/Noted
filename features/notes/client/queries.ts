@@ -3,7 +3,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/client/api'
 import { sync, type Draft } from './sync'
-import type { Folder, Note, NoteSummary, TagCount, TrashedNote } from '../types'
+import type { Folder, Note, NoteSummary, NoteVersion, NoteVersionWithContent, TagCount, TrashedNote } from '../types'
 import { extractTags, makeExcerpt } from '@/shared/markdown/meta'
 import { noteText } from '../format'
 
@@ -15,6 +15,8 @@ export const keys = {
   trash: ['trash'] as const,
   search: (q: string) => ['search', q] as const,
   backlinks: (id: string) => ['backlinks', id] as const,
+  versions: (id: string) => ['versions', id] as const,
+  version: (id: string, versionId: number) => ['versions', id, versionId] as const,
 }
 
 export function useFolders() {
@@ -113,6 +115,27 @@ export function useBacklinks(id: string | null) {
         (r) => r.backlinks,
       ),
     enabled: !!id,
+  })
+}
+
+/** Gesicherte Stände einer Notiz – bei jedem Öffnen des Verlaufs neu laden, es kann inzwischen einer dazugekommen sein */
+export function useNoteVersions(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.versions(id),
+    queryFn: () => api<{ versions: NoteVersion[] }>(`/api/notes/${id}/versions`).then((r) => r.versions),
+    enabled,
+    staleTime: 0,
+  })
+}
+
+export function useNoteVersion(id: string, versionId: number | null) {
+  return useQuery({
+    queryKey: keys.version(id, versionId ?? 0),
+    queryFn: () =>
+      api<{ version: NoteVersionWithContent }>(`/api/notes/${id}/versions/${versionId}`).then((r) => r.version),
+    enabled: versionId !== null,
+    // Ein gesicherter Stand ändert sich nicht mehr
+    staleTime: Infinity,
   })
 }
 

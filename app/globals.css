@@ -907,6 +907,15 @@ html.dragging * {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Vorschau im Verlauf: ohne den Leerraum unter dem Text, den Lesemodus und Editor brauchen */
+.history-preview .markdown-body,
+.history-preview .plain-text {
+  max-width: none;
+  padding: 0 4px 16px;
+}
+.history-preview .markdown-body > div > :first-child {
+  margin-top: 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* Karteikarten                                                         */

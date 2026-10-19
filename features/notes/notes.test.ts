@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ADMIN_PASSWORD, call, loginAs, setupTestEnv } from '@/tests/helpers'
 import * as notes from '@/app/api/notes/route'
 import * as note from '@/app/api/notes/[id]/route'
@@ -12,6 +12,11 @@ import * as tags from '@/app/api/tags/route'
 import * as trash from '@/app/api/trash/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
+import * as versions from '@/app/api/notes/[id]/versions/route'
+import * as version from '@/app/api/notes/[id]/versions/[versionId]/route'
+import * as restoreVersion from '@/app/api/notes/[id]/versions/[versionId]/restore/route'
+import { getDb } from '@/shared/server/db'
+import { MAX_VERSIONS_PER_NOTE, VERSION_MAX_AGE, purgeVersions } from './server/versions'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -363,5 +368,148 @@ describe('Mindmap und Canvas', () => {
     expect(d.res.headers.get('content-disposition')).toContain(encodeURIComponent('Mechanik.canvas'))
     // Der Testhelfer liest JSON-Antworten bereits aus
     expect(d.data.nodes[0].file).toBe('Physik/Impuls.md')
+  })
+})
+
+describe('Versionsverlauf', () => {
+  const MINUTE = 60_000
+  afterEach(() => vi.useRealTimers())
+
+  const put = (id: string, body: Record<string, unknown>, cookie = token) =>
+    call(note.PUT, '/', { method: 'PUT', cookie, params: { id }, body })
+  const history = async (id: string) => {
+    const r = await call(versions.GET, '/', { cookie: token, params: { id } })
+    expect(r.status).toBe(200)
+    return r.data.versions as { id: number; version: number; title: string; reason: string; size: number }[]
+  }
+
+  it('sichert beim Tippen höchstens alle 10 Minuten den bisherigen Stand', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.now()
+    const n = await newNote('Mitschrift Optik', 'Stand A')
+    // Gleich nach dem Anlegen entsteht noch kein Eintrag – sonst stünden halb getippte Anfänge im Verlauf
+    await put(n.id, { content: 'Stand A1' })
+    expect(await history(n.id)).toEqual([])
+
+    vi.setSystemTime(start + 11 * MINUTE)
+    for (let i = 0; i < 10; i++) {
+      vi.setSystemTime(start + 11 * MINUTE + i * 5_000)
+      expect((await put(n.id, { content: `Stand B${i}` })).status).toBe(200)
+    }
+    const first = await history(n.id)
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({ reason: 'edit', title: 'Mitschrift Optik', size: 'Stand A1'.length })
+    const detail = await call(version.GET, '/', { cookie: token, params: { id: n.id, versionId: String(first[0].id) } })
+    expect(detail.data.version.content).toBe('Stand A1')
+
+    vi.setSystemTime(start + 22 * MINUTE)
+    await put(n.id, { content: 'Stand C' })
+    const second = await history(n.id)
+    expect(second).toHaveLength(2)
+    const latest = await call(version.GET, '/', { cookie: token, params: { id: n.id, versionId: String(second[0].id) } })
+    expect(latest.data.version.content).toBe('Stand B9')
+    // Titel ändern oder Anheften sichert nichts
+    vi.setSystemTime(start + 40 * MINUTE)
+    await put(n.id, { title: 'Optik', pinned: true })
+    expect(await history(n.id)).toHaveLength(2)
+  })
+
+  it('sichert vor Formatwechsel und beim Überschreiben nach einem Konflikt immer', async () => {
+    const n = await newNote('Konfliktfall', '# Original')
+    const converted = await put(n.id, { format: 'text', content: 'Original' })
+    expect(converted.status).toBe(200)
+    const overwritten = await put(n.id, {
+      content: 'Meine Version',
+      baseVersion: converted.data.note.version,
+      reason: 'conflict',
+    })
+    expect(overwritten.status).toBe(200)
+    const list = await history(n.id)
+    expect(list.map((v) => v.reason)).toEqual(['conflict', 'format'])
+    const formatVersion = await call(version.GET, '/', { cookie: token, params: { id: n.id, versionId: String(list[1].id) } })
+    expect(formatVersion.data.version).toMatchObject({ format: 'markdown', content: '# Original' })
+    const bad = await put(n.id, { content: 'x', reason: 'restore' })
+    expect(bad.status).toBe(400)
+  })
+
+  it('stellt Titel, Format und Inhalt wieder her und indiziert die Notiz neu', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.now()
+    const target = await newNote('Chlorophyll', 'Farbstoff')
+    const n = await newNote('Photosynthese', 'Lichtreaktion in [[Chlorophyll]] #bio/zelle')
+    vi.setSystemTime(start + 11 * MINUTE)
+    const changed = await put(n.id, { title: 'Umbau', format: 'text', content: 'Nur noch Stichworte' })
+    expect(changed.data.note.tags).toEqual([])
+    const [old] = await history(n.id)
+    expect(old).toMatchObject({ reason: 'format', title: 'Photosynthese' })
+
+    const r = await call(restoreVersion.POST, '/', { cookie: token, params: { id: n.id, versionId: String(old.id) } })
+    expect(r.status).toBe(200)
+    expect(r.data.note).toMatchObject({
+      title: 'Photosynthese',
+      format: 'markdown',
+      content: 'Lichtreaktion in [[Chlorophyll]] #bio/zelle',
+      tags: ['bio/zelle'],
+      version: changed.data.note.version + 1,
+    })
+    const s = await call(search.GET, '/', { cookie: token, query: { q: 'lichtreaktion' } })
+    expect(s.data.results.map((x: { id: string }) => x.id)).toEqual([n.id])
+    const bl = await call(backlinks.GET, '/', { cookie: token, params: { id: target.id } })
+    expect(bl.data.backlinks.map((b: { id: string }) => b.id)).toContain(n.id)
+    // Der überschriebene Stand bleibt im Verlauf
+    const list = await history(n.id)
+    expect(list[0]).toMatchObject({ reason: 'restore', title: 'Umbau' })
+  })
+
+  it('liefert für fremde Notizen, fremde und ungültige Stände 404', async () => {
+    const n = await newNote('Privat', '# Privat')
+    await put(n.id, { format: 'text', content: 'Privat' })
+    const [v] = await history(n.id)
+    const other = await newNote('Andere Notiz')
+
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'zweiter', password: 'Kennwort-Abc-111' } })
+    const second = await loginAs('zweiter', 'Kennwort-Abc-111')
+    await call(password.POST, '/', {
+      cookie: second,
+      body: { currentPassword: 'Kennwort-Abc-111', newPassword: 'Kennwort-Abc-222' },
+    })
+    const params = { id: n.id, versionId: String(v.id) }
+    expect((await call(versions.GET, '/', { cookie: second, params: { id: n.id } })).status).toBe(404)
+    expect((await call(version.GET, '/', { cookie: second, params })).status).toBe(404)
+    expect((await call(restoreVersion.POST, '/', { cookie: second, params })).status).toBe(404)
+
+    // Stand einer anderen Notiz und unsinnige Nummern
+    const wrongNote = { id: other.id, versionId: String(v.id) }
+    expect((await call(version.GET, '/', { cookie: token, params: wrongNote })).status).toBe(404)
+    for (const versionId of ['abc', '0', '-1', '1.5', '99999999']) {
+      expect((await call(version.GET, '/', { cookie: token, params: { id: n.id, versionId } })).status).toBe(404)
+    }
+  })
+
+  it(`behält höchstens ${MAX_VERSIONS_PER_NOTE} Stände und entfernt Stände nach 90 Tagen`, async () => {
+    const n = await newNote('Oft umgewandelt', 'Text')
+    for (let i = 0; i < MAX_VERSIONS_PER_NOTE + 5; i++) {
+      expect((await put(n.id, { format: i % 2 === 0 ? 'text' : 'markdown', content: `Text ${i}` })).status).toBe(200)
+    }
+    const list = await history(n.id)
+    expect(list).toHaveLength(MAX_VERSIONS_PER_NOTE)
+    // Die ältesten fallen weg: Der älteste verbliebene Stand ist der nach fünf Wechseln
+    expect(list.at(-1)!.version).toBe(6)
+
+    purgeVersions(Date.now() + VERSION_MAX_AGE - MINUTE)
+    expect(await history(n.id)).toHaveLength(MAX_VERSIONS_PER_NOTE)
+    purgeVersions(Date.now() + VERSION_MAX_AGE + MINUTE)
+    expect(await history(n.id)).toEqual([])
+  })
+
+  it('entfernt die Stände beim endgültigen Löschen und zeigt im Papierkorb keinen Verlauf', async () => {
+    const n = await newNote('Weg damit', 'Text')
+    await put(n.id, { format: 'text' })
+    expect(await history(n.id)).toHaveLength(1)
+    await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: n.id } })
+    expect((await call(versions.GET, '/', { cookie: token, params: { id: n.id } })).status).toBe(404)
+    await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: n.id }, query: { permanent: '1' } })
+    const left = getDb().prepare('SELECT COUNT(*) AS n FROM note_versions WHERE note_id = ?').get(n.id) as { n: number }
+    expect(left.n).toBe(0)
   })
 })

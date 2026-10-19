@@ -20,6 +20,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
+- **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
 - Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
 - **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
@@ -349,7 +350,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
-  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
+  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung
