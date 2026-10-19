@@ -21,6 +21,9 @@ export class NetworkError extends Error {
 
 type Options = Omit<RequestInit, 'body'> & { body?: unknown; form?: FormData }
 
+/** Browser lehnen `keepalive`-Anfragen mit mehr als 64 KB Körper ab – etwas Spielraum für Header lassen */
+const KEEPALIVE_MAX_BYTES = 60 * 1024
+
 let currentUserId: number | null = null
 
 /**
@@ -41,9 +44,12 @@ export async function api<T = unknown>(url: string, opts: Options = {}): Promise
     headers.set('content-type', 'application/json')
     body = JSON.stringify(opts.body)
   }
+  // Zu große Anfragen ohne keepalive schicken: Sie würden sonst sofort scheitern statt im Hintergrund weiterzulaufen
+  const tooBigForKeepalive = typeof body === 'string' && new Blob([body]).size > KEEPALIVE_MAX_BYTES
+  const keepalive = opts.keepalive && tooBigForKeepalive ? false : opts.keepalive
   let res: Response
   try {
-    res = await fetch(url, { ...opts, headers, body, credentials: 'same-origin' })
+    res = await fetch(url, { ...opts, headers, body, credentials: 'same-origin', keepalive })
   } catch {
     throw new NetworkError()
   }

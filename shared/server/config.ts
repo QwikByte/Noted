@@ -30,6 +30,8 @@ export function getConfig() {
     /** Öffentliche URL, z. B. https://notes.example.com (für Origin-Prüfung) */
     appUrl: process.env.APP_URL?.replace(/\/+$/, '') || undefined,
     trashDays: num(process.env.TRASH_DAYS, 30),
+    /** Bilder von fremden Servern in Notizen anzeigen (jedes externe Bild verrät beim Öffnen die eigene IP-Adresse) */
+    externalImages: bool(process.env.EXTERNAL_IMAGES) ?? true,
     /** Status der automatischen Updates (schreibt scripts/auto-update.sh, im Container nur lesend eingebunden) */
     updateDir: path.resolve(/*turbopackIgnore: true*/ process.env.UPDATE_STATUS_DIR || path.join(process.cwd(), '.update')),
     /** Hier legt der Admin-Bereich Update-Anfragen ab; der Update-Dienst auf dem Server holt sie ab */

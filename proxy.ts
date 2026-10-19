@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { getConfig } from '@/shared/server/config'
 
 const PUBLIC_PATHS = ['/login']
 
@@ -24,7 +25,8 @@ export function proxy(request: NextRequest) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https:",
+    // Externe Bilder (![](https://…)) lassen sich per EXTERNAL_IMAGES=false abschalten
+    `img-src 'self' data: blob:${getConfig().externalImages ? ' https:' : ''}`,
     "media-src 'self' blob:",
     "font-src 'self' data:",
     `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
