@@ -65,6 +65,17 @@ export function CalendarView() {
   const fileInput = useRef<HTMLInputElement>(null)
   const touch = useRef<{ x: number; y: number } | null>(null)
 
+  // Waagerechtes Wischen blättert hier die Tage – sonst wertet der Browser es zusätzlich als „Zurück“ und verlässt
+  // den Kalender. Abschalten lässt sich das nur an der Wurzel, daher nur, solange die schmale Ansicht offen ist.
+  useEffect(() => {
+    if (wide) return
+    const root = document.documentElement
+    root.style.overscrollBehaviorX = 'none'
+    return () => {
+      root.style.overscrollBehaviorX = ''
+    }
+  }, [wide])
+
   const days = useMemo(
     () => (wide ? Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i)) : [anchor]),
     [wide, anchor],

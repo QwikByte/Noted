@@ -470,6 +470,8 @@ test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
 
   // Neue Karte: „Einfach“ plant mit FSRS nach der Anfangsstabilität (gut zwei Wochen) statt 4 Tage wie mit SM-2
   await page.getByTestId('deck-learn').click()
+  // Erst tippen, wenn die Karte da ist – sonst geht die Leertaste je nach Auslastung ins Leere
+  await expect(page.getByTestId('study-card')).toContainText('Frage')
   await page.keyboard.press('Space')
   await expect(page.getByTestId('rate-4')).toContainText('16 Tage')
   await expect(page.getByTestId('rate-3')).toContainText('10 Min.')
