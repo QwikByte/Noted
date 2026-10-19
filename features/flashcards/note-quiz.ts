@@ -3,7 +3,7 @@
 // lassen sich nicht gewusste Abschnitte dort über ihre Zeile vorauswählen.
 import type { NoteFormat } from '@/features/notes/types'
 import { splitFrontmatter } from '@/shared/markdown/meta'
-import { stripComments } from '@/shared/markdown/obsidian'
+import { stripComments } from '@/shared/markdown/syntax'
 import { FENCE_RE, HEADING_RE } from './card-markdown'
 
 /** Einfacher Text hat keine Überschriften – die anderen Formate werden für die Abfrage zu Markdown umgewandelt */

@@ -1,5 +1,5 @@
-// Lückentext-Karten: Lücken stehen als ==Markierung== im Text (Format des Obsidian-Plugins „Spaced Repetition“),
-// {{Lücke}} wird beim Speichern dazu umgewandelt. Jede Lücke wird einzeln abgefragt, der Rest bleibt sichtbar.
+// Lückentext-Karten: Lücken stehen als ==Markierung== im Text, {{Lücke}} wird beim Speichern dazu umgewandelt.
+// Jede Lücke wird einzeln abgefragt, der Rest bleibt sichtbar.
 // Reine Logik ohne Browser- oder Server-Abhängigkeit.
 
 const MARK_RE = /==(?!=)([^\n]+?)==/g

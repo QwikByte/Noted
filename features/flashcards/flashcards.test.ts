@@ -411,7 +411,7 @@ describe('Trennung der Konten und Export', () => {
     expect(rv.data.saved).toBe(0)
   })
 
-  it('exportiert Stapel als Markdown für Obsidian', async () => {
+  it('exportiert Stapel als Markdown', async () => {
     const d = await newDeck('Export: Test')
     await addCards(d.id, [
       { type: 'basic', front: 'Frage', back: 'Antwort' },

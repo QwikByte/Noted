@@ -1,7 +1,7 @@
 // Bildverdeckung (Image Occlusion): Flächen über einem Bild – z. B. den Beschriftungen eines Diagramms – werden
 // einzeln abgefragt. Lage und Größe sind relativ zum Bild (0–1), damit sie bei jeder Anzeigegröße passen.
 // Reine Logik ohne Browser- oder Server-Abhängigkeit.
-import { IMAGE_EXT } from '@/shared/markdown/obsidian'
+import { IMAGE_EXT } from '@/shared/markdown/syntax'
 import { MAX_MASK_LABEL, MAX_MASKS } from './limits'
 import type { Occlusion, OcclusionMask } from './types'
 

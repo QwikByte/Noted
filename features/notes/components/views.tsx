@@ -126,9 +126,7 @@ export function HomeNotes() {
 
       {pinned.length > 0 ? (
         <section className="mb-8">
-          <h2 className="mb-2.5 flex items-center gap-1.5 text-sm font-semibold text-muted">
-            <Pin className="size-3.5" /> Angeheftet
-          </h2>
+          <h2 className="mb-2.5 text-sm font-semibold text-muted">Angeheftet</h2>
           <NoteList>
             {pinned.map((n) => (
               <NoteCard key={n.id} note={n} folders={folders} />
@@ -147,7 +145,6 @@ export function HomeNotes() {
           <EmptyState
             icon={<NotebookPen />}
             title="Noch keine Notizen"
-            text="Lege deine erste Notiz an – zum Beispiel mit der Vorlage „Vorlesung“."
             action={
               <Button variant="primary" onClick={() => app.openNewNote({ templateId: 'lecture' })}>
                 <Plus className="size-4" /> Erste Notiz
@@ -190,7 +187,6 @@ export function FolderView({ id }: { id: string }) {
   return (
     <Page>
       <PageHeader
-        icon={<FolderIcon />}
         title={folder.name}
         subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}${children.length ? ` · ${children.length} ${children.length === 1 ? 'Unterordner' : 'Unterordner'}` : ''}`}
         breadcrumb={
@@ -281,7 +277,7 @@ export function TagView({ tag }: { tag: string }) {
     .sort((a, b) => b.updatedAt - a.updatedAt)
   return (
     <Page>
-      <PageHeader icon={<Hash />} title={`#${tag}`} subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`} />
+      <PageHeader title={`#${tag}`} subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`} />
       {items.length === 0 ? (
         <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />
       ) : (
@@ -344,13 +340,13 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Notizen durchsuchen … (z. B. „Eigenwert“ oder „#mathe“)"
+          placeholder="Notizen durchsuchen …"
           className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
           aria-label="Suchbegriff"
         />
       </div>
       {!debounced ? (
-        <EmptyState icon={<Search />} title="Volltextsuche" text="Durchsucht Titel und Inhalt aller Notizen. Mit #tag filterst du nach Tags." />
+        <EmptyState icon={<Search />} title="Volltextsuche" text="Mit #tag filterst du nach Tags." />
       ) : offlineResults ? (
         <>
           <p className="mb-3 flex items-center gap-2 text-sm text-warning">
@@ -367,7 +363,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           <Loader2 className="size-6 animate-spin" />
         </div>
       ) : (search.data ?? []).length === 0 ? (
-        <EmptyState icon={<Search />} title="Nichts gefunden" text={`Keine Notiz enthält „${debounced}“.`} />
+        <EmptyState icon={<Search />} title="Nichts gefunden" />
       ) : (
         <>
           <p className="mb-3 text-sm text-muted">

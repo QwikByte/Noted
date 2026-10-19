@@ -41,7 +41,7 @@
   --rule: #d9483b;
   --grid-line: #e1e6f0;
   --card-line: #e4e9f5;
-  /* Farben für Mindmap-Äste und Canvas-Karten (wie Obsidian: 1 Rot, 2 Orange, 3 Gelb, 4 Grün, 5 Türkis, 6 Lila) */
+  /* Farben für Mindmap-Äste und Canvas-Karten (JSON Canvas: 1 Rot, 2 Orange, 3 Gelb, 4 Grün, 5 Türkis, 6 Lila) */
   --swatch-1: #d4473a;
   --swatch-2: #d27222;
   --swatch-3: #b58d00;
@@ -118,6 +118,7 @@
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
   --color-rule: var(--rule);
+  --color-mark: var(--mark);
   --font-sans: 'Atkinson Hyperlegible Next Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Atkinson Hyperlegible Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
   --font-serif: 'Source Serif 4 Variable', 'Iowan Old Style', Georgia, serif;
@@ -192,6 +193,13 @@
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Textmarker-Strich für Fälliges (fällige Karten) – ungeschichtet, damit der Radius rounded-full überstimmt */
+.marker {
+  background: var(--mark);
+  color: var(--text);
+  border-radius: 0.2em 0.35em 0.25em 0.4em;
 }
 
 /* Karopapier (5-mm-Kästchen) */
@@ -377,7 +385,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Vorschau (Obsidian-Stil)                                           */
+/* Vorschau                                                           */
 /* ------------------------------------------------------------------ */
 /* Fließtext in der Serifenschrift (Skript-Charakter, harmoniert mit KaTeX), Überschriften in der Grotesk */
 .markdown-body {

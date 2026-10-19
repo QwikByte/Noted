@@ -186,7 +186,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
       await createCards(qc, target, [card])
       setLastDeck(target)
       if (next) {
-        toast.success('Karte gespeichert – weiter mit der nächsten.')
+        toast.success('Karte gespeichert.')
         setFront('')
         setBack('')
         setOptions(emptyOptions())
@@ -488,7 +488,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
         ) : null}
         {editing ? null : (
           <p className="text-xs text-faint max-sm:hidden">
-            Tipp: <kbd className="rounded border border-border px-1">Strg</kbd> + <kbd className="rounded border border-border px-1">Enter</kbd>{' '}
+            <kbd className="rounded border border-border px-1">Strg</kbd> + <kbd className="rounded border border-border px-1">Enter</kbd>{' '}
             speichert und öffnet die nächste Karte.
           </p>
         )}

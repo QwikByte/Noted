@@ -56,7 +56,6 @@ export function CardsView() {
   return (
     <Page>
       <PageHeader
-        icon={<Layers />}
         title="Karteikarten"
         subtitle={
           data
@@ -103,8 +102,7 @@ export function CardsView() {
           <Layers className="mb-3 size-9 stroke-[1.5] text-faint" />
           <p className="font-semibold">Noch keine Karteikarten</p>
           <p className="mt-1 max-w-md text-sm text-muted">
-            Lege einen Stapel an, z. B. pro Fach. Karten kannst du direkt schreiben – als Frage/Antwort, beidseitig, Lückentext oder
-            Multiple Choice –, aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“) oder aus Anki übernehmen.
+            Karten kannst du auch aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“).
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Button variant="primary" onClick={() => setCreating(true)}>
@@ -166,7 +164,7 @@ function DeckTile({
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>
           {counts.due > 0 ? (
-            <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-on-accent tabular-nums">{counts.due} fällig</span>
+            <span className="marker shrink-0 px-2 py-0.5 text-xs font-semibold tabular-nums">{counts.due} fällig</span>
           ) : cards > 0 ? (
             <span className="shrink-0 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Erledigt</span>
           ) : null}

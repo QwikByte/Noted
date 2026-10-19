@@ -13,7 +13,7 @@ function formatValue(v: unknown): string {
   return String(v)
 }
 
-/** Obsidian-Properties (YAML-Frontmatter) als übersichtliche Tabelle. */
+/** Properties (YAML-Frontmatter) als übersichtliche Tabelle. */
 export function Properties({
   data,
   error,

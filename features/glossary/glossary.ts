@@ -81,7 +81,7 @@ export function initialOf(term: string): string {
 
 const link = (s: GlossarySource) => `[[${s.noteTitle}${s.heading ? `#${s.heading}` : ''}]]`
 
-/** Als Markdown (z. B. Spickzettel in Obsidian) – mit Links zurück an die Stelle in der Notiz */
+/** Als Markdown (z. B. als Spickzettel) – mit Links zurück an die Stelle in der Notiz */
 export function glossaryToMarkdown(title: string, terms: GlossaryTerm[], formulas: GlossaryFormula[]): string {
   const parts = [`# ${title}`]
   if (terms.length > 0) {

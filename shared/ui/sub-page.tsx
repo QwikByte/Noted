@@ -17,13 +17,11 @@ export function SubPageHeader({ title, children }: { title: string; children?: R
 }
 
 export function Section({
-  icon,
   title,
   description,
   children,
   id,
 }: {
-  icon: React.ReactNode
   title: string
   description?: React.ReactNode
   children: React.ReactNode
@@ -31,12 +29,9 @@ export function Section({
 }) {
   return (
     <section id={id} className="scroll-mt-6 rounded-xl border border-border bg-elevated p-5 sm:p-6">
-      <div className="mb-5 flex items-start gap-3">
-        <div className="mt-0.5 shrink-0 text-faint [&>svg]:size-[18px]">{icon}</div>
-        <div>
-          <h2 className="font-semibold">{title}</h2>
-          {description ? <p className="mt-0.5 text-sm text-muted">{description}</p> : null}
-        </div>
+      <div className="mb-5">
+        <h2 className="font-semibold">{title}</h2>
+        {description ? <p className="mt-0.5 text-sm text-muted">{description}</p> : null}
       </div>
       {children}
     </section>

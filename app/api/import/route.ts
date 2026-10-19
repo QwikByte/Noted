@@ -1,11 +1,11 @@
 import { badRequest, json, readForm } from '@/shared/server/http'
 import { route } from '@/features/auth/server/route'
 import { getConfig } from '@/shared/server/config'
-import { importFiles } from '@/features/vault/server/vault'
+import { importFiles } from '@/features/transfer/server/transfer'
 import { isValidId } from '@/shared/server/crypto'
 import { isTimeZone } from '@/features/calendar/ics'
 
-/** Import von .md-Dateien, Kalendern (.ics), ZIP-Archiven (Obsidian-Vault) und sonstigen Dateien (als Anhänge) */
+/** Import von .md-Dateien, Kalendern (.ics), ZIP-Archiven und sonstigen Dateien (als Anhänge) */
 export const POST = route('user', async ({ req, user }) => {
   const form = await readForm(req, getConfig().maxImportBytes + 1024 * 1024)
   const files = form.getAll('files').filter((f): f is File => f instanceof File)

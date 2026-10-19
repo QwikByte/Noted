@@ -102,7 +102,7 @@ export function getAttachment(userId: number, id: string): Attachment {
   return toAttachment(row)
 }
 
-/** Sucht einen Anhang über den Dateinamen (wie Obsidian: ![[foto.jpg]]). Pfadangaben werden ignoriert. */
+/** Sucht einen Anhang über den Dateinamen (wie in ![[foto.jpg]]). Pfadangaben werden ignoriert. */
 export function getAttachmentByName(userId: number, name: string): Attachment {
   const base = name.split('/').pop()!.trim()
   const row = getDb()

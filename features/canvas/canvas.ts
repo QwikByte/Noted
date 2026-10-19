@@ -1,7 +1,7 @@
-// Canvas im offenen Format „JSON Canvas“ (https://jsoncanvas.org), wie Obsidian es für .canvas-Dateien nutzt:
+// Canvas im offenen Format „JSON Canvas“ (https://jsoncanvas.org, Dateiendung .canvas):
 // Karten (Text, Datei bzw. Notiz, Link, Gruppe) auf einer freien Fläche und Pfeile zwischen ihnen.
 // Dateikarten verweisen in Noted wie Wikilinks auf den Namen (Notiztitel oder Anhang); erst der Export
-// schreibt den vollständigen Pfad im Vault (siehe canvasForExport).
+// schreibt den vollständigen Pfad im Export (siehe canvasForExport).
 import { isFileTarget, linkKey } from '@/shared/markdown/meta'
 
 export type CanvasSide = 'top' | 'right' | 'bottom' | 'left'
@@ -29,7 +29,7 @@ export type CanvasEdge = {
 
 export type CanvasData = { nodes: CanvasNode[]; edges: CanvasEdge[] }
 
-/** Farben wie in Obsidian: „1“ bis „6“ oder ein Hex-Wert */
+/** Farben: „1“ bis „6“ (Farbpalette von JSON Canvas) oder ein Hex-Wert */
 export const CANVAS_COLORS = [
   { id: '1', label: 'Rot' },
   { id: '2', label: 'Orange' },
@@ -56,13 +56,13 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 
-/** Zufällige ID wie in Obsidian (16 Hex-Zeichen) */
+/** Zufällige ID (16 Hex-Zeichen) */
 export function newCanvasId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(8))
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Unbekannte Felder (z. B. von Obsidian-Plugins) bleiben erhalten: Die Karte wird nur ergänzt, nicht neu gebaut
+// Unbekannte Felder (z. B. von anderen Programmen) bleiben erhalten: Die Karte wird nur ergänzt, nicht neu gebaut
 function parseNode(raw: unknown): CanvasNode | null {
   if (!isObject(raw) || typeof raw.id !== 'string' || !raw.id) return null
   const base = {
@@ -144,7 +144,7 @@ export function parseCanvas(json: string): CanvasData | null {
   return { nodes, edges }
 }
 
-/** Schreibt wie Obsidian: eine Karte bzw. ein Pfeil pro Zeile (gut lesbare Änderungen, kompakte Datei) */
+/** Schreibt eine Karte bzw. einen Pfeil pro Zeile (gut lesbare Änderungen, kompakte Datei) */
 export function serializeCanvas(data: CanvasData): string {
   const list = (items: object[]) => (items.length ? `[\n${items.map((i) => `\t\t${JSON.stringify(i)}`).join(',\n')}\n\t]` : '[]')
   return `{\n\t"nodes":${list(data.nodes)},\n\t"edges":${list(data.edges)}\n}\n`
@@ -237,15 +237,15 @@ export function canvasWithText(markdown: string): CanvasData {
 }
 
 /** Was der Export über Notizen und Anhänge wissen muss */
-export type VaultIndex = {
+export type ExportIndex = {
   attachmentFolder: string
   attachments: Iterable<string>
-  /** Pfad im Vault (mit Endung) je Notiz, Schlüssel: linkKey(Titel) */
+  /** Pfad im Export (mit Endung) je Notiz, Schlüssel: linkKey(Titel) */
   notePaths: ReadonlyMap<string, string>
 }
 
-/** Für den Export: Dateikarten verweisen auf den vollständigen Pfad im Vault, wie Obsidian ihn erwartet */
-export function canvasForExport(json: string, index: VaultIndex): string {
+/** Für den Export: Dateikarten verweisen auf den vollständigen Pfad im ZIP */
+export function canvasForExport(json: string, index: ExportIndex): string {
   if (!json.trim()) return serializeCanvas({ nodes: [], edges: [] })
   const attachments = new Map(Array.from(index.attachments, (a) => [a.toLowerCase(), a]))
   return mapCanvasNodes(json, (n) => {

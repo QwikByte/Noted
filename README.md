@@ -1,14 +1,14 @@
 # Noted
 
-Notizen für die Uni – unterwegs auf dem Handy schreiben, Obsidian-kompatibel per Copy & Paste oder als Vault-Export.
+Notizen für die Uni – am Laptop in der Vorlesung und unterwegs auf dem Handy.
 
-Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Faktor-Anmeldung und Offline-Unterstützung. Alle Notizen sind gewöhnliches Markdown im Obsidian-Format.
+Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Faktor-Anmeldung und Offline-Unterstützung. Notizen sind gewöhnliches Markdown und lassen sich jederzeit als ZIP exportieren.
 
 ## Funktionen
 
-**Notizen im Obsidian-Format**
-- Editor auf Basis von CodeMirror 6, also derselben Editor-Engine, die Obsidian nutzt. Er hebt die Markdown-Syntax hervor.
-- Lesemodus mit Obsidian-Darstellung:
+**Notizen in Markdown**
+- Editor auf Basis von CodeMirror 6. Er hebt die Markdown-Syntax hervor.
+- Lesemodus mit:
   - `[[Wikilinks]]` mit Alias und Abschnitt (`[[Notiz#Abschnitt]]` springt zur Überschrift) sowie `![[Einbettungen]]`
   - `#Tags`, auch verschachtelt (`#uni/mathe`)
   - YAML-Properties (Frontmatter)
@@ -18,36 +18,36 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Aufgaben (`- [ ]`, in der Vorschau abhakbar)
   - `==Markierungen==`, Fußnoten, Code-Hervorhebung, `%%Kommentare%%`
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
-- **Kopieren-Knopf**: Er kopiert das Markdown genau so, wie Obsidian es erwartet. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
+- **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
-- Ordner wie in einem Vault (beliebig verschachtelt, Drag & Drop), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
+- Ordner (beliebig verschachtelt, Drag & Drop), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
 
 **Fünf Formate für Notizen**
 - Beim Anlegen wählst du das Format; Noted merkt sich die Wahl für die nächste Notiz.
-  - **Markdown** (Standard): alles oben Beschriebene, voll Obsidian-kompatibel.
-  - **Formatierter Text**: schreiben wie in Word – Überschriften, fett, kursiv, unterstrichen, Schriftgröße, Schriftfarbe, farbige Markierungen, Ausrichtung, Listen, Aufgaben, Tabellen, Links und Bilder. Gespeichert wird HTML; der Export legt solche Notizen als `.html` ab (Obsidian zeigt sie nicht als Notiz). Kopieren übernimmt die Formatierung, z. B. zum Einfügen in Word.
+  - **Markdown** (Standard): alles oben Beschriebene.
+  - **Formatierter Text**: schreiben wie in Word – Überschriften, fett, kursiv, unterstrichen, Schriftgröße, Schriftfarbe, farbige Markierungen, Ausrichtung, Listen, Aufgaben, Tabellen, Links und Bilder. Gespeichert wird HTML; der Export legt solche Notizen als `.html` ab. Kopieren übernimmt die Formatierung, z. B. zum Einfügen in Word.
   - **Einfacher Text**: nur Text, nichts wird als Formatierung gelesen. Export und Download als `.md`.
-  - **Mindmap**: Gedanken als Baum um ein zentrales Thema, die Hauptäste farbig abwechselnd rechts und links. Bedienung wie in Mindmap-Programmen: `Tab` legt einen Unterpunkt an, `Enter` den nächsten Punkt, Pfeiltasten wählen, `F2`, Doppelklick oder einfach lostippen bearbeitet, `Entf` löscht, `Alt+↑/↓` verschiebt, `Strg+Z` macht rückgängig. Äste lassen sich einklappen und per Drag & Drop umhängen. Auf dem Handy: Knoten antippen, nochmal antippen zum Bearbeiten, Unterpunkte über die Werkzeugleiste. Punkte können Markdown, `[[Links]]`, `#Tags`, Bilder und Aufgaben (`[ ]`) enthalten. Gespeichert wird eine Markdown-Gliederung im Format des Obsidian-Plugins [Enhancing Mindmap](https://github.com/MarkMindCkm/obsidian-enhancing-mindmap) (`mindmap-plugin: basic`, Wurzel als `#`, erste Ebene als `##`, darunter Listen) – Obsidian zeigt sie ohne Plugin als Gliederung an. In der geteilten Ansicht bearbeitest du die Gliederung als Text, die Mindmap daneben folgt.
-  - **Canvas**: freie Fläche wie [Obsidian Canvas](https://obsidian.md/canvas) mit Textkarten (Markdown), eingebetteten Notizen, Bildern und PDFs, Links und Gruppen. Karten verschieben, in der Größe ändern, färben und mit Pfeilen verbinden (vom Rand einer Karte zur nächsten ziehen, Beschriftung per Doppelklick). Doppelklick auf die Fläche legt eine Karte an; Dateien lassen sich hineinziehen oder einfügen. Gespeichert im offenen Format [JSON Canvas](https://jsoncanvas.org); der Export legt `.canvas`-Dateien ab, die Obsidian direkt öffnet.
+  - **Mindmap**: Gedanken als Baum um ein zentrales Thema, die Hauptäste farbig abwechselnd rechts und links. Bedienung wie in Mindmap-Programmen: `Tab` legt einen Unterpunkt an, `Enter` den nächsten Punkt, Pfeiltasten wählen, `F2`, Doppelklick oder einfach lostippen bearbeitet, `Entf` löscht, `Alt+↑/↓` verschiebt, `Strg+Z` macht rückgängig. Äste lassen sich einklappen und per Drag & Drop umhängen. Auf dem Handy: Knoten antippen, nochmal antippen zum Bearbeiten, Unterpunkte über die Werkzeugleiste. Punkte können Markdown, `[[Links]]`, `#Tags`, Bilder und Aufgaben (`[ ]`) enthalten. Gespeichert wird eine Markdown-Gliederung (`mindmap-plugin: basic`, Wurzel als `#`, erste Ebene als `##`, darunter Listen) – jeder Markdown-Editor zeigt sie als Gliederung an. In der geteilten Ansicht bearbeitest du die Gliederung als Text, die Mindmap daneben folgt.
+  - **Canvas**: freie Fläche mit Textkarten (Markdown), eingebetteten Notizen, Bildern und PDFs, Links und Gruppen. Karten verschieben, in der Größe ändern, färben und mit Pfeilen verbinden (vom Rand einer Karte zur nächsten ziehen, Beschriftung per Doppelklick). Doppelklick auf die Fläche legt eine Karte an; Dateien lassen sich hineinziehen oder einfügen. Gespeichert im offenen Format [JSON Canvas](https://jsoncanvas.org); der Export legt `.canvas`-Dateien ab.
 - Suche, Tags (`#tag`), Rückverweise und „Karteikarten aus Notiz“ funktionieren in allen Formaten; Wikilinks, Callouts und Formeln werden in Markdown, Mindmaps und Canvas-Karten dargestellt.
 - Unter **⋮ → Format …** lässt sich das Format einer Notiz ändern. Was dabei verloren geht (z. B. Schriftfarben beim Wechsel zu Markdown), steht vor dem Umwandeln im Dialog. Aus Markdown wird eine Mindmap (Überschriften und Listen werden zu Ästen), aus einer Mindmap ein Canvas (jeder Punkt eine Karte).
 
 **Glossar und Formelsammlung**
 - Seitenleiste → **Glossar** (oder im Ordner unter **⋯ → Glossar und Formeln**): alle Definitionen und Formeln deiner Notizen auf einen Blick – z. B. als Spickzettel-Vorlage oder zum Nachschlagen vor der Klausur.
 - **Begriffe** alphabetisch: Info-Callouts (`> [!info] Begriff`) und fett gedruckte Begriffe mit Erklärung (`**Begriff**: …`). **Formeln**: alle LaTeX-Blöcke (`$$…$$`), je Notiz mit der Überschrift darüber.
-- Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen, in Obsidian nutzbar).
+- Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen).
 - Wird bei jedem Öffnen aus den Notizen berechnet (Markdown, Mindmaps und Canvas) und ist danach auch offline lesbar.
 
 **Anhänge**
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
-- Eingebettet wie in Obsidian: `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
+- Eingebettet mit `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
 
 **PDF-Viewer neben der Notiz**
 - PDFs (z. B. Vorlesungsfolien) öffnen direkt in der App, ohne neues Browserfenster: Auf dem Desktop stehen PDF und Notiz nebeneinander, auf dem Handy übereinander. Den Trenner kannst du verschieben (Doppelklick: halbe-halbe); auf Wunsch füllt das PDF die ganze Fläche.
 - Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Anhänge**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
 - Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
-- **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite; das Format versteht auch Obsidian.
+- **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
 - Markierten Text **zitieren** (als Zitat mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
 - Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
 
@@ -57,7 +57,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **FSRS statt SM-2** (je Stapel unter **⋮ → Stapel bearbeiten → Wiederholungsplan**): [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki) schätzt für jede Karte Stabilität und Schwierigkeit und plant so, dass du dich mit der gewünschten Behaltensrate (Standard 90 %) erinnerst – meist mit weniger Wiederholungen. Bisher gelernte Karten werden aus ihrem SM-2-Stand übernommen. Noted nutzt die Standardparameter von FSRS-5; eine Optimierung auf den eigenen Lernverlauf gibt es (noch) nicht.
 - **Klausurmodus:** Einen Termin im Kalender als **Klausur** markieren und die passenden Stapel auswählen (ein Stapel mit dem Namen des Termins ist vorausgewählt). Bis zur Klausur reicht kein Abstand mehr über sie hinaus: Was erst am Klausurtag oder danach fällig wäre, kommt an einem der letzten drei Tage davor dran – verteilt, nicht alles am Vortag; wer in diesen Tagen schon wiederholt hat, ist fertig. Im Stapel steht, wie viele neue Karten pro Tag nötig sind, damit bis zur Klausur alle einmal gelernt sind – als Vorschlag, der sich mit einem Klick als Tageslimit übernehmen lässt. Die Startseite zeigt einen Countdown mit dem Lernstand der verknüpften Stapel. Gespeichert bleibt der eigene Wiederholungsplan: Ab dem Klausurtag gilt er wieder. Vorgezogene Wiederholungen verlängern den Abstand (wie bei Anki) nur um die tatsächlich vergangene Zeit.
 - **Übungsmodus** (z. B. kurz vor der Klausur): alle Karten in zufälliger Reihenfolge, ohne den Lernplan zu verändern. Falsch beantwortete Karten kommen wieder; am Ende siehst du deine Quote und kannst die Fehler wiederholen.
-- **Lückentext:** ein Satz mit Lücken (`==Lücke==` wie im Obsidian-Plugin „Spaced Repetition“, oder `{{Lücke}}`; im Karteneditor Text auswählen und **Als Lücke**). Jede Lücke wird einzeln abgefragt, der Rest bleibt sichtbar; beim Aufdecken füllt sich die Lücke im Satz. Jede Lücke hat ihren eigenen Lernstand, neue Lücken einer Karte kommen nacheinander an verschiedenen Tagen dran.
+- **Lückentext:** ein Satz mit Lücken (`==Lücke==` oder `{{Lücke}}`; im Karteneditor Text auswählen und **Als Lücke**). Jede Lücke wird einzeln abgefragt, der Rest bleibt sichtbar; beim Aufdecken füllt sich die Lücke im Satz. Jede Lücke hat ihren eigenen Lernstand, neue Lücken einer Karte kommen nacheinander an verschiedenen Tagen dran.
 - **Bildverdeckung** (Image Occlusion): Diagramme, Anatomie-Abbildungen oder Schaltpläne lernen, indem Beschriftungen verdeckt werden. Im Karteneditor ein Bild hochladen, aus den Anhängen wählen oder eine PDF-Seite als Bild übernehmen (auch im PDF-Viewer unter ⋮ → **Seite als Bildverdeckung**) und Rechtecke über die Beschriftungen ziehen – mit Maus, Stift oder Finger; Flächen lassen sich verschieben, an der Ecke vergrößern und optional beschriften. Jede Fläche wird einzeln abgefragt und hat ihren eigenen Lernstand. Wählbar je Karte: nur die abgefragte Fläche verdeckt oder alle. Mit beschrifteten Flächen funktioniert auch **Antwort eintippen**.
 - **Antwort eintippen** (pro Stapel unter **⋮ → Stapel bearbeiten** einschaltbar): Bei Grund- und beidseitigen Karten tippst du die Antwort ein, bevor sie aufgedeckt wird. Noted markiert die Unterschiede zur richtigen Antwort Zeichen für Zeichen; Groß- und Kleinschreibung, Leerzeichen und Satzzeichen am Ende zählen nicht, Akzente und Umlaute schon. Bewerten musst du weiterhin selbst – bei richtiger Eingabe ist *Gut* vorausgewählt, bei falscher *Nochmal*.
 - **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
@@ -94,10 +94,10 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - **Lernzeit pro Fach:** Trag im Fenster ein Fach (Vorschläge aus früheren Runden und deinen Stapeln) und optional ein Ziel ein. Nach jeder Fokus-Runde bzw. jedem Countdown fragt Noted, ob die Runde zählen soll – per „Zählen“ in der Meldung oder im Fenster. Gezählte Runden landen auf dem Server (offline gesammelt und später gesendet); die **Lernstatistik** zeigt die Lernzeit je Fach der letzten vier Wochen.
 
 **Export & Import**
-- ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Entpacken und in Obsidian als Vault öffnen. Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im Vault.
-- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown im Format des Obsidian-Plugins [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`). Für Bildverdeckung gibt es dort kein Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
+- ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im ZIP.
+- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
 - Die Termine liegen als `Kalender.ics` im ZIP.
-- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem bestehenden Obsidian-Vault oder einem Export aus Noted) und beliebigen Dateien als Anhänge.
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien als Anhänge.
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -299,13 +299,13 @@ docker compose run --rm noted node scripts/admin-cli.mjs restore /data/backups/n
 docker compose start noted
 ```
 
-## Arbeiten mit Obsidian
+## Notizen mitnehmen
 
-- **Einzelne Notiz**: Klicke auf **Kopieren**, lege in Obsidian eine Notiz mit gleichem Namen an und füge den Inhalt ein. Der Titel in Noted entspricht dem Dateinamen in Obsidian.
-- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter, entpacke es und öffne den Ordner in Obsidian als Vault (oder kopiere ihn in deinen bestehenden Vault). Anhänge liegen im Ordner `Anhänge/`; Obsidian findet `![[…]]`-Einbettungen dort automatisch.
-- **Von Obsidian nach Noted**: Packe deinen Vault als ZIP und importiere ihn. Ordnerstruktur, Notizen und Anhänge werden übernommen, `.obsidian/` wird ignoriert.
+- **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
+- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die Anhänge im Ordner `Anhänge/`, die Karteikarten als Markdown und die Termine als `Kalender.ics`.
+- **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Anhänge werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
 
-Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Obsidian-Links Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
+Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
 
 ## Tastenkürzel
 
@@ -355,7 +355,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
-  vault/                Export und Import als Obsidian-Vault (ZIP)
+  transfer/             Export und Import (ZIP mit Ordnerstruktur, Anhängen, Karteikarten und Kalender)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
   admin/                Benutzerverwaltung (Administration)
   settings/             Einstellungsseite
@@ -364,7 +364,7 @@ shared/                 Feature-unabhängiger Code (importiert nie aus features/
   ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten
   client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
   server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
-  markdown/             Obsidian-Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
+  markdown/             Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
   lib/                  Namensregeln, Formatierung, HTML-Hilfen
 sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 instrumentation.ts      Serverstart: Datenbank öffnen und migrieren, ersten Admin anlegen, regelmäßig aufräumen

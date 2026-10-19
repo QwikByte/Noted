@@ -25,7 +25,7 @@ const SAMPLE: CanvasData = {
 }
 
 describe('JSON Canvas', () => {
-  it('liest und schreibt das Format von Obsidian (eine Karte pro Zeile)', () => {
+  it('liest und schreibt JSON Canvas (eine Karte pro Zeile)', () => {
     const json = serializeCanvas(SAMPLE)
     expect(json.split('\n')[2]).toBe('\t\t{"id":"g","type":"group","label":"Grundlagen","x":0,"y":0,"width":600,"height":400,"color":"4"},')
     expect(parseCanvas(json)).toEqual(SAMPLE)
@@ -71,7 +71,7 @@ describe('JSON Canvas', () => {
     expect(canvasText('{kaputt')).toBe('')
   })
 
-  it('schreibt beim Export die Pfade im Vault in die Dateikarten', () => {
+  it('schreibt beim Export die Pfade im ZIP in die Dateikarten', () => {
     const json = serializeCanvas(SAMPLE)
     const exported = canvasForExport(json, {
       attachmentFolder: 'Anhänge',

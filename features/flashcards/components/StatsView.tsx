@@ -2,7 +2,7 @@
 // Lernstatistik: Kennzahlen, Lerntage als Heatmap, fällige Karten der nächsten Tage und Trefferquote je Stapel
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarRange, ChartColumn, ChevronRight, Download, Flame, Layers, MoreVertical, Timer } from 'lucide-react'
+import { ChevronRight, Download, Flame, Layers, MoreVertical } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Panel } from '@/shared/ui/panel'
@@ -60,12 +60,11 @@ export function StatsView() {
             <Layers className="size-3.5" /> Karteikarten <ChevronRight className="size-3.5" />
           </button>
         }
-        icon={<ChartColumn />}
         title="Lernstatistik"
         subtitle={
           data?.since
             ? `${plural(data.total, 'Bewertung', 'Bewertungen')} seit ${new Date(data.since).toLocaleDateString('de-DE')}`
-            : 'Wie regelmäßig und wie erfolgreich du lernst – und was als Nächstes ansteht.'
+            : undefined
         }
         actions={
           <Menu
@@ -164,7 +163,7 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
   const active = days.filter((d) => d.date >= start).length
 
   return (
-    <Panel icon={<CalendarRange />} title="Lerntage" testId="stats-heatmap" actions={<span className="text-sm text-muted">{plural(active, 'Lerntag', 'Lerntage')} im letzten Jahr</span>}>
+    <Panel title="Lerntage" testId="stats-heatmap" actions={<span className="text-sm text-muted">{plural(active, 'Lerntag', 'Lerntage')} im letzten Jahr</span>}>
       {/* Auf schmalen Bildschirmen scrollt die Karte, die jüngsten Wochen stehen rechts */}
       <div className="overflow-x-auto" dir="rtl">
         <div dir="ltr" className="flex w-max gap-[3px] pb-1">
@@ -263,7 +262,6 @@ function Forecast({ now, className }: { now: number; className?: string }) {
 
   return (
     <Panel
-      icon={<Layers />}
       title="Fällige Karten"
       className={className}
       testId="stats-forecast"
@@ -285,8 +283,7 @@ function Forecast({ now, className }: { now: number; className?: string }) {
       }
     >
       <p className="mb-3 text-sm text-muted">
-        {plural(total, 'Wiederholung', 'Wiederholungen')} in {range} Tagen, davon heute {counts[0] ?? 0} – dazu kommen neue Karten nach dem
-        Tageslimit der Stapel.
+        {plural(total, 'Wiederholung', 'Wiederholungen')} in {range} Tagen, davon heute {counts[0] ?? 0} (ohne neue Karten).
       </p>
       <div className="flex h-40 items-end gap-[2px] border-b border-border" role="list" aria-label="Fällige Karten je Tag">
         {counts.map((n, i) => (
@@ -324,15 +321,13 @@ function FocusTime({ today }: { today: string }) {
   if (isLoading) return null
   return (
     <Panel
-      icon={<Timer />}
       title="Lernzeit mit dem Fokus-Timer"
       testId="stats-focus"
       actions={rows.length ? <span className="text-sm text-muted">Diese Woche: {formatStudyTime(total)}</span> : undefined}
     >
       {rows.length === 0 ? (
         <p className="text-sm text-muted">
-          Noch keine gezählten Runden. Trag im Fokus-Timer ein Fach ein und bestätige nach der Runde, dass sie zählen soll – dann
-          siehst du hier, wie viel Zeit in welches Fach geflossen ist.
+          Noch keine gezählten Runden. Trag im Fokus-Timer ein Fach ein und bestätige nach der Runde, dass sie zählt.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -375,7 +370,7 @@ function DeckTable({ stats }: { stats: StudyStats }) {
     .sort((a, b) => (b.s?.reviews ?? 0) - (a.s?.reviews ?? 0) || a.deck.name.localeCompare(b.deck.name, 'de'))
   if (rows.length === 0) return null
   return (
-    <Panel icon={<Layers />} title="Stapel – letzte 30 Tage" testId="stats-decks">
+    <Panel title="Stapel – letzte 30 Tage" testId="stats-decks">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="text-xs text-muted">

@@ -55,8 +55,8 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.meta, class: 'cm-md-mark' },
 ])
 
-// Obsidian-Syntax, die der Markdown-Parser nicht kennt: [[Links]], #Tags, ==Markierungen==, $Formeln$, %%Kommentare%%
-const OBSIDIAN_RE =
+// Erweiterte Syntax, die der Markdown-Parser nicht kennt: [[Links]], #Tags, ==Markierungen==, $Formeln$, %%Kommentare%%
+const EXTENDED_SYNTAX_RE =
   /(!?\[\[[^\]\n]+\]\])|((?<=^|\s)#[\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)|(==[^=\n]+==)|(\$\$[^$]+\$\$|\$[^$\n]+\$)|(%%[\s\S]*?%%)/gu
 
 const marks = {
@@ -67,20 +67,20 @@ const marks = {
   comment: Decoration.mark({ class: 'cm-md-comment' }),
 }
 
-const obsidianDecorator = new MatchDecorator({
-  regexp: OBSIDIAN_RE,
+const extendedSyntaxDecorator = new MatchDecorator({
+  regexp: EXTENDED_SYNTAX_RE,
   decoration: (m) =>
     m[1] ? marks.wikilink : m[2] ? marks.tag : m[3] ? marks.highlight : m[4] ? marks.math : marks.comment,
 })
 
-const obsidianHighlight = ViewPlugin.fromClass(
+const extendedSyntaxHighlight = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet
     constructor(view: EditorView) {
-      this.decorations = obsidianDecorator.createDeco(view)
+      this.decorations = extendedSyntaxDecorator.createDeco(view)
     }
     update(u: ViewUpdate) {
-      this.decorations = obsidianDecorator.updateDeco(u, this.decorations)
+      this.decorations = extendedSyntaxDecorator.updateDeco(u, this.decorations)
     }
   },
   { decorations: (v) => v.decorations },
@@ -210,7 +210,7 @@ export function createExtensions(opts: {
       content: markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
     }),
     syntaxHighlighting(highlightStyle),
-    obsidianHighlight,
+    extendedSyntaxHighlight,
     closeBrackets(),
     autocompletion({ override: [completions(opts.data)], icons: false, activateOnTyping: true }),
     keymap.of([

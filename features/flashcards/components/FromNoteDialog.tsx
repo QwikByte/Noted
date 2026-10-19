@@ -21,7 +21,7 @@ const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 function SyntaxHelp() {
   return (
     <div className="space-y-2 text-sm text-muted">
-      <p>Schreib Karten direkt in deine Notizen – kompatibel mit dem Obsidian-Plugin „Spaced Repetition“:</p>
+      <p>Schreib Karten direkt in deine Notizen:</p>
       <pre className="overflow-x-auto rounded-lg bg-subtle p-3 text-[13px] leading-relaxed text-fg">
         {`Was ist ein Körper?::Eine Menge mit + und · …
 Haus:::house            ← beidseitig

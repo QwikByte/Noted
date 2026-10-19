@@ -168,7 +168,7 @@ test('Notiz mit Vorlage schreiben, Vorschau prüfen und als Markdown kopieren', 
   await expect(page.getByTestId('save-status')).toContainText('Gespeichert', { timeout: 10_000 })
   await shot(page, '09-editor')
 
-  // Lesemodus (Obsidian-Vorschau)
+  // Lesemodus (Vorschau)
   await page.getByRole('radio', { name: 'Lesen' }).click()
   const preview = page.locator('.markdown-body')
   await expect(preview.locator('.callout-warning')).toContainText('Nicht jede')
@@ -185,7 +185,7 @@ test('Notiz mit Vorlage schreiben, Vorschau prüfen und als Markdown kopieren', 
   await preview.locator('li', { hasText: 'Übungsblatt 3 rechnen' }).locator('.task-checkbox').check()
   await expect(page.getByTestId('save-status')).toContainText('Gespeichert', { timeout: 10_000 })
 
-  // Kopieren → Zwischenablage enthält reines Obsidian-Markdown
+  // Kopieren → Zwischenablage enthält reines Markdown
   await page.getByRole('button', { name: 'Kopieren' }).click()
   await expect(page.getByText('Markdown kopiert')).toBeVisible()
   const clip = await page.evaluate(() => navigator.clipboard.readText())

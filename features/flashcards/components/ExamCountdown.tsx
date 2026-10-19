@@ -28,7 +28,7 @@ export function ExamCountdown() {
     .slice(0, MAX_EXAMS)
   if (exams.length === 0) return null
   return (
-    <Panel icon={<GraduationCap />} title="Klausuren" className="mb-4" testId="exams">
+    <Panel title="Klausuren" className="mb-4" testId="exams">
       <ul className="divide-y divide-border">
         {exams.map((e) => (
           <ExamRow key={e.id} exam={e} days={daysBetween(today, dateOf(e.start))} data={data} now={now} />
@@ -55,7 +55,7 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span className="truncate font-medium">{exam.title}</span>
-          <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-text">{countdown(days)}</span>
+          <span className="shrink-0 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-semibold text-danger">{countdown(days)}</span>
           <span className="text-xs text-muted tabular-nums">
             {weekdayName(date)}, {shortDate(date)}
             {exam.allDay ? '' : ` · ${timeOf(exam.start)}`}

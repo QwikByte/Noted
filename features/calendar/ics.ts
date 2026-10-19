@@ -1,5 +1,5 @@
 // .ics (iCalendar, RFC 5545): Termine schreiben und lesen. Reine Logik – läuft im Browser (Import) und auf dem Server
-// (Export, Vault). Noted speichert Ortszeit ohne Zone; Zeiten aus anderen Zonen werden in `timeZone` umgerechnet.
+// (Download, ZIP-Export). Noted speichert Ortszeit ohne Zone; Zeiten aus anderen Zonen werden in `timeZone` umgerechnet.
 import { MAX_IMPORT_EVENTS, MAX_LOCATION, MAX_NOTES, MAX_REPEAT_WEEKS, MAX_TITLE, MAX_UID } from './limits'
 import { addDays, addMinutes, dateOf, timeOf, wallMs, weekday } from './dates'
 import { eventError } from './event'

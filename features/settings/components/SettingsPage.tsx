@@ -2,19 +2,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Download,
-  KeyRound,
-  Laptop,
-  LogOut,
-  Monitor,
-  Palette,
-  RefreshCw,
-  ShieldCheck,
-  ShieldOff,
-  Upload,
-  User,
-} from 'lucide-react'
+import { Download, LogOut, Monitor, RefreshCw, ShieldCheck, ShieldOff, Upload } from 'lucide-react'
 import { useUser } from '@/features/auth/client/current-user'
 import { confirmLogout } from '@/features/auth/client/logout'
 import { ThemeSwitch } from '@/shared/ui/theme-switch'
@@ -43,14 +31,14 @@ export function SettingsPage() {
       <SubPageHeader title="Einstellungen" />
       <main className="mx-auto max-w-3xl space-y-5 px-3 py-6 pb-24 sm:px-6">
         <ProfileSection />
-        <Section icon={<KeyRound />} title="Passwort" description="Nach der Änderung werden alle anderen Geräte abgemeldet.">
+        <Section title="Passwort" description="Nach der Änderung werden alle anderen Geräte abgemeldet.">
           <PasswordForm />
         </Section>
         <MfaSection />
         <SessionsSection />
         <AppearanceSection />
         <DataSection />
-        <Section icon={<LogOut />} title="Abmelden" description={`Angemeldet als @${user.username}.`}>
+        <Section title="Abmelden" description={`Angemeldet als @${user.username}.`}>
           <Button onClick={confirmLogout}>
             <LogOut className="size-4" /> Abmelden
           </Button>
@@ -67,7 +55,7 @@ function ProfileSection() {
   const [name, setName] = useState(user.displayName)
   const [loading, setLoading] = useState(false)
   return (
-    <Section icon={<User />} title="Profil">
+    <Section title="Profil">
       <form
         className="space-y-4"
         onSubmit={async (e) => {
@@ -113,13 +101,11 @@ function MfaSection() {
 
   return (
     <Section
-      icon={<ShieldCheck />}
       title="Zwei-Faktor-Anmeldung"
-      description="Zusätzlich zum Passwort wird bei der Anmeldung ein Code aus einer Authenticator-App abgefragt."
     >
       <div className="flex flex-wrap items-center gap-3">
         {enabled ? <Badge tone="success">Aktiv</Badge> : <Badge tone="warning">Nicht eingerichtet</Badge>}
-        {user.mfaRequired ? <Badge tone="accent">Vom Administrator vorgeschrieben</Badge> : null}
+        {user.mfaRequired ? <Badge>Vom Administrator vorgeschrieben</Badge> : null}
       </div>
       <div className="mt-4">
         {!enabled ? (
@@ -170,7 +156,6 @@ function DisableMfaDialog({ open, onClose, onDone }: { open: boolean; onClose: (
       open={open}
       onClose={onClose}
       title="Zwei-Faktor-Anmeldung deaktivieren"
-      description="Bestätige mit deinem Passwort und einem aktuellen Code."
       size="sm"
       footer={
         <>
@@ -242,7 +227,7 @@ function SessionsSection() {
   }
 
   return (
-    <Section icon={<Laptop />} title="Angemeldete Geräte" description="Sitzungen laufen nach 30 Tagen ohne Nutzung ab.">
+    <Section title="Angemeldete Geräte" description="Sitzungen laufen nach 30 Tagen ohne Nutzung ab.">
       {isLoading ? (
         <p className="text-sm text-muted">Lädt …</p>
       ) : (
@@ -282,7 +267,7 @@ function AppearanceSection() {
   const [mode, setMode] = usePref<EditorMode>('noted:mode', 'edit')
   const [spellcheck, setSpellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   return (
-    <Section icon={<Palette />} title="Darstellung" description="Gilt nur für dieses Gerät.">
+    <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
         <div>
           <p className="mb-2 text-sm font-medium">Design</p>
@@ -364,17 +349,14 @@ function DataSection() {
 
   return (
     <Section
-      icon={<Download />}
       title="Export & Import"
-      description="Deine Notizen sind normale Markdown-Dateien – kompatibel mit Obsidian."
     >
       <div className="space-y-6">
         <div>
           <p className="mb-1 text-sm font-medium">Alles exportieren</p>
           <p className="mb-3 text-sm text-muted">
-            ZIP-Archiv mit allen Notizen in ihrer Ordnerstruktur und allen Anhängen. Entpacken und in Obsidian als Vault öffnen –
-            oder in einen bestehenden Vault kopieren. Notizen mit formatiertem Text liegen als .html-Dateien darin, Canvas als
-            .canvas-Dateien wie in Obsidian, die Termine als Kalender.ics.
+            Alle Notizen in ihrer Ordnerstruktur, dazu Anhänge, Karteikarten und Termine (Kalender.ics). Formatierter Text
+            liegt als .html darin, Canvas als .canvas.
           </p>
           <a
             href="/api/export"
@@ -386,9 +368,8 @@ function DataSection() {
         <div className="border-t border-border pt-5">
           <p className="mb-1 text-sm font-medium">Importieren</p>
           <p className="mb-3 text-sm text-muted">
-            Markdown-Dateien (.md, Mindmaps des Plugins „Enhancing Mindmap“ werden erkannt), HTML-Dateien (werden zu
-            formatiertem Text), Canvas-Dateien (.canvas), Kalender (.ics – die Termine kommen in den Kalender), ein ZIP-Archiv
-            (z. B. ein Obsidian-Vault oder ein Export aus Noted) oder beliebige Dateien als Anhänge.
+            Markdown (.md), HTML, Canvas (.canvas), Kalender (.ics) oder ein ZIP-Archiv, z. B. ein Export aus Noted. Andere
+            Dateien werden Anhänge.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">

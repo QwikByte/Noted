@@ -1,7 +1,7 @@
 'use client'
 // Glossar und Formelsammlung: Definitionen und LaTeX-Formeln aus den Notizen eines Ordners (oder aller Notizen)
 import { useMemo, useState } from 'react'
-import { BookA, Copy, Download, FileText, Loader2, MoreVertical, Search } from 'lucide-react'
+import { Copy, Download, FileText, Loader2, MoreVertical, Search } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useFolders } from '@/features/notes/client/queries'
 import { folderPath } from '@/features/notes/tree'
@@ -52,7 +52,7 @@ export function GlossaryView({ folder }: { folder?: string }) {
   const markdown = () => glossaryToMarkdown(`Glossar – ${scopeName}`, terms, formulas)
 
   async function copy() {
-    if (await copyText(markdown())) toast.success('Als Markdown kopiert – z. B. als Spickzettel in Obsidian einfügen.')
+    if (await copyText(markdown())) toast.success('Als Markdown kopiert.')
     else toast.error('Kopieren nicht möglich.')
   }
 
@@ -68,9 +68,7 @@ export function GlossaryView({ folder }: { folder?: string }) {
   return (
     <Page>
       <PageHeader
-        icon={<BookA />}
         title="Glossar und Formeln"
-        subtitle="Definitionen und Formeln aus deinen Notizen – ein Klick führt an die Stelle."
         actions={
           <Menu
             trigger={(p) => (
@@ -191,7 +189,7 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
         <p className="font-medium text-fg">Noch keine Definitionen</p>
         <p className="mx-auto mt-1 max-w-md">
           Schreib Begriffe als Info-Callout (<code>&gt; [!info] Begriff</code>) oder fett mit Erklärung (
-          <code>**Begriff**: Erklärung</code>) in deine Notizen – dann stehen sie hier.
+          <code>**Begriff**: Erklärung</code>) in deine Notizen.
         </p>
       </Empty>
     )
@@ -234,7 +232,7 @@ function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; search
       <Empty searching={searching}>
         <p className="font-medium text-fg">Noch keine Formeln</p>
         <p className="mx-auto mt-1 max-w-md">
-          Formeln als LaTeX-Block (<code>$$ … $$</code>) erscheinen hier, jeweils mit der Überschrift darüber.
+          Formeln als LaTeX-Block (<code>$$ … $$</code>) erscheinen hier.
         </p>
       </Empty>
     )

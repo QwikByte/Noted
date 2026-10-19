@@ -3,6 +3,7 @@ import { cn } from './cn'
 const tones = {
   neutral: 'bg-subtle text-muted border-border',
   accent: 'bg-accent-soft text-accent-text border-transparent',
+  marker: 'marker border-transparent',
   success: 'bg-success-soft text-success border-transparent',
   warning: 'bg-warning-soft text-warning border-transparent',
   danger: 'bg-danger-soft text-danger border-transparent',

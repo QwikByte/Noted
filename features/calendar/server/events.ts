@@ -254,7 +254,7 @@ export function importEvents(userId: number, events: ImportedEvent[]): { created
   return { created: fresh.length, duplicates: events.length - fresh.length }
 }
 
-/** Alle Termine als .ics – für den Download und den Vault-Export */
+/** Alle Termine als .ics – für den Download und den ZIP-Export */
 export function exportIcs(userId: number): string {
   const rows = getDb().prepare('SELECT * FROM events WHERE user_id = ? ORDER BY start_at').all(userId) as EventRow[]
   return toIcs(rows.map((r) => ({ ...toEvent(r), uid: r.uid })))

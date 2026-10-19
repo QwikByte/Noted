@@ -48,7 +48,7 @@ describe('Mindmap als Markdown-Gliederung', () => {
     })
   })
 
-  it('schreibt das Format des Obsidian-Plugins und behält die Properties', () => {
+  it('schreibt die Gliederung mit „mindmap-plugin: basic“ und behält die Properties', () => {
     const root = parseMindmap(SAMPLE, 'Titel')
     expect(serializeMindmap(root, mindmapPropertiesOf(SAMPLE))).toBe(SAMPLE)
   })

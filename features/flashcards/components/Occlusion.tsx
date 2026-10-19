@@ -3,7 +3,7 @@
 // mit Maus, Stift oder Finger (Pointer Events)
 import { useRef, useState } from 'react'
 import { cn } from '@/shared/ui/cn'
-import { defaultFileUrl } from '@/shared/markdown/obsidian'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { MAX_MASKS } from '../limits'
 import { fitMask, maskName, MIN_MASK_SIZE } from '../occlusion'
 import type { Occlusion, OcclusionMask } from '../types'

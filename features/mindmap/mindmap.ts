@@ -1,6 +1,5 @@
-// Mindmaps als Markdown-Gliederung im Format des Obsidian-Plugins „Enhancing Mindmap“: Properties mit
-// `mindmap-plugin: basic`, die Wurzel als `# …`, die erste Ebene als `## …`, alles darunter als Liste.
-// Obsidian zeigt so eine Datei ohne Plugin als gewöhnliche Gliederung an.
+// Mindmaps als Markdown-Gliederung: Properties mit `mindmap-plugin: basic`, die Wurzel als `# …`, die erste Ebene
+// als `## …`, alles darunter als Liste. Jeder Markdown-Editor zeigt so eine Datei als gewöhnliche Gliederung an.
 import { splitFrontmatter } from '@/shared/markdown/meta'
 
 export type MindNode = { id: string; text: string; children: MindNode[] }
@@ -131,8 +130,8 @@ export function newMindmap(title: string): string {
 }
 
 /**
- * Ist das eine Mindmap des Obsidian-Plugins? (Import) Nur „basic“: Markmind nutzt denselben Schlüssel, speichert im
- * Modus „rich“ aber keine Gliederung – solche Dateien bleiben Markdown.
+ * Ist das eine Mindmap? (Import) Nur „basic“: Markmind nutzt denselben Schlüssel, speichert im Modus „rich“ aber keine
+ * Gliederung – solche Dateien bleiben Markdown.
  */
 export function isMindmapMarkdown(markdown: string): boolean {
   return splitFrontmatter(markdown)?.data?.[PLUGIN_PROPERTY] === 'basic'

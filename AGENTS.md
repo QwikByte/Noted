@@ -1,6 +1,6 @@
 # Noted – Regeln für die Arbeit am Code
 
-Noted ist eine selbst gehostete Notizen-App für die Uni (PWA) im Obsidian-Format: Next.js 16 (App Router), React 19,
+Noted ist eine selbst gehostete Notizen-App für die Uni (PWA) auf Basis von Markdown: Next.js 16 (App Router), React 19,
 Tailwind CSS 4, TanStack Query, CodeMirror 6 und SQLite. Was die App kann und wie sie betrieben wird, steht in der
 [README](README.md). Diese Datei legt fest, **wie** am Code gearbeitet wird – für Menschen und KI-Agenten gleichermaßen.
 
@@ -9,7 +9,7 @@ Tailwind CSS 4, TanStack Query, CodeMirror 6 und SQLite. Was die App kann und wi
 - **Bei Fragen fragen.** Ist eine Anforderung mehrdeutig oder gibt es mehrere vertretbare Lösungen mit
   unterschiedlichen Folgen, erst nachfragen statt raten. Das gilt immer bei Änderungen an
   - Architektur und Ordnerstruktur,
-  - Datenbankschema und gespeicherten Formaten (inkl. Obsidian-Kompatibilität von Export/Import),
+  - Datenbankschema und gespeicherten Formaten (inkl. der Dateiformate von Export/Import),
   - Sicherheit (Anmeldung, Rechte, CSP, Uploads),
   - Abhängigkeiten (neue npm-Pakete),
   - sichtbarem Verhalten, das über den Auftrag hinausgeht.
@@ -36,7 +36,7 @@ shared/         Feature-unabhängiger Code
   ui/           UI-Bausteine (Button, Modal, Toast, Seitengerüst …)
   client/       Browser-Hilfen (API-Client, Zwischenablage, lokale Einstellungen)
   server/       Server-Grundlagen (Datenbank und Migrationen, Konfiguration, HTTP, Verschlüsselung, Rate-Limits)
-  markdown/     Obsidian-Markdown (Frontmatter, Tags, Wikilinks, Rendering, Bereinigung)
+  markdown/     Markdown (Frontmatter, Tags, Wikilinks, Rendering, Bereinigung)
   lib/          Reine Hilfsfunktionen (Namensregeln, Formatierung)
 tests/          Gemeinsame Testhelfer und Tests für scripts/
 e2e/            Browser-Tests (Playwright) über mehrere Features
@@ -44,7 +44,7 @@ e2e/            Browser-Tests (Playwright) über mehrere Features
 
 Features: `workspace` (App-Rahmen und Startseite, setzt die Features zusammen), `notes`, `mindmap`, `canvas`,
 `attachments`, `flashcards`, `glossary` (Glossar und Formeln), `focus` (Fokus-Timer), `calendar` (Kalender), `pdf`,
-`vault` (Export/Import), `auth`, `admin`, `settings`, `updates`.
+`transfer` (Export/Import), `auth`, `admin`, `settings`, `updates`.
 
 **Regeln**
 

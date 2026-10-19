@@ -1,11 +1,10 @@
 // Karteikarten ↔ Markdown
 //
-// - Karten in Notizen erkennen („Karteikarten aus Notiz“): Syntax des Obsidian-Plugins „Spaced Repetition“
-//   (Frage::Antwort, Frage:::Antwort, mehrzeilig mit ? bzw. ??), Multiple Choice als Aufgabenliste nach dem ?,
-//   Frage-Callouts (> [!question] …), Definitionen (> [!info] Begriff, **Begriff**: …), Überschriften und
-//   Lückentexte (Absätze mit {{Lücke}} oder ==Markierung==).
-// - Stapel als Markdown im selben Format ausgeben (Export, „Als Markdown kopieren“) – so lassen sie sich in
-//   Obsidian mit dem Spaced-Repetition-Plugin weiterlernen.
+// - Karten in Notizen erkennen („Karteikarten aus Notiz“): Frage::Antwort, Frage:::Antwort, mehrzeilig mit ? bzw. ??,
+//   Multiple Choice als Aufgabenliste nach dem ?, Frage-Callouts (> [!question] …), Definitionen (> [!info] Begriff,
+//   **Begriff**: …), Überschriften und Lückentexte (Absätze mit {{Lücke}} oder ==Markierung==).
+// - Stapel als Markdown im selben Format ausgeben (Export, „Als Markdown kopieren“) – so erkennt „Karteikarten aus
+//   Notiz“ sie wieder.
 import { splitFrontmatter } from '@/shared/markdown/meta'
 import { hasCloze, normalizeCloze } from './cloze'
 import type { Card, CardOption, CardType, Deck } from './types'
@@ -222,7 +221,7 @@ type ExportedCard = Pick<Card, 'type' | 'front' | 'back' | 'options'> & { occlus
 export function cardToMarkdown(card: ExportedCard): string {
   const front = compact(card.front)
   if (card.type === 'occlusion') {
-    // Ein Format für Bildverdeckung gibt es in Obsidian nicht: Titel und Bild, die Beschriftungen als Lücken darunter
+    // Ein Markdown-Format für Bildverdeckung gibt es nicht: Titel und Bild, die Beschriftungen als Lücken darunter
     const o = card.occlusion
     const labels = (o?.masks ?? []).map((m) => m.label).filter(Boolean)
     const extra = compact(card.back)

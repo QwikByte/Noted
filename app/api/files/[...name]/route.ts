@@ -1,7 +1,7 @@
 import { route } from '@/features/auth/server/route'
 import { attachmentResponse, getAttachmentByName } from '@/features/attachments/server/attachments'
 
-/** Anhang über den Dateinamen abrufen – so lassen sich Obsidian-Einbettungen wie ![[foto.jpg]] auflösen. */
+/** Anhang über den Dateinamen abrufen – so lassen sich Einbettungen wie ![[foto.jpg]] auflösen. */
 export const GET = route<{ name: string[] }>('user', ({ req, user, params }) => {
   // Next.js liefert die Pfadsegmente bereits dekodiert
   const name = params.name.join('/')

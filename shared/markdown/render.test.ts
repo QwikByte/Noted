@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from './render'
-import { stripComments } from './obsidian'
+import { stripComments } from './syntax'
 
 const env = {
   resolveNote: (t: string) => (t.toLowerCase() === 'vorhanden' ? { id: 'abc', title: 'Vorhanden' } : null),
 }
 
-describe('Obsidian-Vorschau', () => {
+describe('Vorschau', () => {
   it('rendert Wikilinks (aufgelöst, unaufgelöst, Alias, Abschnitt)', () => {
     const { html } = renderMarkdown('[[Vorhanden]] [[Fehlt]] [[Vorhanden|Alias]] [[Vorhanden#Teil 2]]', env)
     expect(html).toContain('<a class="wikilink" href="/?n=abc" data-note-id="abc" data-target="Vorhanden">Vorhanden</a>')

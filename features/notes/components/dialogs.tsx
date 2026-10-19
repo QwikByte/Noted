@@ -196,12 +196,11 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
               ))}
             </div>
             <p className="mt-2 text-xs text-faint">
-              Tipp: Notizen in einem Ordner namens „Vorlagen“ erscheinen hier als eigene Vorlagen ({'{{date}}'}, {'{{time}}'},{' '}
-              {'{{title}}'} werden ersetzt).
+              Eigene Vorlagen: Notizen im Ordner „Vorlagen“ – {'{{date}}'}, {'{{time}}'} und {'{{title}}'} werden ersetzt.
             </p>
           </div>
         ) : null}
-        <Field label="Titel (= Dateiname in Obsidian)">
+        <Field label="Titel">
           {(id) => (
             <Input
               id={id}
@@ -270,7 +269,7 @@ export function MoveDialog({
       open={!!target}
       onClose={onClose}
       title="Verschieben"
-      description={name ? `„${name}“ verschieben nach …` : undefined}
+      description={name ? `„${name}“` : undefined}
       size="sm"
       footer={
         <>
