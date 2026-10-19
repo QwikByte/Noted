@@ -10,7 +10,7 @@ import { Button } from '@/shared/ui/button'
 import { Input, Select, Switch } from '@/shared/ui/input'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { IMAGE_EXT } from '@/shared/markdown/obsidian'
+import { IMAGE_EXT } from '@/shared/markdown/syntax'
 import { MAX_MASK_LABEL } from '../limits'
 import { OcclusionEditor } from './Occlusion'
 import type { Occlusion } from '../types'
@@ -89,7 +89,7 @@ export function OcclusionFields({
         checked={value.hideAll}
         onChange={(hideAll) => onChange({ ...value, hideAll })}
         label="Alle Flächen verdecken"
-        description="Beim Abfragen sind auch die übrigen Flächen verdeckt – sonst nur die abgefragte."
+        description="Sonst ist beim Abfragen nur die abgefragte Fläche verdeckt."
       />
     </div>
   )
@@ -132,7 +132,6 @@ function ImagePicker({ onPick }: { onPick: (filename: string) => void }) {
 
   return (
     <div className="space-y-3 rounded-xl border border-dashed border-border-strong p-4" data-testid="occlusion-picker">
-      <p className="text-sm text-muted">Wähle ein Bild – z. B. ein Diagramm, eine Abbildung mit Beschriftungen oder eine Seite aus einem PDF.</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>
           <Upload className="size-4" /> Bild hochladen

@@ -12,7 +12,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
 import { splitFrontmatter } from '@/shared/markdown/meta'
-import { defaultFileUrl } from '@/shared/markdown/obsidian'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 
 function baseExtensions({ underline }: { underline: boolean }): AnyExtension[] {
   return [
@@ -43,7 +43,7 @@ const FILE_IMAGE = /!\[[^\]\n]*\]\(\/api\/files\/([^)\s]+)\)/g
 
 /** Editor ohne Anzeige – nur zum Umwandeln */
 function convert(content: string, contentType: 'html' | 'markdown', read: (editor: Editor) => string): string {
-  // Unterstreichen gibt es in Obsidian-Markdown nicht (TipTap schriebe „++Text++“) – beim Umwandeln weglassen
+  // Unterstreichen gibt es in Markdown nicht (TipTap schriebe „++Text++“) – beim Umwandeln weglassen
   const editor = new Editor({ element: null, extensions: [...baseExtensions({ underline: false }), Markdown], content, contentType })
   try {
     return read(editor)
@@ -53,7 +53,7 @@ function convert(content: string, contentType: 'html' | 'markdown', read: (edito
 }
 
 /**
- * Markdown → formatierter Text. Properties (Frontmatter) entfallen; Obsidian-Elemente ohne Entsprechung
+ * Markdown → formatierter Text. Properties (Frontmatter) entfallen; Markdown-Elemente ohne Entsprechung
  * (Callouts, Formeln, Wikilinks) bleiben als Text stehen. Eingebettete Bilder bleiben Bilder.
  */
 export function markdownToHtml(markdown: string): string {
@@ -67,7 +67,7 @@ export function markdownToHtml(markdown: string): string {
 export function htmlToMarkdown(html: string): string {
   if (!html.trim()) return ''
   const markdown = convert(html, 'html', (e) => e.getMarkdown())
-  // Bilder aus Noted als Obsidian-Einbettung
+  // Bilder aus Noted als Einbettung ![[…]]
   return markdown.replace(FILE_IMAGE, (m, path: string) => {
     try {
       return `![[${decodeURIComponent(path)}]]`

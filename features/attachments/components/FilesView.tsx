@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { BookOpenText, Copy, Download, ExternalLink, File, FileAudio, FileText, FileVideo, Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
+import { BookOpenText, Copy, Download, ExternalLink, File, FileAudio, FileText, FileVideo, Loader2, Trash2, Upload } from 'lucide-react'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
@@ -49,7 +49,6 @@ export function FilesView() {
   return (
     <Page>
       <PageHeader
-        icon={<Paperclip />}
         title="Anhänge"
         subtitle={`${files.length} ${files.length === 1 ? 'Datei' : 'Dateien'} · ${formatBytes(total)}`}
         actions={
@@ -70,8 +69,7 @@ export function FilesView() {
         }}
       />
       <p className="mb-4 text-sm text-muted">
-        Einbetten mit <code className="rounded bg-subtle px-1.5 py-0.5 text-[13px]">![[Dateiname]]</code>. Beim Export landen alle
-        Dateien im Ordner „Anhänge“ – Obsidian findet sie dort automatisch.
+        Einbetten mit <code className="rounded bg-subtle px-1.5 py-0.5 text-[13px]">![[Dateiname]]</code>.
       </p>
       {isLoading ? (
         <Loader2 className="mx-auto size-6 animate-spin text-faint" />
@@ -84,7 +82,7 @@ export function FilesView() {
             void upload(Array.from(e.dataTransfer.files))
           }}
         >
-          Noch keine Anhänge. Dateien hierher ziehen oder im Editor über die Büroklammer einfügen.
+          Noch keine Anhänge. Dateien hierher ziehen.
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

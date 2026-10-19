@@ -2,7 +2,7 @@ import { route } from '@/features/auth/server/route'
 import { getNote } from '@/features/notes/server/notes'
 import { noteExtension } from '@/features/notes/format'
 import { canvasForExport } from '@/features/canvas/canvas'
-import { vaultIndex } from '@/features/vault/server/vault'
+import { exportIndex } from '@/features/transfer/server/transfer'
 import { htmlDocument } from '@/shared/lib/html'
 
 const CONTENT_TYPES = { '.md': 'text/markdown', '.html': 'text/html', '.canvas': 'application/json' } as const
@@ -17,7 +17,7 @@ export const GET = route<{ id: string }>('user', ({ user, params }) => {
     note.format === 'richtext'
       ? htmlDocument(note.title, note.content)
       : note.format === 'canvas'
-        ? canvasForExport(note.content, vaultIndex(user.id))
+        ? canvasForExport(note.content, exportIndex(user.id))
         : note.content
   return new Response(body, {
     headers: {

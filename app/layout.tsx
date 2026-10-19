@@ -5,7 +5,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: { default: 'Noted', template: '%s · Noted' },
-  description: 'Notizen für die Uni im Obsidian-Format – auch unterwegs.',
+  description: 'Notizen für die Uni – auch unterwegs.',
   applicationName: 'Noted',
   appleWebApp: { capable: true, title: 'Noted', statusBarStyle: 'default' },
   formatDetection: { telephone: false },

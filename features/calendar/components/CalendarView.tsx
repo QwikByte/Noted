@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, CloudOff, Download, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CloudOff, Download, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
@@ -109,8 +109,7 @@ export function CalendarView() {
   return (
     <div className="flex h-full flex-col px-3 pt-4 pb-16 sm:px-6 sm:pt-6" data-testid="calendar">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto flex min-w-0 items-center gap-2.5 text-xl font-bold tracking-tight sm:text-2xl">
-          <CalendarDays className="size-6 shrink-0 text-faint" />
+        <h1 className="mr-auto flex min-w-0 items-baseline gap-2.5 text-xl font-bold tracking-tight sm:text-2xl">
           <span className="truncate" data-testid="calendar-label">
             {label}
           </span>
@@ -191,9 +190,8 @@ export function CalendarView() {
       ) : (
         <>
           {events.length === 0 ? (
-            <p className="mb-3 rounded-lg bg-accent-soft px-3 py-2 text-sm text-accent-text">
-              Trag deinen Stundenplan ein – Vorlesungen am besten als wöchentliche Serie – oder importiere ihn als .ics-Datei
-              (Menü ⋮), z. B. aus Outlook oder dem Vorlesungsverzeichnis.
+            <p className="mb-3 rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
+              Trag deinen Stundenplan ein (Vorlesungen als wöchentliche Serie) oder importiere ihn als .ics-Datei (Menü ⋮).
             </p>
           ) : null}
           <div

@@ -1,4 +1,4 @@
-// Auswertung von Obsidian-Markdown: Frontmatter (Properties), Tags und Wikilinks.
+// Auswertung von Markdown: Frontmatter (Properties), Tags und Wikilinks.
 import { parse as parseYaml } from 'yaml'
 
 const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n?---[ \t]*(?:\r?\n|$)/

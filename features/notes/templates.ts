@@ -1,4 +1,4 @@
-// Vorlagen für neue Notizen. Platzhalter wie in Obsidians Core-Plugin „Vorlagen“:
+// Vorlagen für neue Notizen. Platzhalter:
 // {{title}}, {{date}}, {{time}}, {{date:YYYY-MM-DD}}, {{time:HH:mm}}
 
 export type Template = {
@@ -229,5 +229,5 @@ teilnehmer:
   },
 ]
 
-/** Ordnernamen, deren Notizen als eigene Vorlagen angeboten werden (wie Obsidians Vorlagenordner). */
+/** Ordnernamen, deren Notizen als eigene Vorlagen angeboten werden. */
 export const TEMPLATE_FOLDER_NAMES = ['vorlagen', 'templates']

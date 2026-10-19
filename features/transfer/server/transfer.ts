@@ -12,11 +12,11 @@ import { parseIcs } from '@/features/calendar/ics'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
 import { htmlBody, htmlDocument } from '@/shared/lib/html'
 import type { NoteFormat } from '@/features/notes/types'
-import { canvasForExport, mapCanvasNodes, parseCanvas, type VaultIndex } from '@/features/canvas/canvas'
+import { canvasForExport, mapCanvasNodes, parseCanvas, type ExportIndex } from '@/features/canvas/canvas'
 import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
-import { EXPORT_ATTACHMENT_FOLDER, buildVaultIndex, vaultNotePath } from '../paths'
+import { EXPORT_ATTACHMENT_FOLDER, buildExportIndex, exportNotePath } from '../paths'
 
-/** Karteikarten-Stapel im Format des Obsidian-Plugins „Spaced Repetition“ */
+/** Karteikarten-Stapel als Markdown (Frage::Antwort, siehe deckToMarkdown) */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 /** Alle Termine – lässt sich in jede Kalender-App importieren */
 const EXPORT_CALENDAR_FILE = 'Kalender.ics'
@@ -42,29 +42,29 @@ type IndexNote = Pick<ExportNote, 'folder_id' | 'title' | 'format'>
 const foldersOf = (note: IndexNote, paths: Map<string, string[]>) => (note.folder_id ? (paths.get(note.folder_id) ?? []) : [])
 
 /** Notizen in der Reihenfolge des Anlegens */
-function indexFor(notes: IndexNote[], paths: Map<string, string[]>, userId: number): VaultIndex {
-  return buildVaultIndex(
+function indexFor(notes: IndexNote[], paths: Map<string, string[]>, userId: number): ExportIndex {
+  return buildExportIndex(
     notes.map((n) => ({ title: n.title, folders: foldersOf(n, paths), format: n.format })),
     listAttachments(userId).map((a) => a.filename),
   )
 }
 
 /** Pfade aller Notizen und Anhänge im Export – für die Dateikarten eines Canvas */
-export function vaultIndex(userId: number): VaultIndex {
+export function exportIndex(userId: number): ExportIndex {
   const notes = getDb()
     .prepare('SELECT folder_id, title, format FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at')
     .all(userId) as IndexNote[]
   return indexFor(notes, folderPathMap(userId), userId)
 }
 
-function exportContent(n: ExportNote, depth: number, index: () => VaultIndex): string {
+function exportContent(n: ExportNote, depth: number, index: () => ExportIndex): string {
   if (n.format === 'richtext') return htmlDocument(n.title, exportImagePaths(n.content, depth))
   if (n.format === 'canvas') return canvasForExport(n.content, index())
   return n.content
 }
 
-/** Erstellt einen ZIP-Stream mit allen Notizen (Ordnerstruktur wie im Vault) und Anhängen. */
-export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
+/** Erstellt einen ZIP-Stream mit allen Notizen (in ihrer Ordnerstruktur) und Anhängen. */
+export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
   const paths = folderPathMap(userId)
   const notes = getDb()
     .prepare(
@@ -72,16 +72,16 @@ export function exportVaultStream(userId: number): ReadableStream<Uint8Array> {
        ORDER BY created_at`,
     )
     .all(userId) as ExportNote[]
-  let vault: VaultIndex | null = null
-  const getVault = () => (vault ??= indexFor(notes, paths, userId))
+  let pathIndex: ExportIndex | null = null
+  const getPathIndex = () => (pathIndex ??= indexFor(notes, paths, userId))
 
   const entries: ExportEntry[] = notes.map((n) => {
     const folders = foldersOf(n, paths)
     return {
-      path: vaultNotePath(folders, n.title, n.format),
+      path: exportNotePath(folders, n.title, n.format),
       mtime: n.updated_at,
       compress: true,
-      data: () => strToU8(exportContent(n, folders.length, getVault)),
+      data: () => strToU8(exportContent(n, folders.length, getPathIndex)),
     }
   })
   // Leere Ordner trotzdem anlegen
@@ -166,8 +166,8 @@ function decodeText(data: Uint8Array): string {
 }
 
 /**
- * Dateikarten eines importierten Canvas: Obsidian speichert den Pfad im Vault („Ordner/Notiz.md“), Noted den Namen
- * wie in einem Wikilink – Notizen ohne Endung, Anhänge mit (sie landen beim Import alle unter ihrem Dateinamen).
+ * Dateikarten eines importierten Canvas: In der Datei steht der Pfad im Archiv („Ordner/Notiz.md“), Noted speichert
+ * den Namen wie in einem Wikilink – Notizen ohne Endung, Anhänge mit (sie landen beim Import alle unter ihrem Dateinamen).
  */
 function importCanvasFiles(json: string): string {
   return mapCanvasNodes(json, (n) => {
@@ -181,7 +181,7 @@ function importCanvasFiles(json: string): string {
 }
 
 /**
- * Importiert Markdown-, HTML- und Canvas-Dateien, Kalender (.ics), ZIP-Archive (z. B. ein Obsidian-Vault) und beliebige
+ * Importiert Markdown-, HTML- und Canvas-Dateien, Kalender (.ics), ZIP-Archive (z. B. ein Export aus Noted) und beliebige
  * Dateien (als Anhänge). Zeiten aus Kalendern werden in `timeZone` umgerechnet.
  */
 export async function importFiles(

@@ -9,7 +9,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           <Logo className="size-10" />
           <div className="min-w-0">
             <h1 className="text-xl leading-tight font-bold tracking-tight">Noted</h1>
-            <p className="text-sm text-muted">Notizen für die Uni – im Obsidian-Format</p>
+            <p className="text-sm text-muted">Notizen für die Uni</p>
           </div>
         </div>
         <div className="index-card-rule" />

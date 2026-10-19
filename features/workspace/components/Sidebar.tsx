@@ -50,7 +50,7 @@ function NavItem({
       <span className={cn('flex size-4 items-center justify-center [&>svg]:size-4', active && 'text-accent-text')}>{icon}</span>
       <span className="flex-1 text-left">{label}</span>
       {count ? (
-        <span className="rounded-full bg-accent-soft px-1.5 text-[11px] leading-[18px] font-semibold text-accent-text tabular-nums">{count}</span>
+        <span className="marker px-1.5 text-[11px] leading-[18px] font-semibold tabular-nums">{count}</span>
       ) : null}
     </button>
   )

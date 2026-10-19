@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Noted – Notizen für die Uni',
     short_name: 'Noted',
-    description: 'Notizen im Obsidian-Format – auch unterwegs.',
+    description: 'Notizen für die Uni – auch unterwegs.',
     start_url: '/',
     scope: '/',
     display: 'standalone',

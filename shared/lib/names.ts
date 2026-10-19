@@ -1,6 +1,6 @@
-// Regeln für Notiz-, Ordner- und Dateinamen – kompatibel mit Obsidian und allen Dateisystemen.
+// Regeln für Notiz-, Ordner- und Dateinamen – gültig in Wikilinks und auf allen Dateisystemen.
 
-/** Zeichen, die in Dateinamen oder Obsidian-Links Probleme machen */
+/** Zeichen, die in Dateinamen oder Wikilinks Probleme machen */
 const INVALID_NAME_CHARS = /[\\/:*?"<>|#^[\]]/
 const INVALID_NAME_CHARS_GLOBAL = /[\\/:*?"<>|#^[\]]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/

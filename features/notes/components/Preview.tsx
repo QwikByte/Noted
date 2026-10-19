@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
-import type { ResolvedNote } from '@/shared/markdown/obsidian'
+import type { ResolvedNote } from '@/shared/markdown/syntax'
 import { isDarkMode } from '@/shared/client/prefs'
 import { Properties } from './Properties'
 import { cn } from '@/shared/ui/cn'

@@ -47,7 +47,6 @@ export function TrashView() {
   return (
     <Page>
       <PageHeader
-        icon={<Trash2 />}
         title="Papierkorb"
         subtitle="Gelöschte Notizen werden nach 30 Tagen endgültig entfernt."
         actions={

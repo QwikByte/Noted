@@ -51,10 +51,10 @@ export function MfaSetup({ onDone, onCancel }: { onDone: () => void; onCancel?: 
         <div className="flex items-start gap-3 rounded-lg bg-subtle p-4 text-sm text-muted">
           <Smartphone className="mt-0.5 size-5 shrink-0 text-accent" />
           <p>
-            Du brauchst eine Authenticator-App auf deinem Handy, z.&nbsp;B. <strong className="text-fg">Aegis</strong>,{' '}
-            <strong className="text-fg">2FAS</strong>, <strong className="text-fg">Google Authenticator</strong>,{' '}
-            <strong className="text-fg">Microsoft Authenticator</strong> oder einen Passwortmanager wie{' '}
-            <strong className="text-fg">1Password</strong> oder <strong className="text-fg">Bitwarden</strong>.
+            Du brauchst eine Authenticator-App, z.&nbsp;B. <strong className="text-fg">Aegis</strong>,{' '}
+            <strong className="text-fg">2FAS</strong>, <strong className="text-fg">Google</strong> oder{' '}
+            <strong className="text-fg">Microsoft Authenticator</strong>, <strong className="text-fg">1Password</strong> oder{' '}
+            <strong className="text-fg">Bitwarden</strong>.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -105,7 +105,7 @@ export function MfaSetup({ onDone, onCancel }: { onDone: () => void; onCancel?: 
         </li>
         <li className="space-y-2">
           <p>
-            <span className="font-semibold">2.</span> Gib den angezeigten 6-stelligen Code zur Bestätigung ein.
+            <span className="font-semibold">2.</span> Gib den angezeigten Code ein.
           </p>
           <Field label="Code">
             {(id) => (

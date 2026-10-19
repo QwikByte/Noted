@@ -22,7 +22,7 @@ export function Dashboard() {
   const user = useUser()
   return (
     <Page>
-      <PageHeader title={`${greeting()}, ${user.displayName.split(' ')[0]}!`} subtitle="Was möchtest du heute festhalten?" />
+      <PageHeader title={`${greeting()}, ${user.displayName.split(' ')[0]}!`} />
       <LectureCardsHint />
       <ExamCountdown />
       {/* Offline ohne geladene Termine und ohne Stapel bleibt die Zeile leer – dann ohne Abstand */}

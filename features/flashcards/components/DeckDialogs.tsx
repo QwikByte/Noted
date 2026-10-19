@@ -86,16 +86,14 @@ export function DeckSettingsDialog({
         <Field label="Beschreibung (optional)">
           {(id) => <AutoTextarea id={id} value={description} onChange={(e) => setDescription(e.target.value)} minRows={2} />}
         </Field>
-        <Field label="Neue Karten pro Tag" hint="So viele noch nie gelernte Karten kommen im Lernmodus täglich höchstens dazu. Üben geht immer mit allen Karten.">
+        <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
           {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
             label="Wiederholungsplan"
             hint={
-              scheduler === 'fsrs'
-                ? 'FSRS plant nach Stabilität und Schwierigkeit jeder Karte – meist weniger Wiederholungen bei gleicher Behaltensrate. Der bisherige Lernstand bleibt erhalten.'
-                : 'SM-2 wie in Anki: Die Abstände wachsen mit der Leichtigkeit jeder Karte.'
+              scheduler === 'fsrs' ? 'Meist weniger Wiederholungen bei gleicher Behaltensrate. Der bisherige Lernstand bleibt erhalten.' : undefined
             }
           >
             {(id) => (
@@ -117,7 +115,7 @@ export function DeckSettingsDialog({
           checked={typeAnswer}
           onChange={setTypeAnswer}
           label="Antwort eintippen"
-          description="Bei Grund- und beidseitigen Karten tippst du die Antwort ein, bevor sie aufgedeckt wird. Unterschiede zur richtigen Antwort werden markiert."
+          description="Nur bei Grund- und beidseitigen Karten. Unterschiede zur richtigen Antwort werden markiert."
         />
         <button type="submit" hidden />
       </form>
@@ -271,9 +269,8 @@ export function AnkiImportDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Exportiere das Deck in Anki über <em>Datei → Exportieren</em> als „Anki-Deck-Paket (.apkg)“. Stapel und Unterstapel,
-            Grund-, beidseitige und Lückentext-Karten, Formeln, Bilder und Töne werden übernommen; Karten, die es im Stapel schon
-            gibt, kommen nicht doppelt.
+            Exportiere das Deck in Anki über <em>Datei → Exportieren</em> als „Anki-Deck-Paket (.apkg)“. Karten, die es im Stapel
+            schon gibt, kommen nicht doppelt.
           </p>
           <Field label="Datei">
             {(id) => (

@@ -354,7 +354,7 @@ describe('Mindmap und Canvas', () => {
     expect(nodes[1].subpath).toBe('#Linsen')
   })
 
-  it('bietet ein Canvas als .canvas mit Pfaden wie im Vault zum Download an', async () => {
+  it('bietet ein Canvas als .canvas mit Pfaden wie im Export zum Download an', async () => {
     const dir = await newFolder('Physik')
     await newNote('Impuls', '', dir.id)
     const r = await create('Mechanik', canvas([{ id: 'a', type: 'file', file: 'Impuls', ...box }]), 'canvas')

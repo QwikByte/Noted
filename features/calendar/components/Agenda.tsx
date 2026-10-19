@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { CalendarDays, FilePlus2, FileText, Loader2, Plus } from 'lucide-react'
+import { FilePlus2, FileText, Loader2, Plus } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useNotes } from '@/features/notes/client/queries'
 import { Button } from '@/shared/ui/button'
@@ -25,7 +25,7 @@ export function Agenda({ className }: { className?: string }) {
 
   if (!events) {
     return isLoading ? (
-      <Panel icon={<CalendarDays />} title="Termine" className={className}>
+      <Panel title="Termine" className={className}>
         <Loader2 className="mx-auto size-5 animate-spin text-faint" />
       </Panel>
     ) : null
@@ -37,7 +37,6 @@ export function Agenda({ className }: { className?: string }) {
 
   return (
     <Panel
-      icon={<CalendarDays />}
       title="Termine"
       className={className}
       testId="agenda"
@@ -53,10 +52,7 @@ export function Agenda({ className }: { className?: string }) {
       }
     >
       {events.length === 0 ? (
-        <p className="text-sm text-muted">
-          Noch keine Termine. Trag deinen Stundenplan im Kalender ein – dann siehst du hier, was ansteht, und legst die
-          Mitschrift zur Vorlesung mit einem Klick an.
-        </p>
+        <p className="text-sm text-muted">Noch keine Termine.</p>
       ) : days.every((d) => d.items.length === 0) ? (
         <p className="text-sm text-muted">In den nächsten {DAYS} Tagen stehen keine Termine an.</p>
       ) : (
@@ -76,7 +72,7 @@ function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpe
     <div className="space-y-4">
       {days.map((day) => (
         <div key={day.date}>
-          <h3 className="mb-1 text-xs font-semibold tracking-wide text-faint uppercase">{dayLabel(day.date, today)}</h3>
+          <h3 className="mb-1 text-sm font-semibold text-muted">{dayLabel(day.date, today)}</h3>
           {day.items.length === 0 ? (
             <p className="text-sm text-muted">Keine Termine.</p>
           ) : (

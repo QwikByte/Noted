@@ -1,5 +1,5 @@
 // Bausteine für formatierten Text (HTML): Anhänge, PDF-Links und Zitate – ohne den Editor selbst laden zu müssen.
-import { defaultFileUrl } from '@/shared/markdown/obsidian'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { escapeHtml } from '@/shared/lib/html'
 import type { Insertion, PdfRef } from './client/active-editor'
 import type { Attachment } from '@/features/attachments/types'

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { ArrowLeft, KeyRound, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, KeyRound } from 'lucide-react'
 import { api, clearCachedData, errorMessage, ApiError } from '@/shared/client/api'
 import { Button } from '@/shared/ui/button'
 import { Field, Input } from '@/shared/ui/input'
@@ -58,10 +58,8 @@ export function LoginForm({ next, mfaPending }: { next: string; mfaPending: bool
     return (
       <form onSubmit={submitCode} className="space-y-5">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <ShieldCheck className="size-5 text-accent-text" /> Bestätigungscode
-          </h2>
-          <p className="mt-1 text-sm text-muted">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
+          <h2 className="text-lg font-semibold">Bestätigungscode</h2>
+          <p className="mt-1 text-sm text-muted">Code aus deiner Authenticator-App</p>
         </div>
         <ErrorText>{error}</ErrorText>
         <Field label="Code">

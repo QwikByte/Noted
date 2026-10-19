@@ -29,7 +29,7 @@ async function newNote(title: string, content = '', folderId: string | null = nu
   return r.data.note as { id: string; title: string; version: number; tags: string[] }
 }
 
-describe('Export und Import (Obsidian-Vault)', () => {
+describe('Export und Import (ZIP)', () => {
   it('exportiert Notizen mit Ordnerstruktur und Anhängen als ZIP', async () => {
     const form = new FormData()
     form.append('file', new File([new Uint8Array([1, 2, 3])], 'Tafel-bild.png', { type: 'image/png' }))
@@ -46,15 +46,15 @@ describe('Export und Import (Obsidian-Vault)', () => {
     expect(Object.keys(zip)).toContain('Leer/')
   })
 
-  it('importiert ein Vault-ZIP inkl. Ordnern und überspringt .obsidian', async () => {
-    const vault = zipSync({
-      'Mein Vault/Uni/Mathe.md': strToU8('# Mathe\n#import'),
-      'Mein Vault/Uni/bild.jpg': new Uint8Array([1, 2, 3]),
-      'Mein Vault/.obsidian/app.json': strToU8('{}'),
-      'Mein Vault/Notiz:mit:Doppelpunkt.md': strToU8('x'),
+  it('importiert ein ZIP inkl. Ordnern und überspringt versteckte Ordner', async () => {
+    const zip = zipSync({
+      'Meine Notizen/Uni/Mathe.md': strToU8('# Mathe\n#import'),
+      'Meine Notizen/Uni/bild.jpg': new Uint8Array([1, 2, 3]),
+      'Meine Notizen/.config/app.json': strToU8('{}'),
+      'Meine Notizen/Notiz:mit:Doppelpunkt.md': strToU8('x'),
     })
     const form = new FormData()
-    form.append('files', new File([vault], 'vault.zip', { type: 'application/zip' }))
+    form.append('files', new File([zip], 'notizen.zip', { type: 'application/zip' }))
     form.append('files', new File(['Einzeln'], 'Einzelne Datei.md'))
     const r = await call(importRoute.POST, '/', { cookie: token, form })
     expect(r.status).toBe(200)
@@ -69,9 +69,9 @@ describe('Export und Import (Obsidian-Vault)', () => {
   it('überspringt zu große Einträge im ZIP, ohne sie zu entpacken', async () => {
     process.env.MAX_UPLOAD_MB = '1'
     try {
-      const vault = zipSync({ 'klein.md': strToU8('ok'), 'riesig.bin': new Uint8Array(3 * 1024 * 1024) })
+      const zip = zipSync({ 'klein.md': strToU8('ok'), 'riesig.bin': new Uint8Array(3 * 1024 * 1024) })
       const form = new FormData()
-      form.append('files', new File([vault], 'v.zip'))
+      form.append('files', new File([zip], 'v.zip'))
       const r = await call(importRoute.POST, '/', { cookie: token, form })
       expect(r.status).toBe(200)
       expect(r.data.notes).toBe(1)
@@ -106,12 +106,12 @@ describe('Export und Import (Obsidian-Vault)', () => {
 
   it('importiert HTML-Dateien als formatierten Text – außer im Ordner „Anhänge“', async () => {
     const page = '<!doctype html><html><head><title>x</title></head><body><h1>Import</h1><img src="../Anhänge/foto.png"></body></html>'
-    const vault = zipSync({
+    const zip = zipSync({
       'Ordner/Seite.html': strToU8(page),
       'Anhänge/eingebettet.html': strToU8('<p>bleibt Anhang</p>'),
     })
     const form = new FormData()
-    form.append('files', new File([vault], 'export.zip'))
+    form.append('files', new File([zip], 'export.zip'))
     const r = await call(importRoute.POST, '/', { cookie: token, form })
     expect(r.data).toMatchObject({ notes: 1, attachments: 1 })
     const list = await call(notes.GET, '/', { cookie: token })
@@ -122,7 +122,7 @@ describe('Export und Import (Obsidian-Vault)', () => {
     expect(full.data.note.content).toBe('<h1>Import</h1><img src="/api/files/foto.png">')
   })
 
-  it('exportiert Mindmaps als .md und Canvas als .canvas mit Pfaden wie in Obsidian – und importiert beides wieder', async () => {
+  it('exportiert Mindmaps als .md und Canvas als .canvas mit vollständigen Pfaden – und importiert beides wieder', async () => {
     const folder = await newFolder('Visuell')
     const target = await newNote('Zielnotiz', '', folder.id)
     const mindmap = '---\nmindmap-plugin: basic\n---\n\n# Plan\n\n## Ast\n'

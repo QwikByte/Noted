@@ -33,7 +33,7 @@ export function SetupFlow({
         <p className="mt-1 text-sm text-muted">
           {step === 'password'
             ? 'Bitte ersetze dein Startpasswort durch ein eigenes, sicheres Passwort.'
-            : 'Für dein Konto ist eine Zwei-Faktor-Anmeldung vorgeschrieben. Danach brauchst du beim Anmelden zusätzlich einen Code aus deiner Authenticator-App.'}
+            : 'Für dein Konto ist eine Zwei-Faktor-Anmeldung vorgeschrieben.'}
         </p>
       </div>
       {step === 'password' ? (

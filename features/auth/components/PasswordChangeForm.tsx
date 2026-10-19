@@ -66,7 +66,7 @@ export function PasswordChangeForm({ onDone, submitLabel = 'Passwort ändern' }:
           <Input id={id} type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
         )}
       </Field>
-      <Field label="Neues Passwort" hint="Mindestens 10 Zeichen. Eine Passphrase aus mehreren Wörtern ist ideal.">
+      <Field label="Neues Passwort" hint="Mindestens 10 Zeichen.">
         {(id) => (
           <div className="space-y-2">
             <Input id={id} type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" required minLength={10} />

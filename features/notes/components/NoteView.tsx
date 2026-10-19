@@ -62,7 +62,7 @@ import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
-import { buildVaultIndex } from '@/features/vault/paths'
+import { buildExportIndex } from '@/features/transfer/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { canQuiz } from '@/features/flashcards/note-quiz'
 import { validateName } from '@/shared/lib/names'
@@ -466,7 +466,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       message = 'Wikilink kopiert.'
     } else if (format === 'richtext') {
       ok = await copyHtml(content, htmlToText(content, { codeFences: false }))
-      message = 'Kopiert – mit Formatierung, z. B. zum Einfügen in Word.'
+      message = 'Mit Formatierung kopiert.'
     } else if (format === 'text') {
       ok = await copyText(content)
       message = 'Text kopiert.'
@@ -475,16 +475,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       message = 'Inhalt der Karten als Markdown kopiert.'
     } else {
       ok = await copyText(kind === 'body' ? (splitFrontmatter(content)?.body ?? content).replace(/^\n+/, '') : content)
-      message = 'Markdown kopiert – einfach in Obsidian einfügen.'
+      message = 'Markdown kopiert.'
     }
     if (ok) toast.success(message)
     else toast.error('Kopieren nicht möglich.')
   }
 
-  /** Dateikarten zeigen im heruntergeladenen Canvas auf die Pfade im exportierten Vault */
+  /** Dateikarten zeigen im heruntergeladenen Canvas auf die Pfade im Export */
   function canvasDownload(): string {
     const ordered = [...notes].sort((a, b) => a.createdAt - b.createdAt)
-    const index = buildVaultIndex(
+    const index = buildExportIndex(
       ordered.map((n) => ({ title: n.title, folders: folderPath(folders, n.folderId).map((f) => f.name), format: n.format })),
       attachments.map((a) => a.filename),
     )
@@ -936,8 +936,8 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
   return (
     <div className={cn(compact ? '' : 'mx-auto max-w-[44rem] px-5 pb-16')}>
       <div className={cn('rounded-lg border border-border', compact ? 'p-3' : 'p-4')}>
-        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted">
-          <Link2 className="size-4" /> Verlinkt in {data.length} {data.length === 1 ? 'Notiz' : 'Notizen'}
+        <h3 className="mb-2 text-sm font-semibold text-muted">
+          Verlinkt in {data.length} {data.length === 1 ? 'Notiz' : 'Notizen'}
         </h3>
         <ul className="space-y-1">
           {data.map((b) => (

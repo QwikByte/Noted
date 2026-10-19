@@ -9,8 +9,8 @@ export type Folder = {
 }
 
 /**
- * markdown: Obsidian-Markdown · richtext: formatierter Text (HTML aus dem Editor) · text: einfacher Text ·
- * mindmap: Markdown-Gliederung, als Mindmap bearbeitet · canvas: JSON Canvas (wie Obsidian Canvas)
+ * markdown: Markdown mit Wikilinks · richtext: formatierter Text (HTML aus dem Editor) · text: einfacher Text ·
+ * mindmap: Markdown-Gliederung, als Mindmap bearbeitet · canvas: JSON Canvas
  */
 export type NoteFormat = 'markdown' | 'richtext' | 'text' | 'mindmap' | 'canvas'
 

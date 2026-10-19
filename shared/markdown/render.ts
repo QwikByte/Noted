@@ -1,9 +1,9 @@
-// Markdown → HTML im Obsidian-Stil (ohne DOM; die Bereinigung mit DOMPurify passiert in der Vorschau).
+// Markdown → HTML für die Vorschau (ohne DOM; die Bereinigung mit DOMPurify passiert in der Vorschau).
 import MarkdownIt, { type PluginSimple } from 'markdown-it'
 import footnote from 'markdown-it-footnote'
 import katex from '@vscode/markdown-it-katex'
 import hljs from 'highlight.js/lib/common'
-import { obsidianPlugin, stripComments, type RenderEnv } from './obsidian'
+import { syntaxPlugin, stripComments, type RenderEnv } from './syntax'
 import { escapeHtml } from '@/shared/lib/html'
 import { splitFrontmatter } from './meta'
 
@@ -11,7 +11,7 @@ function createMarkdownIt() {
   const md: MarkdownIt = new MarkdownIt({
     html: true,
     linkify: true,
-    breaks: true, // Obsidian-Standard: einfacher Zeilenumbruch = Umbruch
+    breaks: true, // einfacher Zeilenumbruch = Umbruch
     typographer: false,
     highlight(code, lang) {
       const language = lang.trim().toLowerCase()
@@ -28,7 +28,7 @@ function createMarkdownIt() {
   // Die Typen von markdown-it-footnote verweisen auf die CJS-Variante von markdown-it – zur Laufzeit identisch
   md.use(footnote as unknown as PluginSimple)
   md.use(katex, { throwOnError: false, enableMathBlockInHtml: true, enableMathInlineInHtml: true, enableFencedBlocks: true })
-  md.use(obsidianPlugin)
+  md.use(syntaxPlugin)
   md.linkify.set({ fuzzyLink: false })
 
   // Mermaid-Diagramme: Platzhalter, der in der Vorschau per mermaid.js gerendert wird

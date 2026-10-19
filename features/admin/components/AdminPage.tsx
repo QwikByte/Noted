@@ -8,7 +8,6 @@ import {
   Lock,
   LogOut,
   MoreHorizontal,
-  Package,
   Pencil,
   Power,
   RefreshCw,
@@ -118,7 +117,7 @@ function UsersTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted">
-          {users.length} {users.length === 1 ? 'Konto' : 'Konten'} · Neue Konten können nur hier angelegt werden.
+          {users.length} {users.length === 1 ? 'Konto' : 'Konten'}
         </p>
         <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
           <UserPlus className="size-4" /> Benutzer anlegen
@@ -141,7 +140,7 @@ function UsersTab() {
                     {isMe ? <Badge>Du</Badge> : null}
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {u.role === 'admin' ? <Badge tone="accent">Admin</Badge> : null}
+                    {u.role === 'admin' ? <Badge>Admin</Badge> : null}
                     {!u.isActive ? <Badge tone="danger">Deaktiviert</Badge> : null}
                     {u.lockedUntil ? (
                       <Badge tone="danger">
@@ -381,7 +380,7 @@ function CreateUserDialog({
             checked={form.mfaRequired}
             onChange={(v) => set('mfaRequired', v)}
             label="Zwei-Faktor-Anmeldung vorschreiben"
-            description="Der Benutzer muss bei der ersten Anmeldung eine Authenticator-App einrichten."
+            description="Wird bei der ersten Anmeldung eingerichtet."
           />
         </div>
       </form>
@@ -473,7 +472,7 @@ function EditUserDialog({
               checked={form.isActive}
               onChange={(v) => setForm({ ...form, isActive: v })}
               label="Konto aktiv"
-              description="Deaktivierte Konten können sich nicht anmelden. Notizen bleiben erhalten."
+              description="Notizen bleiben erhalten."
             />
           ) : null}
         </div>
@@ -561,7 +560,7 @@ function CredentialsDialog({ credentials, onClose }: { credentials: Credentials 
       open={!!credentials}
       onClose={onClose}
       title={credentials?.title ?? ''}
-      description="Das Passwort wird nur jetzt angezeigt. Gib die Zugangsdaten sicher weiter."
+      description="Das Passwort wird nur jetzt angezeigt."
       size="sm"
       footer={
         <Button variant="primary" onClick={onClose}>
@@ -656,7 +655,7 @@ function SecurityTab() {
   })
   return (
     <div className="space-y-5">
-      <Section icon={<ShieldCheck />} title="Zwei-Faktor-Anmeldung" description="Authenticator-App (TOTP) als zweiter Faktor.">
+      <Section title="Zwei-Faktor-Anmeldung">
         <Switch
           checked={data?.enforceMfa ?? false}
           disabled={!data}
@@ -671,10 +670,10 @@ function SecurityTab() {
             }
           }}
           label="Für alle Benutzer verpflichtend"
-          description="Wer noch keine Authenticator-App eingerichtet hat, wird beim nächsten Seitenaufruf zur Einrichtung gezwungen. Einzelne Benutzer kannst du auch gezielt unter „Benutzer → Bearbeiten“ verpflichten."
+          description="Wer noch keine Authenticator-App eingerichtet hat, muss das beim nächsten Seitenaufruf tun. Einzelne Benutzer verpflichtest du unter „Benutzer → Bearbeiten“."
         />
       </Section>
-      <Section icon={<Lock />} title="Schutzmechanismen" description="Diese Einstellungen sind fest eingebaut.">
+      <Section title="Schutzmechanismen">
         <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted">
           <li>Keine Selbstregistrierung – Konten legt nur ein Administrator an.</li>
           <li>Passwörter werden mit Argon2id gehasht; MFA-Schlüssel sind verschlüsselt gespeichert.</li>
@@ -744,7 +743,7 @@ function AuditTab() {
   const entries = query.data?.pages.flat() ?? []
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted">Sicherheitsrelevante Ereignisse der letzten 180 Tage.</p>
+      <p className="text-sm text-muted">Letzte 180 Tage</p>
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
         {entries.map((e) => {
           const ev = EVENTS[e.event] ?? { label: e.event, tone: 'neutral' as const }
@@ -829,7 +828,7 @@ function SystemTab() {
   }
   return (
     <div className="space-y-5">
-      <Section icon={<Package />} title="Version" description="Die Version, die gerade auf dem Server läuft.">
+      <Section title="Version">
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-muted">Version</dt>
           <dd className="font-medium" data-testid="app-version">
@@ -896,7 +895,7 @@ function UpdateActions({ info }: { info: SystemInfo }) {
         <p className="text-sm text-muted" data-testid="update-request">
           {request.retry ? 'Erneuter Versuch' : 'Prüfung'} angefordert
           {request.at ? ` ${formatRelative(request.at)}` : ''}
-          {request.by ? ` von @${request.by}` : ''} – der Server holt die Anfrage gleich ab.
+          {request.by ? ` von @${request.by}` : ''}
         </p>
       ) : null}
       {request && requestIsStuck(request.at) ? (
@@ -913,7 +912,7 @@ function UpdateSection({ info }: { info: SystemInfo }) {
   const description = 'Der Server prüft stündlich auf neue Releases (Git-Tags vX.Y.Z) und spielt sie selbst ein.'
   if (!update.configured) {
     return (
-      <Section icon={<RefreshCw />} title="Automatische Updates" description={description}>
+      <Section title="Automatische Updates" description={description}>
         <div className="space-y-4" data-testid="update-status">
           <p className="text-sm text-muted">
             {info.canRequestUpdate
@@ -930,7 +929,7 @@ function UpdateSection({ info }: { info: SystemInfo }) {
   const pending =
     update.latest && update.latest !== update.current && update.latest !== update.failedTag && update.state !== 'updating'
   return (
-    <Section icon={<RefreshCw />} title="Automatische Updates" description={description}>
+    <Section title="Automatische Updates" description={description}>
       <div className="space-y-4" data-testid="update-status">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <Badge tone={state.tone}>{state.label}</Badge>

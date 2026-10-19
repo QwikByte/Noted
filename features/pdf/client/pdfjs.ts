@@ -1,6 +1,6 @@
 'use client'
 // pdf.js im Browser: Bibliothek bei Bedarf laden, PDF-Dateien öffnen und einzelne Seiten als Bild rendern
-import { defaultFileUrl } from '@/shared/markdown/obsidian'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 
 type Lib = { pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs'); viewer: typeof import('pdfjs-dist/legacy/web/pdf_viewer.mjs') }
 let lib: Promise<Lib> | null = null

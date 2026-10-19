@@ -28,7 +28,7 @@ export function getActiveEditor(): ActiveEditor | null {
   return active
 }
 
-/** Seitenlink im Obsidian-Format, z. B. [[Skript.pdf#page=12|S. 12]] */
+/** Seitenlink als Wikilink, z. B. [[Skript.pdf#page=12|S. 12]] */
 export function pdfPageLink(ref: PdfRef, label?: string): string {
   return `[[${ref.file}#page=${ref.page}${label ? `|${label}` : ''}]]`
 }

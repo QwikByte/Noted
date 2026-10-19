@@ -19,7 +19,7 @@ import { Preview, type PreviewLinks } from '@/features/notes/components/Preview'
 import { PlainTextView, RichTextView } from '@/features/notes/components/ReadView'
 import { useNote } from '@/features/notes/client/queries'
 import { mindmapToMarkdown } from '@/features/mindmap/mindmap'
-import { defaultFileUrl } from '@/shared/markdown/obsidian'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 import type { Attachment } from '@/features/attachments/types'
 import { cn } from '@/shared/ui/cn'
 
@@ -43,7 +43,7 @@ type CanvasContextValue = {
 
 export const CanvasContext = createContext<CanvasContextValue | null>(null)
 
-/** Farbe aus der Datei: „1“ bis „6“ (wie in Obsidian) oder ein Hex-Wert */
+/** Farbe aus der Datei: „1“ bis „6“ (Farbpalette von JSON Canvas) oder ein Hex-Wert */
 export function canvasColor(color: string | undefined): string | undefined {
   if (!color) return undefined
   if (/^[1-6]$/.test(color)) return `var(--swatch-${color})`

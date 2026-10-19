@@ -1,5 +1,5 @@
 'use client'
-// Canvas-Editor (JSON Canvas wie in Obsidian): Karten frei anordnen, mit Pfeilen verbinden und gruppieren.
+// Canvas-Editor (JSON Canvas): Karten frei anordnen, mit Pfeilen verbinden und gruppieren.
 // Wird per next/dynamic nachgeladen (React Flow) und gibt der Notizansicht dieselbe Schnittstelle wie die Text-Editoren.
 import { useCallback, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {

@@ -44,7 +44,7 @@ export function ToastProvider({ children, sticky }: { children: React.ReactNode;
     <ToastContext.Provider value={api}>
       {children}
       <div
-        // Oben unter der Kopfzeile (wie Obsidian): unten lägen sie über Bewertungsknöpfen, Tastatur und Neu-Knopf
+        // Oben unter der Kopfzeile: unten lägen sie über Bewertungsknöpfen, Tastatur und Neu-Knopf
         className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[100] flex flex-col items-center gap-2 px-3 sm:left-auto sm:right-4 sm:w-[24rem] sm:items-stretch sm:px-0"
         aria-live="polite"
       >

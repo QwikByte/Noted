@@ -230,7 +230,7 @@ function StudySession({
       const next = schedule(state, rating, now, plan)
       if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
         toast.show(
-          `Diese Karte hast du jetzt ${next.lapses}-mal vergessen. Am besten überarbeitest oder teilst du sie – im Stapel unter „Problemkarten“.`,
+          `${next.lapses}-mal vergessen – überarbeite oder teile die Karte (im Stapel unter „Problemkarten“).`,
           { duration: 8000 },
         )
       }
@@ -399,7 +399,7 @@ function StudySession({
               <div className="index-card" data-testid="study-card">
                 <div className="px-5 pt-4 pb-5 sm:px-7 sm:pt-5">
                   <div className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-faint">
-                    {current.kind === 'new' ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-text">Neu</span> : null}
+                    {current.kind === 'new' ? <span className="rounded-full bg-subtle px-2 py-0.5 font-medium text-muted">Neu</span> : null}
                     {card.type === 'reversed' ? <span>{side === 1 ? 'Rückseite → Vorderseite' : 'Vorderseite → Rückseite'}</span> : null}
                     {isCloze && clozeCount(card.front) > 1 ? (
                       <span>
@@ -702,9 +702,7 @@ function Finished({
             <p className="mt-1 text-muted">
               Beim ersten Versuch richtig: <strong className="text-fg">{session.correctFirstTry}</strong> von {session.total} ({pct} %)
             </p>
-          ) : (
-            <p className="mt-1 text-muted">Hier gibt es noch keine Karten zum Üben.</p>
-          )}
+          ) : null}
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           {missed.length > 0 ? (
@@ -720,22 +718,25 @@ function Finished({
   }
 
   const nothingToDo = reviewed === 0
+  const summary = [
+    nothingToDo
+      ? cards.length === 0
+        ? 'Hier gibt es noch keine Karten.'
+        : ''
+      : `Du hast ${cardsSeen} ${cardsSeen === 1 ? 'Karte' : 'Karten'} gelernt (${reviewed} ${reviewed === 1 ? 'Antwort' : 'Antworten'}).`,
+    dueTomorrow > 0 ? `Morgen ${dueTomorrow === 1 ? 'ist 1 Karte' : `sind ${dueTomorrow} Karten`} fällig.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center" data-testid="study-done">
       <CheckCircle2 className="size-10 stroke-[1.5] text-success" />
       <div className="max-w-md">
         <h2 className="text-2xl font-bold">{nothingToDo ? 'Für heute ist alles gelernt' : 'Geschafft!'}</h2>
-        <p className="mt-1 text-muted">
-          {nothingToDo
-            ? cards.length === 0
-              ? 'Hier gibt es noch keine Karten.'
-              : 'Gerade ist keine Karte fällig.'
-            : `Du hast ${cardsSeen} ${cardsSeen === 1 ? 'Karte' : 'Karten'} gelernt (${reviewed} ${reviewed === 1 ? 'Antwort' : 'Antworten'}).`}{' '}
-          {dueTomorrow > 0 ? `Morgen ${dueTomorrow === 1 ? 'ist 1 Karte' : `sind ${dueTomorrow} Karten`} fällig.` : null}
-        </p>
+        {summary ? <p className="mt-1 text-muted">{summary}</p> : null}
         {newLeft > 0 ? (
           <p className="mt-2 text-sm text-faint">
-            Noch {newLeft} neue {newLeft === 1 ? 'Karte' : 'Karten'} – das Tageslimit für neue Karten lässt sich im Stapel einstellen.
+            Noch {newLeft} neue {newLeft === 1 ? 'Karte' : 'Karten'} – das Tageslimit lässt sich im Stapel einstellen.
           </p>
         ) : null}
       </div>

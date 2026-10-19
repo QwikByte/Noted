@@ -67,14 +67,14 @@ function dueLabel(
   states: StateMap,
   now: number,
   exam: DeckExam | null,
-): { text: string; tone: 'accent' | 'neutral' | 'warning' } {
+): { text: string; tone: 'neutral' | 'marker' } {
   let earliest = Infinity
   for (const side of sidesOf(card)) {
     const s = states.get(reviewKey(card.id, side))
-    if (!s) return { text: 'Neu', tone: 'accent' }
+    if (!s) return { text: 'Neu', tone: 'neutral' }
     earliest = Math.min(earliest, exam ? examDue(s, reviewKey(card.id, side), exam, now) : s.due)
   }
-  if (earliest <= endOfDay(now)) return { text: 'Heute fällig', tone: 'warning' }
+  if (earliest <= endOfDay(now)) return { text: 'Heute fällig', tone: 'marker' }
   return { text: `in ${formatInterval(earliest - now)}`, tone: 'neutral' }
 }
 
@@ -180,7 +180,7 @@ export function DeckView({ id }: { id: string }) {
               icon={<Copy />}
               onSelect={async () => {
                 const ok = await copyText(deckToMarkdown(deck, cards))
-                if (ok) toast.success('Als Markdown kopiert – in Obsidian mit dem Plugin „Spaced Repetition“ lernbar.')
+                if (ok) toast.success('Als Markdown kopiert.')
                 else toast.error('Kopieren nicht möglich.')
               }}
             >
@@ -290,9 +290,8 @@ export function DeckView({ id }: { id: string }) {
       ) : null}
       {shownFilter === 'problem' ? (
         <p className="mb-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
-          Diese Karten hast du mindestens {LEECH_LAPSES}-mal vergessen. Meist liegt es an der Karte selbst: zu viel auf einmal
-          oder unklar formuliert. Überarbeite sie oder teile sie in mehrere kleine Karten auf und lerne sie dann neu. Bis dahin
-          kannst du sie aussetzen – dann kommt sie beim Lernen nicht mehr dran.
+          Mindestens {LEECH_LAPSES}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile sie und
+          lerne sie neu; bis dahin kannst du sie aussetzen.
         </p>
       ) : null}
 
@@ -300,7 +299,7 @@ export function DeckView({ id }: { id: string }) {
         <div className="rounded-xl border border-dashed border-border-strong px-6 py-10 text-center text-sm text-muted">
           <p className="font-medium text-fg">Noch keine Karten in diesem Stapel</p>
           <p className="mx-auto mt-1 max-w-md">
-            Lege Karten einzeln an, importiere eine Liste – oder öffne eine Notiz und wähle im Menü ⋮ „Karteikarten aus Notiz“.
+            Oder aus einer Notiz: Menü ⋮ → „Karteikarten aus Notiz“.
           </p>
           <div className="mt-4 flex justify-center gap-2">
             <Button variant="primary" size="sm" onClick={() => app.openCardEditor({ deckId: deck.id })}>
@@ -361,7 +360,7 @@ export function DeckView({ id }: { id: string }) {
                           onClick={() =>
                             void cardAction(
                               () => updateCard(qc, card.id, { suspended: !card.suspended }),
-                              card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt – sie kommt beim Lernen nicht mehr dran.',
+                              card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.',
                             )
                           }
                         >

@@ -1,4 +1,4 @@
-// markdown-it-Plugins für Obsidian-Syntax: Wikilinks, Einbettungen, Tags, ==Markierungen==,
+// markdown-it-Plugins für die erweiterte Syntax: Wikilinks, Einbettungen, Tags, ==Markierungen==,
 // Callouts, Aufgabenlisten, Kommentare (%% %%) und Überschriften-Anker.
 import type { MarkdownIt, StateCore, StateInline, Token } from 'markdown-it'
 import { isFileTarget, parseWikiTarget } from './meta'
@@ -158,7 +158,7 @@ function tagRule(state: StateInline, silent: boolean): boolean {
   const tag = m[1].replace(/\/+$/, '')
   if (!tag || /^[\d/]+$/.test(tag)) return false
   if (!silent) {
-    const token = state.push('obsidian_tag', '', 0)
+    const token = state.push('hashtag', '', 0)
     token.content = tag
   }
   state.pos = pos + 1 + tag.length
@@ -365,12 +365,12 @@ function headingIdsRule(state: StateCore) {
 
 // ---------------------------------------------------------------------------
 
-export function obsidianPlugin(md: MarkdownIt) {
+export function syntaxPlugin(md: MarkdownIt) {
   md.inline.ruler.before('link', 'wikilink', wikilinkRule)
   md.inline.ruler.before('emphasis', 'mark', markRule)
-  md.inline.ruler.push('obsidian_tag', tagRule)
+  md.inline.ruler.push('hashtag', tagRule)
   md.renderer.rules.wikilink = renderWikilink as never
-  md.renderer.rules.obsidian_tag = renderTag
+  md.renderer.rules.hashtag = renderTag
   md.core.ruler.before('inline', 'callouts', calloutsRule)
   md.core.ruler.after('inline', 'tasks', tasksRule)
   md.core.ruler.push('heading_ids', headingIdsRule)
@@ -394,7 +394,7 @@ export function obsidianPlugin(md: MarkdownIt) {
   }
 }
 
-/** Entfernt Obsidian-Kommentare (%% … %%) außerhalb von Code-Blöcken. */
+/** Entfernt Kommentare (%% … %%) außerhalb von Code-Blöcken. */
 export function stripComments(markdown: string): string {
   if (!markdown.includes('%%')) return markdown
   const parts = markdown.split(/(^(?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)[ \t]*$)/m)

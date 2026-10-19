@@ -11,7 +11,7 @@ export async function uploadAttachment(file: File, name?: string): Promise<Attac
   return res.attachment
 }
 
-/** Obsidian-Syntax für einen Anhang: Bilder/PDF/Audio/Video eingebettet, sonst als Link. */
+/** Syntax für einen Anhang: Bilder/PDF/Audio/Video eingebettet, sonst als Link. */
 export function attachmentMarkdown(att: Pick<Attachment, 'filename' | 'mime'>): string {
   return EMBED.test(att.mime) ? `![[${att.filename}]]` : `[[${att.filename}]]`
 }
