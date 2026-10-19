@@ -22,6 +22,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
 - Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
+- **Graph** (Seitenleiste → **Graph**): alle Notizen als Punkte, die Wikilinks als Linien – so siehst du, welche Mitschriften zusammenhängen und wo Inseln sind. Größere Punkte haben mehr Verbindungen, die Farbe zeigt den obersten Ordner. Filtern nach Ordner (samt Unterordnern) und Tag, das Suchfeld hebt Notizen hervor; ein Klick öffnet die Notiz. Ab 1 500 Notizen zeigt der Graph nur einen gefilterten Ausschnitt. Im Lesemodus steht unter „Verlinkt in“ der **lokale Graph** der Notiz (direkt verlinkt oder zwei Schritte weit).
 - **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
 
@@ -356,6 +357,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
+  graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht

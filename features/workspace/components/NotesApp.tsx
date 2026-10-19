@@ -31,6 +31,7 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useNav, type View } from '../client/nav'
 import { usePref } from '@/shared/client/prefs'
 import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/notes/client/queries'
+import { graphKey } from '@/features/graph/client/queries'
 import { api, errorMessage } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
@@ -42,6 +43,8 @@ type MoveTarget = { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder
 
 // pdf.js wird erst geladen, wenn ein PDF geöffnet wird
 const PdfPanel = dynamic(() => import('@/features/pdf/components/PdfPanel'), { ssr: false })
+// React Flow für den Graphen ebenfalls erst bei Bedarf
+const GraphView = dynamic(() => import('@/features/graph/components/GraphView'), { ssr: false })
 
 function readPdfPref(raw: string): { file: string } | null {
   try {
@@ -86,7 +89,10 @@ export default function NotesApp() {
     const off = sync.onSaved((note, info) => {
       applySavedNote(qc, note)
       clearTimeout(tagTimer)
-      tagTimer = setTimeout(() => qc.invalidateQueries({ queryKey: keys.tags }), 1500)
+      tagTimer = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: keys.tags })
+        qc.invalidateQueries({ queryKey: graphKey })
+      }, 1500)
       if (info.linksUpdated > 0) {
         toast.show(`${info.linksUpdated} ${info.linksUpdated === 1 ? 'Link' : 'Links'} auf „${note.title}“ aktualisiert.`)
         qc.invalidateQueries({ queryKey: keys.notes })
@@ -135,6 +141,7 @@ export default function NotesApp() {
       void import('@/features/notes/components/RichTextEditor').catch(() => {})
       void import('@/features/mindmap/components/MindmapEditor').catch(() => {})
       void import('@/features/canvas/components/CanvasEditor').catch(() => {})
+      void import('@/features/graph/components/GraphView').catch(() => {})
       void import('@/features/notes/client/convert').catch(() => {})
     }, 5_000)
     return () => clearTimeout(timer)
@@ -154,6 +161,7 @@ export default function NotesApp() {
         removeNoteFromCache(qc, note.id)
         qc.invalidateQueries({ queryKey: keys.trash })
         qc.invalidateQueries({ queryKey: keys.tags })
+        qc.invalidateQueries({ queryKey: graphKey })
         if (view.kind === 'note' && view.id === note.id) navigate({ kind: 'home' }, { replace: true })
         toast.show(`„${note.title}“ in den Papierkorb verschoben.`, {
           action: {
@@ -162,6 +170,7 @@ export default function NotesApp() {
               await api(`/api/notes/${note.id}/restore`, { method: 'POST' })
               qc.invalidateQueries({ queryKey: keys.notes })
               qc.invalidateQueries({ queryKey: keys.trash })
+              qc.invalidateQueries({ queryKey: graphKey })
             },
           },
         })
@@ -285,12 +294,15 @@ export default function NotesApp() {
     case 'glossary':
       main = <GlossaryView key={view.folder ?? ''} folder={view.folder} />
       break
+    case 'graph':
+      main = <GraphView />
+      break
     default:
       main = <Dashboard />
   }
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz'
-  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats'].includes(view.kind)
+  const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats', 'graph'].includes(view.kind)
   // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')
   const fabSpace = useReservedSpace<HTMLButtonElement>('--bottom-right-height')
@@ -423,6 +435,7 @@ export default function NotesApp() {
               qc.invalidateQueries({ queryKey: keys.folders }),
               qc.invalidateQueries({ queryKey: keys.notes }),
               qc.invalidateQueries({ queryKey: keys.trash }),
+              qc.invalidateQueries({ queryKey: graphKey }),
             ])
             if (view.kind === 'folder' && view.id === deleteTarget.id) navigate({ kind: 'home' }, { replace: true })
             toast.success(

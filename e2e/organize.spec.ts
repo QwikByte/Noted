@@ -208,3 +208,41 @@ test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) =>
   await expect(list.getByRole('button').first()).toContainText('Vor dem Wiederherstellen')
   await expect(preview).toContainText('Aus Versehen überschrieben')
 })
+
+test('Graph: verlinkte Notizen sehen und per Klick öffnen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const create = async (title: string, content: string) => {
+    const data = { title, content, folderId: null }
+    const note = (await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }
+    cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+    return note
+  }
+  const entropie = await create('Graph Entropie', 'Siehe [[Graph Wärme]] und [[Gibt es nicht]]')
+  const waerme = await create('Graph Wärme', 'Zurück zu [[Graph Entropie]]')
+  await page.reload()
+
+  await page.getByRole('navigation').getByRole('button', { name: 'Graph' }).click()
+  await expect(page).toHaveURL(/v=graph/)
+  const graph = page.getByTestId('graph')
+  await expect(graph.getByTestId(`rf__node-${entropie.id}`)).toBeVisible()
+  await expect(graph.getByTestId(`rf__edge-${entropie.id}>${waerme.id}`)).toBeAttached()
+  await expect(graph.getByTestId(`rf__edge-${waerme.id}>${entropie.id}`)).toBeAttached()
+  // Die Suche hebt Treffer hervor und zeigt ihren Titel auch beim Herauszoomen
+  await page.getByLabel('Notiz im Graphen hervorheben').fill('wärme')
+  await expect(graph.getByTestId(`rf__node-${waerme.id}`).locator('.graph-match')).toContainText('Graph Wärme')
+  await shot(page, '93-graph')
+  await graph.getByTestId(`rf__node-${waerme.id}`).click()
+  await expect(page.getByTestId('note-title')).toHaveValue('Graph Wärme')
+
+  // Lokaler Graph im Lesemodus: die verlinkte Notiz anklicken öffnet sie
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.getByRole('button', { name: 'Lokaler Graph' }).click()
+  const local = page.getByTestId('graph')
+  await expect(local.getByTestId(`rf__node-${waerme.id}`).locator('.graph-center')).toBeVisible()
+  await expect(local.locator('.react-flow__node')).toHaveCount(2)
+  await shot(page, '94-local-graph')
+  await local.getByTestId(`rf__node-${entropie.id}`).click()
+  await expect(page.getByTestId('note-title')).toHaveCount(0)
+  await expect(page.getByRole('heading', { level: 1, name: 'Graph Entropie' })).toBeVisible()
+})

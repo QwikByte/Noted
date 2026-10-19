@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Waypoints,
 } from 'lucide-react'
 import { useApp } from '../client/context'
 import { FolderTree } from '@/features/notes/components/FolderTree'
@@ -126,6 +127,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
           count={due}
         />
         <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} onClick={() => app.go({ kind: 'glossary' })} />
+        <NavItem icon={<Waypoints />} label="Graph" active={view.kind === 'graph'} onClick={() => app.go({ kind: 'graph' })} />
         <NavItem icon={<Files />} label="Dateien" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />
         <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} onClick={() => app.go({ kind: 'trash' })} />
       </nav>
