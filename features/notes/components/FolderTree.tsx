@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   ChevronRight,
   FileText,
@@ -15,47 +15,25 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/features/workspace/client/context'
 import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
-import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { buildTree, folderPath, type FolderNode } from '../tree'
-import { keys, useFolders, useNotes } from '../client/queries'
-import { usePref } from '@/shared/client/prefs'
-import { sync } from '../client/sync'
-import { api, errorMessage } from '@/shared/client/api'
+import { useFolders, useNotes } from '../client/queries'
+import { useExpanded } from '../client/expanded'
+import { ROOT, startDrag, useDraggedId, useDropTarget } from '../client/drag'
 import type { NoteSummary } from '../types'
 
-const DND_TYPE = 'application/x-noted'
-type DragData = { kind: 'note'; id: string; version: number } | { kind: 'folder'; id: string }
-
-function useExpanded() {
-  const [raw, setRaw] = usePref<string>('noted:expanded', '[]')
-  const set = useMemo(() => {
-    try {
-      return new Set<string>(JSON.parse(raw))
-    } catch {
-      return new Set<string>()
-    }
-  }, [raw])
-  const toggle = (id: string, open?: boolean) => {
-    const next = new Set(set)
-    if (open ?? !next.has(id)) next.add(id)
-    else next.delete(id)
-    setRaw(JSON.stringify([...next]))
-  }
-  return { expanded: set, toggle }
-}
+/** Zugeklappter Ordner, über dem beim Ziehen so lange verweilt wird, klappt auf */
+const EXPAND_DELAY_MS = 600
 
 export function FolderTree() {
   const app = useApp()
-  const qc = useQueryClient()
-  const toast = useToast()
   const { notes, isLoading } = useNotes()
   const { data: folders = [] } = useFolders()
   const { expanded, toggle } = useExpanded()
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const dropTarget = useDropTarget()
+  const dragged = useDraggedId()
   const tree = useMemo(() => buildTree(folders, notes), [folders, notes])
 
   const activeNoteId = app.view.kind === 'note' ? app.view.id : null
@@ -66,59 +44,30 @@ export function FolderTree() {
     return new Set(folderPath(folders, note?.folderId ?? null).map((f) => f.id))
   }, [activeNoteId, notes, folders])
 
-  async function handleDrop(e: React.DragEvent, folderId: string | null) {
-    e.preventDefault()
-    setDropTarget(null)
-    let data: DragData
-    try {
-      data = JSON.parse(e.dataTransfer.getData(DND_TYPE))
-    } catch {
-      return
-    }
-    if (data.kind === 'note') {
-      sync.update(data.id, data.version, { folderId }, { immediate: true })
-    } else if (data.id !== folderId) {
-      try {
-        await api(`/api/folders/${data.id}`, { method: 'PATCH', body: { parentId: folderId } })
-        await qc.invalidateQueries({ queryKey: keys.folders })
-      } catch (err) {
-        toast.error(errorMessage(err))
-      }
-    }
-    if (folderId) toggle(folderId, true)
-  }
-
-  const dropProps = (folderId: string | null) => ({
-    onDragOver: (e: React.DragEvent) => {
-      if (!e.dataTransfer.types.includes(DND_TYPE)) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setDropTarget(folderId ?? 'root')
-    },
-    onDragLeave: () => setDropTarget((t) => (t === (folderId ?? 'root') ? null : t)),
-    onDrop: (e: React.DragEvent) => handleDrop(e, folderId),
-  })
+  // Beim Ziehen über einem zugeklappten Ordner verweilen klappt ihn auf
+  useEffect(() => {
+    if (!dropTarget || dropTarget === ROOT || expanded.has(dropTarget)) return
+    const timer = setTimeout(() => toggle(dropTarget, true), EXPAND_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [dropTarget, expanded, toggle])
 
   function renderNote(note: NoteSummary, depth: number) {
     const active = note.id === activeNoteId
     return (
       <div
         key={note.id}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(DND_TYPE, JSON.stringify({ kind: 'note', id: note.id, version: note.version }))
-          e.dataTransfer.effectAllowed = 'move'
-        }}
         className={cn(
           'group flex items-center rounded-md pr-1 transition-colors',
           active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
+          dragged === note.id && 'opacity-50',
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
       >
         <button
           type="button"
           onClick={() => app.go({ kind: 'note', id: note.id })}
-          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-[18px] text-left text-sm"
+          onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-[18px] text-left text-sm select-none [-webkit-touch-callout:none]"
           title={note.title}
         >
           <FileText className="size-4 shrink-0 opacity-70" />
@@ -133,26 +82,28 @@ export function FolderTree() {
   function renderFolder(node: FolderNode) {
     const open = expanded.has(node.id) || activeAncestors.has(node.id)
     const count = node.notes.length
+    // Der ganze Block (Ordner samt Inhalt) ist Ablageziel – so landet eine Notiz, die auf eine andere Notiz im Ordner
+    // gezogen wird, in diesem Ordner
     return (
-      <div key={node.id}>
+      <div
+        key={node.id}
+        data-drop-folder={node.id}
+        // Outline statt Ring: Sie liegt über den Hintergründen der Zeilen darin
+        className={cn('rounded-md', dropTarget === node.id && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent')}
+      >
         <div
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData(DND_TYPE, JSON.stringify({ kind: 'folder', id: node.id }))
-            e.dataTransfer.effectAllowed = 'move'
-          }}
-          {...dropProps(node.id)}
           className={cn(
             'group flex items-center rounded-md pr-1 transition-colors',
             activeFolderId === node.id ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-            dropTarget === node.id && 'ring-2 ring-accent ring-inset',
+            dragged === node.id && 'opacity-50',
           )}
           style={{ paddingLeft: 8 + node.depth * 14 }}
         >
           <button
             type="button"
             onClick={() => toggle(node.id, !open)}
-            className="flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-sm"
+            onPointerDown={(e) => startDrag(e, { kind: 'folder', id: node.id, name: node.name })}
+            className="flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-sm select-none [-webkit-touch-callout:none]"
             aria-expanded={open}
           >
             <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
@@ -189,8 +140,9 @@ export function FolderTree() {
 
   return (
     <div
-      {...dropProps(null)}
-      className={cn('min-h-16 rounded-lg', dropTarget === 'root' && 'ring-2 ring-accent ring-inset')}
+      data-drop-folder={ROOT}
+      data-testid="folder-tree"
+      className={cn('min-h-16 rounded-lg', dropTarget === ROOT && 'outline-2 -outline-offset-2 outline-accent')}
     >
       {tree.roots.map(renderFolder)}
       {tree.rootNotes.map((n) => renderNote(n, 0))}

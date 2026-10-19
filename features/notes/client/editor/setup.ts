@@ -129,7 +129,7 @@ function completions(data: CompletionData) {
         boost: 1,
       }))
       if (embed) {
-        for (const file of data.files()) options.push({ label: file, type: 'variable', detail: 'Anhang', apply: file + close })
+        for (const file of data.files()) options.push({ label: file, type: 'variable', detail: 'Datei', apply: file + close })
       }
       return { from, options, validFor: /^[^\]\n|#]*$/ }
     }

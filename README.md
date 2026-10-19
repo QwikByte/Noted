@@ -20,7 +20,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
-- Ordner (beliebig verschachtelt, Drag & Drop), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
+- Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
+- **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
 
 **Fünf Formate für Notizen**
@@ -39,13 +40,14 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen).
 - Wird bei jedem Öffnen aus den Notizen berechnet (Markdown, Mindmaps und Canvas) und ist danach auch offline lesbar.
 
-**Anhänge**
+**Dateien**
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
 - Eingebettet mit `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
+- Der Bereich **Dateien** zeigt sie in der Ordnerstruktur deiner Notizen: Jede Datei steht im Ordner der Notiz, die sie einbettet oder verlinkt – nutzen mehrere Notizen sie, in jedem dieser Ordner. Verschiebst du die Notiz, wandert die Datei mit. Ordner legst und verschiebst du nur bei den Notizen. Dateien, die in keiner Notiz vorkommen (z. B. aus dem Anki-Import), stehen unter **Ohne Notiz**.
 
 **PDF-Viewer neben der Notiz**
 - PDFs (z. B. Vorlesungsfolien) öffnen direkt in der App, ohne neues Browserfenster: Auf dem Desktop stehen PDF und Notiz nebeneinander, auf dem Handy übereinander. Den Trenner kannst du verschieben (Doppelklick: halbe-halbe); auf Wunsch füllt das PDF die ganze Fläche.
-- Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Anhänge**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
+- Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Dateien**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
 - Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
 - Markierten Text **zitieren** (als Zitat mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
@@ -58,12 +60,12 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Klausurmodus:** Einen Termin im Kalender als **Klausur** markieren und die passenden Stapel auswählen (ein Stapel mit dem Namen des Termins ist vorausgewählt). Bis zur Klausur reicht kein Abstand mehr über sie hinaus: Was erst am Klausurtag oder danach fällig wäre, kommt an einem der letzten drei Tage davor dran – verteilt, nicht alles am Vortag; wer in diesen Tagen schon wiederholt hat, ist fertig. Im Stapel steht, wie viele neue Karten pro Tag nötig sind, damit bis zur Klausur alle einmal gelernt sind – als Vorschlag, der sich mit einem Klick als Tageslimit übernehmen lässt. Die Startseite zeigt einen Countdown mit dem Lernstand der verknüpften Stapel. Gespeichert bleibt der eigene Wiederholungsplan: Ab dem Klausurtag gilt er wieder. Vorgezogene Wiederholungen verlängern den Abstand (wie bei Anki) nur um die tatsächlich vergangene Zeit.
 - **Übungsmodus** (z. B. kurz vor der Klausur): alle Karten in zufälliger Reihenfolge, ohne den Lernplan zu verändern. Falsch beantwortete Karten kommen wieder; am Ende siehst du deine Quote und kannst die Fehler wiederholen.
 - **Lückentext:** ein Satz mit Lücken (`==Lücke==` oder `{{Lücke}}`; im Karteneditor Text auswählen und **Als Lücke**). Jede Lücke wird einzeln abgefragt, der Rest bleibt sichtbar; beim Aufdecken füllt sich die Lücke im Satz. Jede Lücke hat ihren eigenen Lernstand, neue Lücken einer Karte kommen nacheinander an verschiedenen Tagen dran.
-- **Bildverdeckung** (Image Occlusion): Diagramme, Anatomie-Abbildungen oder Schaltpläne lernen, indem Beschriftungen verdeckt werden. Im Karteneditor ein Bild hochladen, aus den Anhängen wählen oder eine PDF-Seite als Bild übernehmen (auch im PDF-Viewer unter ⋮ → **Seite als Bildverdeckung**) und Rechtecke über die Beschriftungen ziehen – mit Maus, Stift oder Finger; Flächen lassen sich verschieben, an der Ecke vergrößern und optional beschriften. Jede Fläche wird einzeln abgefragt und hat ihren eigenen Lernstand. Wählbar je Karte: nur die abgefragte Fläche verdeckt oder alle. Mit beschrifteten Flächen funktioniert auch **Antwort eintippen**.
+- **Bildverdeckung** (Image Occlusion): Diagramme, Anatomie-Abbildungen oder Schaltpläne lernen, indem Beschriftungen verdeckt werden. Im Karteneditor ein Bild hochladen, aus den Dateien wählen oder eine PDF-Seite als Bild übernehmen (auch im PDF-Viewer unter ⋮ → **Seite als Bildverdeckung**) und Rechtecke über die Beschriftungen ziehen – mit Maus, Stift oder Finger; Flächen lassen sich verschieben, an der Ecke vergrößern und optional beschriften. Jede Fläche wird einzeln abgefragt und hat ihren eigenen Lernstand. Wählbar je Karte: nur die abgefragte Fläche verdeckt oder alle. Mit beschrifteten Flächen funktioniert auch **Antwort eintippen**.
 - **Antwort eintippen** (pro Stapel unter **⋮ → Stapel bearbeiten** einschaltbar): Bei Grund- und beidseitigen Karten tippst du die Antwort ein, bevor sie aufgedeckt wird. Noted markiert die Unterschiede zur richtigen Antwort Zeichen für Zeichen; Groß- und Kleinschreibung, Leerzeichen und Satzzeichen am Ende zählen nicht, Akzente und Umlaute schon. Bewerten musst du weiterhin selbst – bei richtiger Eingabe ist *Gut* vorausgewählt, bei falscher *Nochmal*.
 - **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
 - **Notiz abfragen** (**⋮ → Abfragen** in einer Notiz): ein Selbsttest direkt aus der Mitschrift, ohne vorher Karten anzulegen. Jede Überschrift mit Text darunter wird zur Frage, der Abschnitt ist verdeckt, bis du ihn aufdeckst und selbst bewertest. Am Ende siehst du, was du nicht wusstest – ein Klick öffnet die Notiz an dieser Stelle –, kannst es wiederholen oder als Karteikarten übernehmen. Ohne Einfluss auf den Wiederholungsplan; geht mit Markdown, formatiertem Text, Mindmaps und Canvas.
 - Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort`, tabulatorgetrennt – z. B. aus Quizlet oder Anki kopiert – oder Lückentexte mit `{{…}}`).
-- **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (als Anhänge). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
+- **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (unter **Dateien**). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
 - **Lernstatistik** (Karteikarten → **Statistik**): Lerntage als Heatmap über das letzte Jahr, Serie (Tage am Stück), Bewertungen heute, Trefferquote und Zeit pro Karte (30 Tage, auch je Stapel), eine Vorschau, wie viele Karten in den nächsten 7 bzw. 30 Tagen fällig werden, und die Lernzeit je Fach aus dem Fokus-Timer. Grundlage ist ein Protokoll aller Bewertungen – auch offline gesammelte werden beim Hochladen mitprotokolliert. Über ⋮ lässt es sich als CSV herunterladen (für Excel oder LibreOffice).
 - **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe, Lückentexte (Absätze mit `{{Lücke}}`, auf Wunsch auch mit `==Markierungen==`) und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen.
 - Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
@@ -94,10 +96,10 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - **Lernzeit pro Fach:** Trag im Fenster ein Fach (Vorschläge aus früheren Runden und deinen Stapeln) und optional ein Ziel ein. Nach jeder Fokus-Runde bzw. jedem Countdown fragt Noted, ob die Runde zählen soll – per „Zählen“ in der Meldung oder im Fenster. Gezählte Runden landen auf dem Server (offline gesammelt und später gesendet); die **Lernstatistik** zeigt die Lernzeit je Fach der letzten vier Wochen.
 
 **Export & Import**
-- ZIP-Export aller Notizen mit Ordnerstruktur und Anhängen (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Anhängen verweisen dabei auf die Pfade im ZIP.
+- ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
 - Die Termine liegen als `Kalender.ics` im ZIP.
-- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien als Anhänge.
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -223,7 +225,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse (sonst `/data/secret.key`) |
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
-| `MAX_UPLOAD_MB` | `25` | Maximale Dateigröße für Anhänge |
+| `MAX_UPLOAD_MB` | `25` | Maximale Größe hochgeladener Dateien |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
 | `TRASH_DAYS` | `30` | Aufbewahrung im Papierkorb |
@@ -302,8 +304,8 @@ docker compose start noted
 ## Notizen mitnehmen
 
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
-- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die Anhänge im Ordner `Anhänge/`, die Karteikarten als Markdown und die Termine als `Kalender.ics`.
-- **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Anhänge werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
+- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und die Termine als `Kalender.ics`.
+- **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
 
 Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
 
@@ -346,16 +348,16 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
-  notes/                Notizen in fünf Formaten, Ordner, Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
+  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
-  attachments/          Anhänge: Upload, Dateiansicht, Auslieferung
+  attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
-  transfer/             Export und Import (ZIP mit Ordnerstruktur, Anhängen, Karteikarten und Kalender)
+  transfer/             Export und Import (ZIP mit Ordnerstruktur, Dateien, Karteikarten und Kalender)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
   admin/                Benutzerverwaltung (Administration)
   settings/             Einstellungsseite

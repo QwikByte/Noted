@@ -150,13 +150,13 @@ function ImagePicker({ onPick }: { onPick: (filename: string) => void }) {
         />
         {images.length > 0 ? (
           <Select
-            aria-label="Bild aus den Anhängen"
+            aria-label="Bild aus den Dateien"
             value=""
             onChange={(e) => e.target.value && onPick(e.target.value)}
             className="h-9 w-auto min-w-0 flex-1 text-sm"
             disabled={busy}
           >
-            <option value="">Aus den Anhängen …</option>
+            <option value="">Aus den Dateien …</option>
             {images.map((a) => (
               <option key={a.id} value={a.filename}>
                 {a.filename}

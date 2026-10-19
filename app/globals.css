@@ -195,6 +195,14 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Notizen und Ordner ziehen (features/notes/client/drag.ts): kein Markieren von Text unterwegs */
+html.dragging,
+html.dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 /* Textmarker-Strich für Fälliges (fällige Karten) – ungeschichtet, damit der Radius rounded-full überstimmt */
 .marker {
   background: var(--mark);

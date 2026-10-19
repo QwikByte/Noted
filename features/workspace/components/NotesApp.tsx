@@ -12,6 +12,7 @@ import { TrashView } from '@/features/notes/components/TrashView'
 import { FilesView } from '@/features/attachments/components/FilesView'
 import { NewNoteDialog, MoveDialog, PromptDialog } from '@/features/notes/components/dialogs'
 import { QuickSwitcher } from '@/features/notes/components/QuickSwitcher'
+import { DragLayer } from '@/features/notes/components/DragLayer'
 import { CardsView } from '@/features/flashcards/components/CardsView'
 import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
@@ -261,7 +262,7 @@ export default function NotesApp() {
       main = <TrashView />
       break
     case 'files':
-      main = <FilesView />
+      main = <FilesView key={view.folder ?? ''} folder={view.folder} />
       break
     case 'cards':
       main = <CardsView />
@@ -366,6 +367,7 @@ export default function NotesApp() {
       {cardEditor ? <CardEditorDialog key={cardEditor.n} init={cardEditor.init} onClose={() => setCardEditor(null)} /> : null}
       {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
       <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+      <DragLayer />
       <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
       <PromptDialog
         open={!!folderPrompt}

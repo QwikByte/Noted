@@ -7,7 +7,9 @@ import { getConfig } from '@/shared/server/config'
 import { ApiError, badRequest, notFound } from '@/shared/server/http'
 import { uuid } from '@/shared/server/crypto'
 import { sanitizeFilename, splitExtension, uniqueName } from '@/shared/lib/names'
-import type { Attachment } from '../types'
+import { fileReferences } from '../references'
+import type { NoteFormat } from '@/features/notes/types'
+import type { Attachment, FileEntry } from '../types'
 
 type AttachmentRow = {
   id: string
@@ -92,6 +94,22 @@ export function listAttachments(userId: number): Attachment[] {
       .prepare('SELECT * FROM attachments WHERE user_id = ? ORDER BY created_at DESC')
       .all(userId) as AttachmentRow[]
   ).map(toAttachment)
+}
+
+/** Alle Dateien mit den Notizen (ohne Papierkorb), die sie einbetten oder verlinken */
+export function listFiles(userId: number): FileEntry[] {
+  const notes = getDb()
+    .prepare('SELECT id, format, content FROM notes WHERE user_id = ? AND deleted_at IS NULL')
+    .all(userId) as { id: string; format: NoteFormat; content: string }[]
+  const usage = new Map<string, string[]>()
+  for (const note of notes) {
+    for (const name of fileReferences(note.format, note.content)) {
+      const ids = usage.get(name)
+      if (ids) ids.push(note.id)
+      else usage.set(name, [note.id])
+    }
+  }
+  return listAttachments(userId).map((a) => ({ ...a, noteIds: usage.get(a.filename.toLowerCase()) ?? [] }))
 }
 
 export function getAttachment(userId: number, id: string): Attachment {

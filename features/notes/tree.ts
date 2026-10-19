@@ -62,6 +62,26 @@ export function descendantFolderIds(folders: Folder[], id: string): Set<string> 
   return result
 }
 
+/**
+ * Darf die Notiz bzw. der Ordner in diesen Ordner (`null` = oberste Ebene) verschoben werden? Nicht dorthin, wo er
+ * schon liegt, und kein Ordner in sich selbst oder einen seiner Unterordner.
+ */
+export function canMoveTo(
+  item: { kind: 'note' | 'folder'; id: string },
+  target: string | null,
+  notes: NoteSummary[],
+  folders: Folder[],
+): boolean {
+  if (target !== null && !folders.some((f) => f.id === target)) return false
+  if (item.kind === 'note') {
+    const note = notes.find((n) => n.id === item.id)
+    return !!note && note.folderId !== target
+  }
+  const folder = folders.find((f) => f.id === item.id)
+  if (!folder || folder.parentId === target) return false
+  return target === null || !descendantFolderIds(folders, folder.id).has(target)
+}
+
 /** Einfache unscharfe Suche für den Schnellwechsler. */
 export function fuzzyScore(query: string, text: string): number {
   const q = query.toLowerCase().trim()

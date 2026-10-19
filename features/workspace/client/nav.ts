@@ -10,7 +10,8 @@ export type View =
   | { kind: 'tag'; tag: string }
   | { kind: 'search'; q: string }
   | { kind: 'trash' }
-  | { kind: 'files' }
+  /** Dateien in der Ordnerstruktur der Notizen – folder: Ordner-ID oder UNLINKED (Dateien ohne Notiz) */
+  | { kind: 'files'; folder?: string }
   | { kind: 'cards' }
   | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
@@ -45,7 +46,7 @@ function viewFromParams(params: URLSearchParams): View {
   if (q !== null) return { kind: 'search', q }
   const v = params.get('v')
   if (v === 'trash') return { kind: 'trash' }
-  if (v === 'files') return { kind: 'files' }
+  if (v === 'files') return { kind: 'files', folder: params.get('in') || undefined }
   if (v === 'cards') return { kind: 'cards' }
   if (v === 'stats') return { kind: 'stats' }
   if (v === 'calendar') return { kind: 'calendar' }
@@ -66,7 +67,7 @@ function viewToUrl(view: View): string {
     case 'trash':
       return '/?v=trash'
     case 'files':
-      return '/?v=files'
+      return `/?v=files${view.folder ? `&in=${encodeURIComponent(view.folder)}` : ''}`
     case 'cards':
       return '/?v=cards'
     case 'stats':
