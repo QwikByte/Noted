@@ -1,0 +1,58 @@
+# Prüft jeden Push und Pull Request so, wie es AGENTS.md vor einem Commit verlangt:
+# Lint, Typen, Unit-/API-Tests, Produktions-Build und die Browser-Tests.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typen prüfen
+        run: npm run typecheck
+
+      - name: Unit- und API-Tests
+        run: npm test
+
+      - name: Produktions-Build
+        run: npm run build
+
+      - name: Browser für die E2E-Tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser-Tests (Playwright)
+        run: npm run test:e2e
+
+      - name: Testprotokoll bei Fehlern sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7

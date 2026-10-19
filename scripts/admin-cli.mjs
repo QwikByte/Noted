@@ -38,11 +38,11 @@ function openDb(file = dbPath) {
 
 let db = null
 
+// Wie shared/server/crypto.ts – randomInt, damit jedes Zeichen gleich wahrscheinlich ist
 function generatePassword(length = 16) {
   const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.randomBytes(length)
   let out = ''
-  for (let i = 0; i < length; i++) out += alphabet[bytes[i] % alphabet.length]
+  for (let i = 0; i < length; i++) out += alphabet[crypto.randomInt(alphabet.length)]
   return out.match(/.{1,4}/g).join('-')
 }
 
