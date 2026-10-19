@@ -23,11 +23,15 @@ const COLLECTIONS = ['collection.anki21b', 'collection.anki21', 'collection.anki
 // ---------------------------------------------------------------------------
 
 /** Neues Format (ab Anki 2.1.50): Sammlung, Medienliste und Medien sind mit zstd gepackt */
-function unzstd(data: Uint8Array, max: number): Uint8Array {
+function unzstd(data: Uint8Array, max: number, what = 'Das Anki-Paket'): Uint8Array {
   try {
     return zlib.zstdDecompressSync(data, { maxOutputLength: max })
-  } catch {
-    throw badRequest('Das Anki-Paket konnte nicht entpackt werden.')
+  } catch (err) {
+    // Entpackt wäre es größer als erlaubt – sonst läge es komplett im Arbeitsspeicher
+    if ((err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+      throw new ApiError(413, 'too_large', `${what} ist entpackt zu groß (max. ${Math.round(max / 1024 / 1024)} MB).`)
+    }
+    throw badRequest(`${what} konnte nicht entpackt werden.`)
   }
 }
 
@@ -127,11 +131,15 @@ function openPackage(data: Uint8Array) {
   }
   // Neuere Pakete enthalten zusätzlich eine alte Sammlung, die nur zum Aktualisieren von Anki auffordert
   const packed = !!entries['collection.anki21b']
-  const raw = packed ? unzstd(entries['collection.anki21b'], maxImportBytes * 4) : (entries['collection.anki21'] ?? entries['collection.anki2'])
+  // Die entpackte Sammlung liegt komplett im Arbeitsspeicher – daher dieselbe Grenze wie für den Import selbst
+  const raw = packed
+    ? unzstd(entries['collection.anki21b'], maxImportBytes, 'Die Anki-Sammlung')
+    : (entries['collection.anki21'] ?? entries['collection.anki2'])
   if (!raw) throw badRequest('Im Paket ist keine Anki-Sammlung.')
   let db: Database.Database
   try {
-    db = new Database(Buffer.from(raw))
+    // Fremde Datei: nur lesen, damit sie nichts anlegen oder ändern kann
+    db = new Database(Buffer.from(raw), { readonly: true })
     db.prepare('SELECT crt FROM col').get()
   } catch {
     throw badRequest('Die Anki-Sammlung im Paket ist nicht lesbar.')

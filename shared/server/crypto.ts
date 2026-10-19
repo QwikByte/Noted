@@ -71,9 +71,9 @@ export function decrypt(payload: string): string {
 /** Zufälliges, gut lesbares Passwort (ohne verwechselbare Zeichen). */
 export function generatePassword(length = 16): string {
   const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.randomBytes(length)
   let out = ''
-  for (let i = 0; i < length; i++) out += alphabet[bytes[i] % alphabet.length]
+  // randomInt statt „Byte modulo Alphabet“: so ist jedes Zeichen wirklich gleich wahrscheinlich
+  for (let i = 0; i < length; i++) out += alphabet[crypto.randomInt(alphabet.length)]
   // In Vierergruppen für bessere Lesbarkeit
   return out.match(/.{1,4}/g)!.join('-')
 }

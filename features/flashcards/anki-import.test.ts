@@ -137,6 +137,24 @@ describe('Anki-Import', () => {
     expect(data.decks.some((d) => d.name === 'Bitte aktualisieren')).toBe(false)
   })
 
+  it('lehnt eine Sammlung ab, die entpackt größer als die Importgrenze wäre', async () => {
+    process.env.MAX_IMPORT_MB = '1'
+    try {
+      const db = new Database(':memory:')
+      db.exec('CREATE TABLE col (id INTEGER PRIMARY KEY, crt INTEGER, decks TEXT); CREATE TABLE notes (id INTEGER PRIMARY KEY, flds TEXT)')
+      // 2 MB Text – mit zstd nur wenige KB, entpackt über der Grenze von 1 MB
+      db.prepare('INSERT INTO notes VALUES (1, ?)').run('a'.repeat(2 * 1024 * 1024))
+      const big = zipSync({ 'collection.anki21b': zlib.zstdCompressSync(db.serialize()) })
+      db.close()
+      const r = await importPackage(big, false, 'gross.apkg')
+      expect(r.status).toBe(413)
+      expect(r.data.error).toBe('too_large')
+      expect(r.data.message).toContain('entpackt zu groß')
+    } finally {
+      delete process.env.MAX_IMPORT_MB
+    }
+  })
+
   it('lehnt Dateien ab, die kein Anki-Paket sind', async () => {
     expect((await importPackage(new Uint8Array([1, 2, 3]), false)).status).toBe(400)
     expect((await importPackage(zipSync({ 'notiz.md': strToU8('# Hallo') }), false)).status).toBe(400)

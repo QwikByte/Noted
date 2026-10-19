@@ -269,6 +269,22 @@ describe('Benutzerverwaltung', () => {
     expect(events).toContain('user_created')
     expect(events).toContain('login_locked')
   })
+
+  it('begrenzt die Seitengröße des Protokolls auch bei unsinnigen Parametern', async () => {
+    const admin = await loginAs('admin', ADMIN_PASSWORD)
+    const { audit: log } = await import('@/shared/server/audit')
+    for (let i = 0; i < 120; i++) log({ event: 'logout', username: `test-${i}` })
+    const count = async (query: Record<string, string>) =>
+      (await call(audit.GET, '/api/admin/audit', { cookie: admin, query })).data.entries.length
+    expect(await count({ limit: '1' })).toBe(1)
+    expect(await count({})).toBe(100)
+    // Ohne Prüfung würde SQLite ein negatives LIMIT als „alles“ verstehen
+    expect(await count({ limit: '-1' })).toBe(100)
+    expect(await count({ limit: 'abc' })).toBe(100)
+    expect(await count({ limit: '99999' })).toBeLessThanOrEqual(500)
+    expect(await count({ limit: '99999' })).toBeGreaterThanOrEqual(120)
+    expect(await count({ before: '-1' })).toBe(100)
+  })
 })
 
 describe('Zwei-Faktor-Anmeldung (TOTP)', () => {

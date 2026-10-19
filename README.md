@@ -225,6 +225,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse (sonst `/data/secret.key`) |
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
+| `EXTERNAL_IMAGES` | `true` | Bilder von fremden Servern in Notizen anzeigen; `false` blockiert sie (ein externes Bild verrät dem fremden Server beim Öffnen die IP-Adresse) |
 | `MAX_UPLOAD_MB` | `25` | Maximale Größe hochgeladener Dateien |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
