@@ -21,7 +21,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
-- Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
+- Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter; findet auch Text in PDFs und Textdateien, siehe **Dateien**), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
 - **Graph** (Seitenleiste → **Graph**): alle Notizen als Punkte, die Wikilinks als Linien – so siehst du, welche Mitschriften zusammenhängen und wo Inseln sind. Größere Punkte haben mehr Verbindungen, die Farbe zeigt den obersten Ordner. Filtern nach Ordner (samt Unterordnern) und Tag, das Suchfeld hebt Notizen hervor; ein Klick öffnet die Notiz. Ab 1 500 Notizen zeigt der Graph nur einen gefilterten Ausschnitt. Im Lesemodus steht unter „Verlinkt in“ der **lokale Graph** der Notiz (direkt verlinkt oder zwei Schritte weit).
 - **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
@@ -46,6 +46,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
 - Eingebettet mit `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
 - Der Bereich **Dateien** zeigt sie in der Ordnerstruktur deiner Notizen: Jede Datei steht im Ordner der Notiz, die sie einbettet oder verlinkt – nutzen mehrere Notizen sie, in jedem dieser Ordner. Verschiebst du die Notiz, wandert die Datei mit. Ordner legst und verschiebst du nur bei den Notizen. Dateien, die in keiner Notiz vorkommen (z. B. aus dem Anki-Import), stehen unter **Ohne Notiz**.
+- **Durchsuchbar:** Die Volltextsuche findet auch Text in hochgeladenen PDFs (mit Seitenzahl – ein Klick öffnet das PDF auf der Seite) sowie in `.txt`-, `.md`- und `.csv`-Dateien. Der Text wird nach dem Hochladen im Hintergrund gelesen, bei PDFs höchstens 400 Seiten und 2 MB Text. Gescannte PDFs ohne Textebene lassen sich nicht durchsuchen (keine Texterkennung); unter **Dateien** steht bei jeder Datei, ob sie durchsuchbar ist.
 
 **PDF-Viewer neben der Notiz**
 - PDFs (z. B. Vorlesungsfolien) öffnen direkt in der App, ohne neues Browserfenster: Auf dem Desktop stehen PDF und Notiz nebeneinander, auf dem Handy übereinander. Den Trenner kannst du verschieben (Doppelklick: halbe-halbe); auf Wunsch füllt das PDF die ganze Fläche.
@@ -342,8 +343,8 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 | `npm run typecheck` | TypeScript |
 
 **Technik:**
-- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, TipTap (formatierter Text), React Flow (Mindmap und Canvas), markdown-it, KaTeX, Mermaid, pdf.js
-- Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), @node-rs/argon2, otpauth
+- Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, TipTap (formatierter Text), React Flow (Mindmap, Canvas und Graph), markdown-it, KaTeX, Mermaid, pdf.js
+- Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), pdf.js (Text aus PDFs für die Suche), @node-rs/argon2, otpauth
 
 **Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
 
@@ -354,7 +355,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
-  attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung
+  attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph

@@ -32,6 +32,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   reactStrictMode: true,
+  // pdf.js liest auf dem Server den Text aus PDFs (Volltextsuche in Dateien) – ungebündelt aus node_modules laden
+  serverExternalPackages: ['pdfjs-dist'],
   // Versionswechsel erkennen: Next.js hängt die ID an seine Dateien an und lädt bei Abweichung komplett neu
   deploymentId: build.buildId === 'dev' ? undefined : build.buildId,
   // Werden beim Build fest eingesetzt (Server und Browser), siehe features/updates/build.ts

@@ -645,3 +645,38 @@ test('Bildverdeckung: Flächen über ein Bild ziehen und einzeln lernen', async 
     if (['herz.png', 'Abbildungen.pdf', 'Abbildungen S. 2.png'].includes(a.filename)) cleanup.push(`/api/attachments/${a.id}`)
   }
 })
+
+test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Optik'], ['Reflexion'], ['Totalreflexion', 'Lichtwellenleiter aus Glas']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Optik.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  // Der Text wird nach dem Upload im Hintergrund gelesen
+  const found = async () => (await (await page.request.get('/api/search?q=lichtwellen')).json()).files.length
+  await expect.poll(found).toBe(1)
+
+  await page.goto('/?q=lichtwellen')
+  const hits = page.getByTestId('search-files')
+  await expect(hits.getByRole('heading', { name: 'In Dateien' })).toBeVisible()
+  const hit = hits.getByRole('button', { name: /Skript Optik\.pdf/ })
+  await expect(hit).toContainText('Seite 3')
+  await expect(hit.locator('mark')).toHaveText('Lichtwellenleiter')
+  await shot(page, '54-search-files')
+  await hit.click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('3')
+
+  // Im Bereich „Dateien“ steht, dass die Datei durchsuchbar ist
+  await page.goto('/?v=files&in=unlinked')
+  const card = page.getByTestId('file-card').filter({ hasText: 'Skript Optik.pdf' })
+  await expect(card.getByTestId('file-search-state')).toHaveText('durchsuchbar')
+  await card.getByRole('button', { name: 'Erneut indizieren' }).click()
+  await expect(page.getByText('„Skript Optik.pdf“ ist durchsuchbar.')).toBeVisible()
+})

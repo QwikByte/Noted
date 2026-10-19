@@ -19,5 +19,7 @@ export function useFiles() {
     queryFn: () => api<{ attachments: FileEntry[] }>('/api/attachments?notes=1').then((r) => r.attachments),
     // Einbettungen ändern sich beim Schreiben in Notizen – beim Öffnen immer neu laden
     staleTime: 0,
+    // Solange Dateien für die Suche gelesen werden, den Stand nachladen
+    refetchInterval: (query) => (query.state.data?.some((f) => f.search?.state === 'pending') ? 3_000 : false),
   })
 }

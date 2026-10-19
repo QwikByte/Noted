@@ -4,6 +4,7 @@ import { getDb } from '@/shared/server/db'
 import { badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
 import { getConfig } from '@/shared/server/config'
+import { buildFtsQuery, parseSearch, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
 import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
 import { noteText } from '../format'
@@ -522,21 +523,9 @@ export function purgeTrash(userId?: number) {
 // Suche, Tags, Backlinks
 // ---------------------------------------------------------------------------
 
-const SNIPPET_START = '\u0002'
-const SNIPPET_END = '\u0003'
-
-function buildFtsQuery(terms: string[]): string {
-  return terms.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ')
-}
-
 export function searchNotes(userId: number, query: string, limit = 50): SearchResult[] {
   const db = getDb()
-  const parts = query.trim().split(/\s+/).filter(Boolean).slice(0, 12)
-  const tags = parts.filter((p) => p.startsWith('#') && p.length > 1).map((p) => p.slice(1).toLowerCase())
-  const terms = parts
-    .filter((p) => !p.startsWith('#'))
-    .map((p) => p.replace(/[\u0000-\u001f]/g, ''))
-    .filter(Boolean)
+  const { terms, tags } = parseSearch(query)
   if (tags.length === 0 && terms.length === 0) return []
 
   const tagFilter = tags

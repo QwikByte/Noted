@@ -1,6 +1,5 @@
 import 'server-only'
 import fs from 'node:fs'
-import path from 'node:path'
 import { Readable } from 'node:stream'
 import { getDb } from '@/shared/server/db'
 import { getConfig } from '@/shared/server/config'
@@ -8,6 +7,9 @@ import { ApiError, badRequest, notFound } from '@/shared/server/http'
 import { uuid } from '@/shared/server/crypto'
 import { sanitizeFilename, splitExtension, uniqueName } from '@/shared/lib/names'
 import { fileReferences } from '../references'
+import { filePath, userDir } from './files'
+import { isSearchable } from './extract'
+import { scheduleIndex, searchIndexInfo, unindexAttachment } from './index'
 import type { NoteFormat } from '@/features/notes/types'
 import type { Attachment, FileEntry } from '../types'
 
@@ -48,6 +50,8 @@ const MIME_BY_EXT: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.mov': 'video/quicktime',
   '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
   '.csv': 'text/csv',
   '.json': 'application/json',
   '.zip': 'application/zip',
@@ -80,14 +84,6 @@ function guessMime(filename: string): string {
   return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }
 
-function userDir(userId: number) {
-  return path.join(/*turbopackIgnore: true*/ getConfig().attachmentsDir, String(userId))
-}
-
-function filePath(userId: number, id: string) {
-  return path.join(/*turbopackIgnore: true*/ userDir(userId), id)
-}
-
 export function listAttachments(userId: number): Attachment[] {
   return (
     getDb()
@@ -109,7 +105,12 @@ export function listFiles(userId: number): FileEntry[] {
       else usage.set(name, [note.id])
     }
   }
-  return listAttachments(userId).map((a) => ({ ...a, noteIds: usage.get(a.filename.toLowerCase()) ?? [] }))
+  const search = searchIndexInfo(userId)
+  return listAttachments(userId).map((a) => ({
+    ...a,
+    noteIds: usage.get(a.filename.toLowerCase()) ?? [],
+    ...(search.has(a.id) ? { search: search.get(a.id) } : {}),
+  }))
 }
 
 export function getAttachment(userId: number, id: string): Attachment {
@@ -168,12 +169,18 @@ export function saveAttachment(userId: number, input: { name: string; type?: str
     fs.rmSync(filePath(userId, id), { force: true })
     throw err
   }
+  // Text für die Volltextsuche erst nach der Antwort auslesen
+  if (isSearchable(mime)) void scheduleIndex(userId, id)
   return getAttachment(userId, id)
 }
 
 export function deleteAttachment(userId: number, id: string) {
   getAttachment(userId, id)
-  getDb().prepare('DELETE FROM attachments WHERE id = ? AND user_id = ?').run(id, userId)
+  const db = getDb()
+  db.transaction(() => {
+    unindexAttachment(db, id)
+    db.prepare('DELETE FROM attachments WHERE id = ? AND user_id = ?').run(id, userId)
+  })()
   fs.rmSync(filePath(userId, id), { force: true })
 }
 

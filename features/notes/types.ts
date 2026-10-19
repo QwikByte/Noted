@@ -1,4 +1,5 @@
 // Typen für Notizen und Ordner (API-Verträge zwischen Server und Browser)
+import type { FileSearchResult } from '@/features/attachments/types'
 
 export type Folder = {
   id: string
@@ -46,6 +47,9 @@ export type SearchResult = {
   snippet: string
   updatedAt: number
 }
+
+/** Antwort der Suche: Notizen und Treffer in Dateien (#tag-Filter gelten nur für Notizen) */
+export type SearchResponse = { results: SearchResult[]; files: FileSearchResult[] }
 
 export type TagCount = { tag: string; count: number }
 

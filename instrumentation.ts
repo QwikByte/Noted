@@ -18,4 +18,11 @@ export async function register() {
   }
   cleanup()
   setInterval(cleanup, 6 * 60 * 60 * 1000).unref()
+  // Anhänge aus der Zeit vor der Volltextsuche nach und nach lesen
+  try {
+    const { indexMissing } = await import('@/features/attachments/server/index')
+    indexMissing()
+  } catch (err) {
+    console.error('[noted] Nachholen der Volltextsuche in Dateien fehlgeschlagen', err)
+  }
 }

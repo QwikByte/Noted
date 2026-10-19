@@ -424,4 +424,23 @@ export const migrations: string[] = [
   );
   CREATE INDEX note_versions_note ON note_versions(note_id, created_at);
   `,
+
+  /* 20: Volltextsuche in Anhängen (PDF und Textdateien). Eine Zeile je Seite, damit Treffer eine Seitenzahl haben
+     (Textdateien: Seite 1). attachments_index merkt sich je Datei, ob sie durchsuchbar ist (done), übersprungen
+     wurde (skipped, Grund in reason – z. B. kein Text oder zu groß) oder beim Lesen ein Fehler auftrat (failed). */ `
+  CREATE VIRTUAL TABLE attachments_fts USING fts5(
+    attachment_id UNINDEXED,
+    user_id UNINDEXED,
+    page UNINDEXED,
+    content,
+    tokenize = 'unicode61 remove_diacritics 2'
+  );
+  CREATE TABLE attachments_index (
+    attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('done', 'skipped', 'failed')),
+    pages INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    indexed_at INTEGER NOT NULL
+  );
+  `,
 ]
