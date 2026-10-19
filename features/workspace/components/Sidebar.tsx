@@ -5,11 +5,11 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Files,
   FolderPlus,
   Hash,
   Home,
   Layers,
-  Paperclip,
   Plus,
   Search,
   Trash2,
@@ -126,7 +126,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
           count={due}
         />
         <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} onClick={() => app.go({ kind: 'glossary' })} />
-        <NavItem icon={<Paperclip />} label="Anhänge" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />
+        <NavItem icon={<Files />} label="Dateien" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />
         <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} onClick={() => app.go({ kind: 'trash' })} />
       </nav>
 

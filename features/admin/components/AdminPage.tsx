@@ -607,7 +607,7 @@ function DeleteUserDialog({ user, onClose, onDeleted }: { user: AdminUser | null
       open={!!user}
       onClose={onClose}
       title="Benutzer löschen?"
-      description={`Das Konto @${user?.username} wird mit allen ${user?.noteCount ?? 0} Notizen und Anhängen endgültig gelöscht.`}
+      description={`Das Konto @${user?.username} wird mit allen ${user?.noteCount ?? 0} Notizen und Dateien endgültig gelöscht.`}
       size="sm"
       footer={
         <>

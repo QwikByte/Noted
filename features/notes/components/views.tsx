@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CloudOff,
   FileText,
+  Files,
   Folder as FolderIcon,
   FolderPlus,
   GraduationCap,
@@ -24,8 +25,10 @@ import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
+import { cn } from '@/shared/ui/cn'
 import { api, NetworkError } from '@/shared/client/api'
 import { keys, useFolders, useNotes } from '../client/queries'
+import { startDrag, useDraggedId, useDropTarget } from '../client/drag'
 import { folderPath, sortByName } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
 import type { Folder, NoteSummary, SearchResult } from '../types'
@@ -37,13 +40,19 @@ function NoteList({ children }: { children: React.ReactNode }) {
 
 function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
   const app = useApp()
+  const dragged = useDraggedId() === note.id
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
   return (
     <button
       type="button"
       onClick={() => app.go({ kind: 'note', id: note.id })}
-      className="group flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors hover:bg-subtle focus-visible:-outline-offset-2"
+      // In einen Ordner der Seitenleiste oder der Ordneransicht ziehen
+      onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
+      className={cn(
+        'group flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-subtle focus-visible:-outline-offset-2',
+        dragged && 'opacity-50',
+      )}
     >
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate font-semibold group-hover:text-accent-text">{note.title}</span>
@@ -167,6 +176,8 @@ export function FolderView({ id }: { id: string }) {
   const app = useApp()
   const { notes } = useNotes()
   const { data: folders = [], isLoading } = useFolders()
+  const dropTarget = useDropTarget()
+  const dragged = useDraggedId()
   const folder = folders.find((f) => f.id === id)
   const path = folderPath(folders, id)
   const children = sortByName(folders.filter((f) => f.parentId === id))
@@ -184,87 +195,110 @@ export function FolderView({ id }: { id: string }) {
     )
   }
 
+  // Die ganze Seite nimmt Notizen und Ordner auf (z. B. aus der Seitenleiste), Unterordner und Pfad ebenso
   return (
     <Page>
-      <PageHeader
-        title={folder.name}
-        subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}${children.length ? ` · ${children.length} ${children.length === 1 ? 'Unterordner' : 'Unterordner'}` : ''}`}
-        breadcrumb={
-          path.length > 1 ? (
-            <div className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted">
-              {path.slice(0, -1).map((f) => (
-                <span key={f.id} className="flex items-center gap-1">
-                  <button type="button" className="hover:text-fg" onClick={() => app.go({ kind: 'folder', id: f.id })}>
-                    {f.name}
-                  </button>
-                  <ChevronRight className="size-3.5" />
-                </span>
-              ))}
-            </div>
-          ) : null
-        }
-        actions={
-          <>
-            <Button variant="primary" size="sm" onClick={() => app.openNewNote({ folderId: id })} className="max-sm:hidden">
-              <Plus className="size-4" /> Notiz
-            </Button>
-            <Menu
-              trigger={(p) => (
-                <Button size="icon-sm" aria-label="Ordner-Aktionen" {...p}>
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              )}
-            >
-              <MenuItem icon={<FolderPlus />} onSelect={() => app.openNewFolder(id)}>
-                Neuer Unterordner
-              </MenuItem>
-              <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
-                Umbenennen
-              </MenuItem>
-              <MenuItem icon={<BookA />} onSelect={() => app.go({ kind: 'glossary', folder: id })}>
-                Glossar und Formeln
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
-                Löschen
-              </MenuItem>
-            </Menu>
-          </>
-        }
-      />
-      {children.length > 0 ? (
-        <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {children.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => app.go({ kind: 'folder', id: f.id })}
-              className="flex items-center gap-2.5 rounded-lg border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition-colors hover:border-border-strong hover:bg-subtle"
-            >
-              <FolderIcon className="size-4 text-muted" />
-              <span className="truncate">{f.name}</span>
-              <span className="ml-auto text-xs text-faint">{notes.filter((n) => n.folderId === f.id).length}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {items.length === 0 ? (
-        <EmptyState
-          icon={<FileText />}
-          title="Dieser Ordner ist leer"
-          action={
-            <Button variant="primary" onClick={() => app.openNewNote({ folderId: id })}>
-              <Plus className="size-4" /> Neue Notiz
-            </Button>
+      <div
+        data-drop-folder={id}
+        className={cn('-m-2 rounded-xl p-2', dropTarget === id && 'ring-2 ring-accent ring-inset')}
+      >
+        <PageHeader
+          title={folder.name}
+          subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}${children.length ? ` · ${children.length} ${children.length === 1 ? 'Unterordner' : 'Unterordner'}` : ''}`}
+          breadcrumb={
+            path.length > 1 ? (
+              <div className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted">
+                {path.slice(0, -1).map((f) => (
+                  <span key={f.id} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-drop-folder={f.id}
+                      className={cn(
+                        'rounded px-1 -mx-1 hover:text-fg',
+                        dropTarget === f.id && 'bg-accent-soft text-accent-text ring-2 ring-accent',
+                      )}
+                      onClick={() => app.go({ kind: 'folder', id: f.id })}
+                    >
+                      {f.name}
+                    </button>
+                    <ChevronRight className="size-3.5" />
+                  </span>
+                ))}
+              </div>
+            ) : null
+          }
+          actions={
+            <>
+              <Button variant="primary" size="sm" onClick={() => app.openNewNote({ folderId: id })} className="max-sm:hidden">
+                <Plus className="size-4" /> Notiz
+              </Button>
+              <Menu
+                trigger={(p) => (
+                  <Button size="icon-sm" aria-label="Ordner-Aktionen" {...p}>
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                )}
+              >
+                <MenuItem icon={<FolderPlus />} onSelect={() => app.openNewFolder(id)}>
+                  Neuer Unterordner
+                </MenuItem>
+                <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
+                  Umbenennen
+                </MenuItem>
+                <MenuItem icon={<BookA />} onSelect={() => app.go({ kind: 'glossary', folder: id })}>
+                  Glossar und Formeln
+                </MenuItem>
+                <MenuItem icon={<Files />} onSelect={() => app.go({ kind: 'files', folder: id })}>
+                  Dateien
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
+                  Löschen
+                </MenuItem>
+              </Menu>
+            </>
           }
         />
-      ) : (
-        <NoteList>
-          {items.map((n) => (
-            <NoteCard key={n.id} note={n} folders={folders} />
-          ))}
-        </NoteList>
-      )}
+        {children.length > 0 ? (
+          <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {children.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                data-drop-folder={f.id}
+                onClick={() => app.go({ kind: 'folder', id: f.id })}
+                onPointerDown={(e) => startDrag(e, { kind: 'folder', id: f.id, name: f.name })}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition-colors select-none [-webkit-touch-callout:none] hover:border-border-strong hover:bg-subtle',
+                  dropTarget === f.id && 'border-accent bg-accent-soft ring-2 ring-accent',
+                  dragged === f.id && 'opacity-50',
+                )}
+              >
+                <FolderIcon className="size-4 text-muted" />
+                <span className="truncate">{f.name}</span>
+                <span className="ml-auto text-xs text-faint">{notes.filter((n) => n.folderId === f.id).length}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {items.length === 0 ? (
+          <EmptyState
+            icon={<FileText />}
+            title="Dieser Ordner ist leer"
+            action={
+              <Button variant="primary" onClick={() => app.openNewNote({ folderId: id })}>
+                <Plus className="size-4" /> Neue Notiz
+              </Button>
+            }
+          />
+        ) : (
+          <NoteList>
+            {items.map((n) => (
+              <NoteCard key={n.id} note={n} folders={folders} />
+            ))}
+          </NoteList>
+        )}
+      </div>
     </Page>
   )
 }

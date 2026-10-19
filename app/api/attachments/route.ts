@@ -1,9 +1,12 @@
 import { badRequest, json, readForm } from '@/shared/server/http'
 import { route } from '@/features/auth/server/route'
 import { getConfig } from '@/shared/server/config'
-import { listAttachments, saveAttachment } from '@/features/attachments/server/attachments'
+import { listAttachments, listFiles, saveAttachment } from '@/features/attachments/server/attachments'
 
-export const GET = route('user', ({ user }) => json({ attachments: listAttachments(user.id) }))
+/** Alle Dateien – mit ?notes=1 samt den Notizen, in denen sie vorkommen (für den Bereich „Dateien“) */
+export const GET = route('user', ({ req, user }) =>
+  json({ attachments: req.nextUrl.searchParams.get('notes') === '1' ? listFiles(user.id) : listAttachments(user.id) }),
+)
 
 /** Datei hochladen (multipart/form-data, Feld „file“) */
 export const POST = route('user', async ({ req, user }) => {

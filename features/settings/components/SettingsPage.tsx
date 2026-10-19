@@ -355,8 +355,8 @@ function DataSection() {
         <div>
           <p className="mb-1 text-sm font-medium">Alles exportieren</p>
           <p className="mb-3 text-sm text-muted">
-            Alle Notizen in ihrer Ordnerstruktur, dazu Anhänge, Karteikarten und Termine (Kalender.ics). Formatierter Text
-            liegt als .html darin, Canvas als .canvas.
+            Alle Notizen in ihrer Ordnerstruktur, dazu Dateien (im Ordner „Anhänge“), Karteikarten und Termine
+            (Kalender.ics). Formatierter Text liegt als .html darin, Canvas als .canvas.
           </p>
           <a
             href="/api/export"
@@ -369,7 +369,7 @@ function DataSection() {
           <p className="mb-1 text-sm font-medium">Importieren</p>
           <p className="mb-3 text-sm text-muted">
             Markdown (.md), HTML, Canvas (.canvas), Kalender (.ics) oder ein ZIP-Archiv, z. B. ein Export aus Noted. Andere
-            Dateien werden Anhänge.
+            Dateien kommen in den Bereich „Dateien“.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">
@@ -401,7 +401,7 @@ function DataSection() {
           />
           {result ? (
             <div className="mt-4 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
-              Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Anhänge
+              Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Dateien
               {result.events ? `, ${result.events} Termine` : ''}.
               {result.skipped.length > 0 ? (
                 <details className="mt-2 text-muted">

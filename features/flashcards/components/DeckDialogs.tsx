@@ -253,7 +253,7 @@ export function AnkiImportDialog({ onClose }: { onClose: () => void }) {
           <p>
             <strong>{result.cards.toLocaleString('de-DE')}</strong> {result.cards === 1 ? 'Karte' : 'Karten'} importiert
             {result.decks ? `, ${result.decks} ${result.decks === 1 ? 'neuer Stapel' : 'neue Stapel'}` : ''}
-            {result.media ? `, ${result.media} ${result.media === 1 ? 'Datei' : 'Dateien'} unter Anhänge` : ''}.
+            {result.media ? `, ${result.media} ${result.media === 1 ? 'Datei' : 'Dateien'} unter Dateien` : ''}.
           </p>
           {result.skipped.length ? (
             <div>
