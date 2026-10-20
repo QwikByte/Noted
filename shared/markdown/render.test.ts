@@ -15,6 +15,21 @@ describe('Vorschau', () => {
     expect(html).toContain('href="/?n=abc#teil-2"')
   })
 
+  it('zeigt Links auf Notizen in der geteilten Ansicht nur als Text – ohne Ziel, ID oder „anlegen“', () => {
+    const { html } = renderMarkdown('[[Vorhanden]] [[Fehlt|Alias]] ![[Vorhanden#Teil]] [[#Abschnitt]] ![[bild.png]]', {
+      ...env,
+      plainNoteLinks: true,
+      fileUrl: (name) => `/api/s/token/files/${name}`,
+    })
+    expect(html).toContain('<span class="wikilink-text">Vorhanden</span>')
+    expect(html).toContain('<span class="wikilink-text">Alias</span>')
+    expect(html).toContain('<span class="wikilink-text">Vorhanden › Teil</span>')
+    expect(html).not.toMatch(/data-note-id|data-target|\/\?n=|unresolved/)
+    // Sprünge innerhalb der Notiz und Dateien funktionieren weiter
+    expect(html).toContain('<a class="wikilink" href="#abschnitt">Abschnitt</a>')
+    expect(html).toContain('src="/api/s/token/files/bild.png"')
+  })
+
   it('bettet Bilder, PDFs und Audio ein', () => {
     const { html } = renderMarkdown('![[Tafel bild.png|300]]\n![[skript.pdf]]\n![[aufnahme.m4a]]\n![](foto.jpg)')
     expect(html).toContain('<img src="/api/files/Tafel%20bild.png" alt="Tafel bild.png" loading="lazy" class="embed-image" width="300">')

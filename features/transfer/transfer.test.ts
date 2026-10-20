@@ -7,6 +7,12 @@ import * as attachments from '@/app/api/attachments/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as importRoute from '@/app/api/import/route'
 import * as calendar from '@/app/api/calendar/route'
+import * as decks from '@/app/api/decks/route'
+import * as deckCards from '@/app/api/decks/[id]/cards/route'
+import * as flashcards from '@/app/api/flashcards/route'
+import * as users from '@/app/api/admin/users/route'
+import * as password from '@/app/api/account/password/route'
+import type { FlashcardData } from '@/features/flashcards/types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -219,5 +225,48 @@ describe('Export und Import (ZIP)', () => {
       'Analysis I 2026-10-19T10:15',
       'Lineare Algebra 2026-10-20T08:15',
     ])
+  })
+
+  it('überträgt Karteikarten-Stapel verlustfrei – ohne Dubletten durch die .md daneben', async () => {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9])], 'Organ.png'))
+    expect((await call(attachments.POST, '/', { cookie: token, form })).status).toBe(201)
+    const deck = (await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'Biologie', scheduler: 'fsrs' } })).data.deck
+    const occlusion = { image: 'Organ.png', masks: [{ x: 0.1, y: 0.1, w: 0.2, h: 0.2, label: 'Leber' }], hideAll: false }
+    await call(deckCards.POST, '/', {
+      cookie: token,
+      params: { id: deck.id },
+      body: { cards: [{ type: 'basic', front: 'Zelle', back: 'Kleinste Einheit' }, { type: 'occlusion', front: 'Organe', occlusion }] },
+    })
+    const r = await call(exportRoute.GET, '/', { cookie: token })
+    const exported = new Uint8Array(await r.res.arrayBuffer())
+    const zip = unzipSync(exported)
+    expect(zip['Karteikarten/Biologie.md']).toBeDefined()
+    expect(Object.keys(unzipSync(zip['Karteikarten/Biologie.noted-deck.zip'])).sort()).toEqual(['deck.json', 'media/Organ.png'])
+
+    // In ein neues Konto: der Stapel samt Bildverdeckung, keine Notiz „Biologie“ aus der .md, das Bild nur einmal
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'umzug', password: 'Zweites-Konto-Pw-1' } })
+    const other = await loginAs('umzug', 'Zweites-Konto-Pw-1')
+    await call(password.POST, '/', { cookie: other, body: { currentPassword: 'Zweites-Konto-Pw-1', newPassword: 'Zweites-Konto-Pw-2' } })
+    const imp = new FormData()
+    imp.append('files', new File([exported], 'Noted-Export.zip'))
+    const res = await call(importRoute.POST, '/', { cookie: other, form: imp })
+    expect(res.status).toBe(200)
+    const own = ((await call(flashcards.GET, '/api/flashcards', { cookie: token })).data as FlashcardData).decks
+    expect(res.data).toMatchObject({ decks: own.length })
+    const theirs = (await call(flashcards.GET, '/api/flashcards', { cookie: other })).data as FlashcardData
+    const bio = theirs.decks.find((d) => d.name === 'Biologie')!
+    expect(bio.scheduler).toBe('fsrs')
+    expect(theirs.cards.filter((c) => c.deckId === bio.id).map((c) => c.occlusion?.image ?? c.front)).toEqual(['Zelle', 'Organ.png'])
+    const notesOfOther = (await call(notes.GET, '/api/notes', { cookie: other })).data.notes as { title: string }[]
+    expect(notesOfOther.map((n) => n.title)).not.toContain('Biologie')
+    const files = (await call(attachments.GET, '/api/attachments', { cookie: other })).data.attachments as { filename: string }[]
+    expect(files.filter((f) => f.filename.startsWith('Organ'))).toEqual([expect.objectContaining({ filename: 'Organ.png' })])
+
+    // Eine einzelne Stapel-Datei erkennt der Import ebenfalls
+    const single = new FormData()
+    single.append('files', new File([zip['Karteikarten/Biologie.noted-deck.zip']], 'Biologie.noted-deck.zip'))
+    const one = await call(importRoute.POST, '/', { cookie: other, form: single })
+    expect(one.data).toMatchObject({ notes: 0, decks: 1, cards: 2, attachments: 0 })
   })
 })

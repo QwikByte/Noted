@@ -53,7 +53,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Dateien**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
 - Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
-- Markierten Text **zitieren** (als Zitat mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- **Anmerkungen:** Ausgewählten Text **markieren** oder **kommentieren** – wie mit einem Textmarker, in sechs Farben. Ein Klick auf eine Markierung öffnet Kommentar, Farbe, **Als Zitat einfügen** und Löschen. Die Seitenleiste **Anmerkungen** (Textmarker-Knopf oben) listet alle Markierungen des PDFs nach Seite; ein Klick springt zur Stelle, **Alle als Zitate einfügen** übernimmt sie mit Seitenlinks in die Notiz. Markierungen liegen auf dem Server (auf jedem Gerät an derselben Textstelle, auch nach dem Zoomen) und entstehen auch offline – sie werden gesendet, sobald wieder Verbindung besteht. Gescannte PDFs ohne Textebene lassen sich nicht markieren.
 - Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
 
 **Karteikarten**
@@ -68,6 +69,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
 - **Notiz abfragen** (**⋮ → Abfragen** in einer Notiz): ein Selbsttest direkt aus der Mitschrift, ohne vorher Karten anzulegen. Jede Überschrift mit Text darunter wird zur Frage, der Abschnitt ist verdeckt, bis du ihn aufdeckst und selbst bewertest. Am Ende siehst du, was du nicht wusstest – ein Klick öffnet die Notiz an dieser Stelle –, kannst es wiederholen oder als Karteikarten übernehmen. Ohne Einfluss auf den Wiederholungsplan; geht mit Markdown, formatiertem Text, Mindmaps und Canvas.
 - Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort`, tabulatorgetrennt – z. B. aus Quizlet oder Anki kopiert – oder Lückentexte mit `{{…}}`).
+- **Stapel weitergeben** (Stapel → ⋮ → **Als Datei exportieren**): eine `.noted-deck.zip` mit allen Karten (alle Kartenarten, Antworten, Lückentexte, Bildverdeckungen), den verwendeten Bildern und den Einstellungen des Stapels – ohne Lernstand. Importieren lässt sie sich in jedem Noted-Konto über Karteikarten → ⋮ → **Stapel importieren** (als neuer Stapel oder in einen bestehenden) oder über den allgemeinen Import. Karten, die es im Stapel schon gibt, kommen nicht doppelt.
 - **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (unter **Dateien**). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
 - **Lernstatistik** (Karteikarten → **Statistik**): Lerntage als Heatmap über das letzte Jahr, Serie (Tage am Stück), Bewertungen heute, Trefferquote und Zeit pro Karte (30 Tage, auch je Stapel), eine Vorschau, wie viele Karten in den nächsten 7 bzw. 30 Tagen fällig werden, und die Lernzeit je Fach aus dem Fokus-Timer. Grundlage ist ein Protokoll aller Bewertungen – auch offline gesammelte werden beim Hochladen mitprotokolliert. Über ⋮ lässt es sich als CSV herunterladen (für Excel oder LibreOffice).
 - **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe, Lückentexte (Absätze mit `{{Lücke}}`, auf Wunsch auch mit `==Markierungen==`) und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen.
@@ -100,9 +102,10 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
-- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
+- Anmerkungen eines PDFs liegen daneben als lesbare Markdown-Datei (`Anhänge/Skript.pdf.anmerkungen.md`: Seite, Zitat, Kommentar). Beim Import eines Exports werden sie übersprungen.
+- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen. Daneben liegt jeder Stapel als verlustfreie `.noted-deck.zip`; beim Import zählt dann nur sie, damit keine Notiz aus der `.md` entsteht.
 - Die Termine liegen als `Kalender.ics` im ZIP.
-- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), Karteikarten-Stapeln (`.noted-deck.zip`), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -229,6 +232,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
 | `EXTERNAL_IMAGES` | `true` | Bilder von fremden Servern in Notizen anzeigen; `false` blockiert sie (ein externes Bild verrät dem fremden Server beim Öffnen die IP-Adresse) |
+| `SHARING` | `true` | Notizen per Link zum Lesen teilen (`/s/…`, ohne Anmeldung); `false` schaltet alle Freigaben ab |
 | `MAX_UPLOAD_MB` | `25` | Maximale Größe hochgeladener Dateien |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
@@ -308,8 +312,9 @@ docker compose start noted
 ## Notizen mitnehmen
 
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
-- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und die Termine als `Kalender.ics`.
+- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/` (mit den Anmerkungen zu PDFs), die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
 - **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
+- **Teilen** (**⋮ → Teilen …** in der Notiz): erzeugt einen Link, mit dem Kommilitonen die Notiz ohne Konto lesen können – nicht bearbeiten. Gültig 7 Tage, 30 Tage oder unbegrenzt. Eingebettete Bilder und PDFs der Notiz sind dabei, Links auf andere Notizen erscheinen nur als Text, Canvas lässt sich nicht teilen. Den Link siehst du nur beim Erstellen (gespeichert wird nur ein Hash). Widerrufen kannst du ihn im Dialog oder unter **Einstellungen → Geteilte Links**; dort steht auch, wie oft er geöffnet wurde. Liegt die Notiz im Papierkorb, ist der Link so lange tot. Mit `SHARING=false` ist Teilen für die ganze Instanz abgeschaltet.
 
 Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
 
@@ -349,19 +354,20 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 **Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
 
 ```
-app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
+app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin, geteilte Notizen) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
   notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche
-  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
+  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Stapel als Datei, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
+  sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
-  pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
+  pdf/                  PDF-Viewer (pdf.js), geteilte Ansicht und Anmerkungen (Markierungen mit Kommentar)
   transfer/             Export und Import (ZIP mit Ordnerstruktur, Dateien, Karteikarten und Kalender)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
   admin/                Benutzerverwaltung (Administration)
@@ -370,12 +376,12 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
   ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten
   client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
-  server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
+  server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll, ZIP, Volltextsuche
   markdown/             Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
   lib/                  Namensregeln, Formatierung, HTML-Hilfen
 sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 instrumentation.ts      Serverstart: Datenbank öffnen und migrieren, ersten Admin anlegen, regelmäßig aufräumen
-proxy.ts                Content-Security-Policy und Login-Umleitung
+proxy.ts                Content-Security-Policy und Login-Umleitung (außer /login und geteilten Notizen unter /s)
 scripts/install.sh      Installer für Ubuntu/Debian
 scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
 scripts/domain.sh       Domain anzeigen/ändern (sudo noted-domain)

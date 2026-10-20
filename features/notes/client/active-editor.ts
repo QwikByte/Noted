@@ -5,8 +5,11 @@
 /** Stelle in einem PDF-Anhang */
 export type PdfRef = { file: string; page: number }
 
-/** Was der PDF-Viewer in eine Notiz einfügt */
-export type Insertion = { kind: 'page-link'; ref: PdfRef } | { kind: 'quote'; text: string; ref: PdfRef }
+/** Zitat aus einem PDF samt Stelle */
+export type PdfQuote = { text: string; ref: PdfRef }
+
+/** Was der PDF-Viewer in eine Notiz einfügt – „quotes“: mehrere Zitate auf einmal (z. B. alle Anmerkungen) */
+export type Insertion = { kind: 'page-link'; ref: PdfRef } | ({ kind: 'quote' } & PdfQuote) | { kind: 'quotes'; quotes: PdfQuote[] }
 
 export type ActiveEditor = {
   noteId: string
@@ -33,9 +36,12 @@ export function pdfPageLink(ref: PdfRef, label?: string): string {
   return `[[${ref.file}#page=${ref.page}${label ? `|${label}` : ''}]]`
 }
 
+const quoteMarkdown = ({ text, ref }: PdfQuote) =>
+  [...text.split('\n').map((l) => `> ${l}`), `> ${pdfPageLink(ref, `S. ${ref.page}`)}`].join('\n')
+
 /** Einfügen in Markdown und einfachen Text */
 export function insertionToMarkdown(insertion: Insertion): string {
   if (insertion.kind === 'page-link') return pdfPageLink(insertion.ref)
-  const { text, ref } = insertion
-  return [...text.split('\n').map((l) => `> ${l}`), `> ${pdfPageLink(ref, `S. ${ref.page}`)}`].join('\n')
+  if (insertion.kind === 'quotes') return insertion.quotes.map(quoteMarkdown).join('\n\n')
+  return quoteMarkdown(insertion)
 }

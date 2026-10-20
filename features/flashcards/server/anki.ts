@@ -10,8 +10,8 @@ import { listAttachments, saveAttachment } from '@/features/attachments/server/a
 import { ankiCardKind, ankiDeckName, ankiFieldToMarkdown, ankiMediaRefs, ankiState, type AnkiCard } from '../anki'
 import { MAX_ANSWER_MS, MAX_CARD_TEXT } from '../limits'
 import { DAY } from '../srs'
-import { createCards, createDeck, saveReviews, type CardInput } from './flashcards'
-import type { AnkiImportResult, Card, CardReview, Deck, ReviewLogEntry } from '../types'
+import { createCardsSkipping, createDeck, saveReviews, setSuspended, type CardInput } from './flashcards'
+import type { AnkiImportResult, CardReview, Deck, ReviewLogEntry } from '../types'
 
 /** Höchstens so viele Hinweise auf übersprungene Karten in der Antwort */
 const MAX_SKIPPED = 20
@@ -173,29 +173,6 @@ function deckNames(db: Database.Database): Map<number, string> {
 
 type Draft = { input: CardInput; cards: CardRow[]; sideOfOrd: (ord: number) => number | null }
 
-/** Karten in Blöcken anlegen; lehnt der Server einen Block ab, Karte für Karte – ungültige werden übersprungen */
-function createAll(userId: number, deckId: string, drafts: Draft[], skip: (reason: string) => void): [Draft, Card][] {
-  const out: [Draft, Card][] = []
-  for (let i = 0; i < drafts.length; i += 500) {
-    const chunk = drafts.slice(i, i + 500)
-    try {
-      createCards(userId, deckId, chunk.map((d) => d.input)).forEach((card, k) => out.push([chunk[k], card]))
-      continue
-    } catch (err) {
-      if (!(err instanceof ApiError) || err.status === 413) throw err
-    }
-    for (const d of chunk) {
-      try {
-        out.push([d, createCards(userId, deckId, [d.input])[0]])
-      } catch (err) {
-        if (!(err instanceof ApiError) || err.status === 413) throw err
-        skip(`„${d.input.front.slice(0, 60)}“ (${err.message})`)
-      }
-    }
-  }
-  return out
-}
-
 /**
  * Anki-Paket (.apkg, auch .colpkg) importieren: Stapel (Unterstapel als „A – B“), Karten (Grundkarte, beidseitig,
  * Lückentext) und die verwendeten Bilder und Töne als Anhänge. Mit `progress` auch Lernstand, ausgesetzte Karten
@@ -298,7 +275,7 @@ export function importAnki(userId: number, data: Uint8Array, opts: { progress: b
       )
       const fresh = drafts.filter((d) => !fronts.has(d.input.front) && fronts.add(d.input.front))
       if (fresh.length < drafts.length) skip(`${drafts.length - fresh.length} Karten in „${name}“ gab es schon`)
-      for (const [d, created] of createAll(userId, deck.id, fresh, skip)) {
+      for (const [d, created] of createCardsSkipping(userId, deck.id, fresh, skip)) {
         result.cards++
         if (!opts.progress) continue
         for (const c of d.cards) {
@@ -327,10 +304,7 @@ export function importAnki(userId: number, data: Uint8Array, opts: { progress: b
       }
     }
     if (reviews.length || log.length) saveReviews(userId, reviews, log)
-    if (suspend.length) {
-      const stmt = target.prepare('UPDATE cards SET suspended = 1 WHERE id = ? AND user_id = ?')
-      target.transaction(() => suspend.forEach((id) => stmt.run(id, userId)))()
-    }
+    if (suspend.length) setSuspended(userId, suspend, true)
     return result
   } finally {
     db.close()

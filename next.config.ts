@@ -57,6 +57,9 @@ const nextConfig: NextConfig = {
         source: '/api/:path*',
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
+      // Geteilte Notizen gehören nicht in Suchmaschinen (zusätzlich zu robots im Seitenkopf)
+      { source: '/s/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
+      { source: '/api/s/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
     ]
   },
 }

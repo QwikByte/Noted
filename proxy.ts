@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getConfig } from '@/shared/server/config'
 
-const PUBLIC_PATHS = ['/login']
+// /s/…: per Link geteilte Notizen – für Gäste ohne Konto (SHARING=false liefert dort 404)
+const PUBLIC_PATHS = ['/login', '/s']
 
 /**
  * - Content-Security-Policy mit Nonce für jede Seite

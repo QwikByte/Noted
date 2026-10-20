@@ -58,7 +58,7 @@ import {
 } from '../mindmap'
 import { Preview, type PreviewLinks } from '@/features/notes/components/Preview'
 import { AttachButtons, Divider, ToolButton } from '@/features/notes/components/toolbar'
-import { insertionToMarkdown } from '@/features/notes/client/active-editor'
+import { pdfPageLink } from '@/features/notes/client/active-editor'
 import { attachmentMarkdown } from '@/features/attachments/client/upload'
 import type { NoteEditorHandle } from '@/features/notes/client/editor-handle'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
@@ -360,16 +360,24 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
   }
 
   /** Neuen leeren Knoten anlegen und gleich bearbeiten */
-  function insert(where: 'child' | 'sibling', text = '') {
+  /** Neuer Punkt – bei mehreren Texten (z. B. allen Zitaten aus einem PDF) mehrere nacheinander */
+  function insert(where: 'child' | 'sibling', text: string | string[] = '') {
     const target = selected ?? root
-    const child: MindNode = { id: newNodeId(), text, children: [] }
-    const next = where === 'child' || target.id === root.id ? addChild(root, target.id, child) : addSibling(root, target.id, child)
+    const nodes = (Array.isArray(text) ? text : [text]).map((t): MindNode => ({ id: newNodeId(), text: t, children: [] }))
+    const next = nodes.reduce(
+      (tree, child, i) =>
+        where === 'child' || target.id === root.id
+          ? addChild(tree, target.id, child)
+          : addSibling(tree, i === 0 ? target.id : nodes[i - 1].id, child),
+      root,
+    )
     if (where === 'child' && collapsed.has(target.id)) {
       setCollapsed((c) => new Set([...c].filter((id) => id !== target.id)))
     }
     commit(next)
-    setSelectedId(child.id)
-    if (!text) setEditing({ id: child.id, initial: '', selectAll: false, isNew: true })
+    const last = nodes[nodes.length - 1]
+    setSelectedId(last.id)
+    if (!last.text) setEditing({ id: last.id, initial: '', selectAll: false, isNew: true })
   }
 
   function remove(id: string) {
@@ -577,9 +585,10 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
       focus: () => focusFlow(),
       setDoc: (markdown) => setDoc({ source: markdown, root: parseMindmap(markdown, title) }),
       insert: (insertion) => {
-        // Seitenlink oder Zitat aus dem PDF als Unterpunkt des ausgewählten Knotens
-        const link = insertionToMarkdown({ kind: 'page-link', ref: insertion.ref })
-        insert('child', cleanNodeText(insertion.kind === 'quote' ? `„${insertion.text}“ ${link}` : link))
+        // Seitenlink oder Zitate aus dem PDF als Unterpunkte des ausgewählten Knotens
+        if (insertion.kind === 'page-link') return insert('child', cleanNodeText(pdfPageLink(insertion.ref)))
+        const quotes = insertion.kind === 'quotes' ? insertion.quotes : [insertion]
+        insert('child', quotes.map((q) => cleanNodeText(`„${q.text}“ ${pdfPageLink(q.ref)}`)))
       },
       insertAttachment: (att) => insert('child', attachmentMarkdown(att)),
       selectedText: () => (selected && selected.id !== root.id ? selected.text : ''),

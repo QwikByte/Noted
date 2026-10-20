@@ -52,17 +52,23 @@ export function Preview({
   onOpenTag,
   onToggleTask,
   onOpenPdf,
+  fileUrl,
+  plainNoteLinks,
   className,
 }: PreviewLinks & {
   content: string
   onToggleTask?: (line: number, checked: boolean) => void
+  /** Adresse eingebetteter Dateien (Standard: /api/files/…) */
+  fileUrl?: (name: string) => string
+  /** Links auf Notizen nur als Text (geteilte Ansicht) */
+  plainNoteLinks?: boolean
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const rendered = useMemo(() => {
-    const r = renderMarkdown(content, { resolveNote })
+    const r = renderMarkdown(content, { resolveNote, fileUrl, plainNoteLinks })
     return { ...r, html: sanitize(r.html) }
-  }, [content, resolveNote])
+  }, [content, resolveNote, fileUrl, plainNoteLinks])
 
   useEffect(() => {
     if (ref.current) void renderMermaid(ref.current)

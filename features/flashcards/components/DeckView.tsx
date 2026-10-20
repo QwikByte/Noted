@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Copy,
   Dumbbell,
+  FileArchive,
   FileText,
   GraduationCap,
   Layers,
@@ -185,6 +186,18 @@ export function DeckView({ id }: { id: string }) {
               }}
             >
               Als Markdown kopieren
+            </MenuItem>
+            <MenuItem
+              icon={<FileArchive />}
+              onSelect={() => {
+                // Mit Bildern und Einstellungen – zum Weitergeben an andere Konten
+                const a = document.createElement('a')
+                a.href = `/api/decks/${deck.id}/export`
+                a.download = ''
+                a.click()
+              }}
+            >
+              Als Datei exportieren
             </MenuItem>
             <MenuSeparator />
             <MenuItem icon={<RotateCcw />} onSelect={() => setDialog('reset')}>

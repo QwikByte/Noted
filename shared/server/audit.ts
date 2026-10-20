@@ -20,6 +20,8 @@ export type AuditEvent =
   | 'sessions_revoked_by_admin'
   | 'settings_changed'
   | 'update_requested'
+  | 'share_created'
+  | 'share_revoked'
 
 export type AuditEntry = {
   event: AuditEvent

@@ -40,7 +40,10 @@ const cleanup: string[] = []
 test.beforeEach(({ page }) => {
   consoleErrors = []
   page.on('console', (msg) => {
-    if (msg.type() === 'error' && !/status of (401|403|404|409)/.test(msg.text())) consoleErrors.push(msg.text())
+    // Ohne Verbindung (PDF-Anmerkungen) scheitern Anfragen absichtlich
+    if (msg.type() === 'error' && !/status of (401|403|404|409)|ERR_INTERNET_DISCONNECTED/.test(msg.text())) {
+      consoleErrors.push(msg.text())
+    }
   })
   page.on('pageerror', (err) => consoleErrors.push(String(err)))
 })
@@ -454,6 +457,42 @@ test('Anki-Deck importieren', async ({ page }) => {
   expect(data.cards.filter((c: { deckId: string }) => c.deckId === deck.id).map((c: { type: string }) => c.type)).toEqual(['reversed', 'cloze'])
 })
 
+test('Stapel als Datei exportieren und wieder importieren', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Pharmakologie', description: 'Wirkstoffe' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await page.request.post(`/api/decks/${deck.id}/cards`, {
+    headers: await apiHeaders(page),
+    data: { cards: [{ type: 'basic', front: 'Ibuprofen', back: 'NSAR' }, { type: 'cloze', front: '==Paracetamol== senkt Fieber' }] },
+  })
+
+  // Export über das Stapel-Menü
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'Als Datei exportieren' }).click()])
+  expect(download.suggestedFilename()).toBe('Pharmakologie.noted-deck.zip')
+  const file = await download.path()
+
+  // Import in der Übersicht – als neuer Stapel mit freiem Namen
+  await page.goto('/?v=cards')
+  await page.getByRole('main').getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel importieren …' }).click()
+  await page.getByTestId('deck-file').setInputFiles(file)
+  await page.getByTestId('deck-import').click()
+  await expect(page.getByTestId('deck-import-result')).toContainText('2 Karten in den neuen Stapel „Pharmakologie 1“ importiert')
+  await shot(page, '41-deck-import')
+  await page.getByRole('button', { name: 'Stapel öffnen' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pharmakologie 1')
+  const data = await flashcards(page)
+  const copy = data.decks.find((d: { name: string }) => d.name === 'Pharmakologie 1')
+  cleanup.push(`/api/decks/${copy.id}`)
+  expect(copy.description).toBe('Wirkstoffe')
+  expect(data.cards.filter((c: { deckId: string }) => c.deckId === copy.id).map((c: { front: string }) => c.front)).toEqual([
+    'Ibuprofen',
+    '==Paracetamol== senkt Fieber',
+  ])
+})
+
 test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'FSRS-Stapel' }, 'deck')
@@ -679,4 +718,111 @@ test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite'
   await expect(card.getByTestId('file-search-state')).toHaveText('durchsuchbar')
   await card.getByRole('button', { name: 'Erneut indizieren' }).click()
   await expect(page.getByText('„Skript Optik.pdf“ ist durchsuchbar.')).toBeVisible()
+})
+
+test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und als Zitat einfügen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Wärmelehre'], ['Zweiter Hauptsatz', 'Die Entropie nimmt nie ab', 'Ende der Seite']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Wärme.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const note = await post(page, '/api/notes', { title: 'Entropie Mitschrift', content: 'Siehe [[Skript Wärme.pdf#page=2]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  const saved = async () =>
+    (await (await page.request.get(`/api/attachments/${att.id}/annotations`)).json()).annotations as { comment: string; color: number }[]
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
+
+  // Text im Text-Layer mit der Maus auswählen und markieren
+  const span = panel.locator('.page[data-page-number="2"] .textLayer span', { hasText: 'Die Entropie nimmt nie ab' })
+  await expect(span).toHaveCount(1)
+  const selectionBar = panel.getByTestId('pdf-selection')
+  const markText = async () => {
+    const b = (await span.boundingBox())!
+    await page.mouse.move(b.x + 1, b.y + b.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(b.x + b.width - 1, b.y + b.height / 2, { steps: 10 })
+    await page.mouse.up()
+    await expect(selectionBar).toContainText('Entropie')
+    await selectionBar.getByRole('button', { name: 'Markieren' }).click()
+  }
+  let box = (await span.boundingBox())!
+  await markText()
+  const mark = panel.locator('.page[data-page-number="2"] .pdf-annotation')
+  await expect(mark).toHaveCount(1)
+  await expect.poll(async () => (await saved()).length).toBe(1)
+
+  // Die Markierung liegt auf dem Text – auch nach dem Vergrößern
+  const covers = async () => {
+    const [t, m] = [(await span.boundingBox())!, (await mark.boundingBox())!]
+    return Math.abs(t.y - m.y) < t.height / 2 && Math.abs(t.x - m.x) < t.height && Math.abs(t.width - m.width) < t.height
+  }
+  await expect.poll(covers).toBe(true)
+  await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Vergrößern' }).click()
+  await expect.poll(async () => (await span.boundingBox())!.width).toBeGreaterThan(box.width * 1.05)
+  await expect.poll(covers).toBe(true)
+
+  // Nach dem Neuladen ist sie wieder da; ein Klick darauf öffnet Kommentar und Farbe
+  await page.reload()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(mark).toHaveCount(1)
+  await expect.poll(covers).toBe(true)
+  box = (await mark.boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  const annotationBar = panel.getByTestId('pdf-annotation')
+  await annotationBar.getByLabel('Kommentar').fill('Klausurrelevant')
+  await annotationBar.getByRole('radio', { name: 'Grün' }).click()
+  await expect(mark).toHaveAttribute('data-color', '4')
+  await expect.poll(saved).toEqual([expect.objectContaining({ comment: 'Klausurrelevant', color: 4 })])
+
+  // Seitenleiste „Anmerkungen“
+  await panel.getByRole('button', { name: 'Anmerkungen', exact: true }).click()
+  const list = panel.getByTestId('pdf-annotations')
+  await expect(list.getByRole('region', { name: 'Seite 2' })).toContainText('Die Entropie nimmt nie ab')
+  await expect(list).toContainText('Klausurrelevant')
+  await shot(page, '55-pdf-annotations')
+
+  // Als Zitat mit Seitenlink in die Notiz
+  await list.getByRole('button', { name: 'Alle als Zitate einfügen' }).click()
+  await expect(page.getByText('Zitat in „Entropie Mitschrift“ eingefügt.')).toBeVisible()
+  await expect
+    .poll(async () => (await page.evaluate((id) => fetch(`/api/notes/${id}`).then((r) => r.json()), note.id)).note.content)
+    .toContain('> Die Entropie nimmt nie ab\n> [[Skript Wärme.pdf#page=2|S. 2]]')
+
+  // Löschen (rückgängig machbar)
+  box = (await mark.boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await annotationBar.getByRole('button', { name: 'Markierung löschen' }).click()
+  await expect(mark).toHaveCount(0)
+  await expect.poll(async () => (await saved()).length).toBe(0)
+
+  // Ohne Verbindung markiert: wartet im Browser und landet nach dem Wiederverbinden auf dem Server
+  // (nur die Anmerkungen offline – sonst stören Ladefehler anderer Dateien die Prüfung der Konsole)
+  const queued = () =>
+    page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('noted:pdf:annotations:'))
+      return key ? (JSON.parse(localStorage.getItem(key)!).upserts?.length ?? 0) : 0
+    })
+  const offline = '**/api/attachments/*/annotations'
+  await page.context().route(offline, (route) => route.abort('internetdisconnected'))
+  await list.getByRole('button', { name: 'Anmerkungen schließen' }).click()
+  await markText()
+  await expect(mark).toHaveCount(1)
+  await expect.poll(queued).toBe(1)
+  await expect.poll(async () => (await saved()).length).toBe(0)
+  await page.context().unroute(offline)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect.poll(async () => (await saved()).length, { timeout: 15_000 }).toBe(1)
+  await expect.poll(queued).toBe(0)
 })

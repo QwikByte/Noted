@@ -101,6 +101,18 @@ export type ReviewLogEntry = {
 /** Ergebnis eines Anki-Imports – `skipped`: Hinweise auf übersprungene Karten und Dateien (gekürzt) */
 export type AnkiImportResult = { decks: number; cards: number; media: number; skipped: string[] }
 
+/**
+ * Ergebnis eines Stapel-Imports (.noted-deck.zip): Zielstapel (`created`: neu angelegt), angelegte Karten, neue Dateien,
+ * Karten mit gleicher Vorderseite, die es im Stapel schon gab, und Hinweise auf Übersprungenes (gekürzt)
+ */
+export type DeckImportResult = {
+  deck: { id: string; name: string; created: boolean }
+  cards: number
+  media: number
+  duplicates: number
+  skipped: string[]
+}
+
 /** Ein Tag mit Bewertungen (Datum in der Ortszeit des Geräts) */
 export type StudyDay = { date: string; reviews: number; again: number; ms: number }
 

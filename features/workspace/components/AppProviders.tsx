@@ -8,12 +8,23 @@ import { NetworkError, setApiUser } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
 import { focusSessions } from '@/features/focus/client/sessions'
+import { pdfAnnotations } from '@/features/pdf/client/annotations'
 import { startUpdateWatcher } from '@/features/updates/client/app-update'
 import { applyTheme, type Theme } from '@/shared/client/prefs'
 import { UserProvider } from '@/features/auth/client/current-user'
+import { SharingProvider } from '@/features/sharing/client/enabled'
 import type { PublicUser } from '@/features/auth/types'
 
-export function AppProviders({ user, children }: { user: PublicUser; children: React.ReactNode }) {
+export function AppProviders({
+  user,
+  sharing,
+  children,
+}: {
+  user: PublicUser
+  /** Notizen per Link teilen erlaubt (SHARING) */
+  sharing: boolean
+  children: React.ReactNode
+}) {
   const [client] = useState(() => {
     setApiUser(user.id)
     return new QueryClient({
@@ -33,6 +44,7 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
     sync.start(user.id)
     reviewQueue.start(user.id, client)
     focusSessions.start(user.id, client)
+    pdfAnnotations.start(user.id, client)
     startUpdateWatcher()
     // Systemeinstellung „Dunkel“ live übernehmen
     const mq = matchMedia('(prefers-color-scheme: dark)')
@@ -43,12 +55,14 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
 
   return (
     <UserProvider user={user}>
-      <QueryClientProvider client={client}>
-        <ToastProvider sticky={<UpdateBanner />}>
-          {children}
-          <GlobalToolbar />
-        </ToastProvider>
-      </QueryClientProvider>
+      <SharingProvider enabled={sharing}>
+        <QueryClientProvider client={client}>
+          <ToastProvider sticky={<UpdateBanner />}>
+            {children}
+            <GlobalToolbar />
+          </ToastProvider>
+        </QueryClientProvider>
+      </SharingProvider>
     </UserProvider>
   )
 }
