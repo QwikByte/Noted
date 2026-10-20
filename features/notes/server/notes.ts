@@ -7,6 +7,7 @@ import { getConfig } from '@/shared/server/config'
 import { buildFtsQuery, parseSearch, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
 import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
+import { escapeRegExp } from '@/shared/lib/regexp'
 import { noteText } from '../format'
 import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
 import { getVersion, snapshotIfDue } from './versions'
@@ -385,10 +386,6 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
 export function restoreVersion(userId: number, noteId: string, versionId: number) {
   const { title, format, content } = getVersion(userId, noteId, versionId)
   return updateNote(userId, noteId, { title, format, content, reason: 'restore', autoRename: true })
-}
-
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Ersetzt [[Alt]], [[Alt|…]], [[Alt#…]], [[Ordner/Alt]] in allen verlinkenden Notizen. */

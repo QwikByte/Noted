@@ -20,6 +20,7 @@ import { describeUserAgent, formatDateTime, formatRelative } from '@/shared/lib/
 import { keys, useDrafts, useFolders } from '@/features/notes/client/queries'
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { calendarKey, deviceTimeZone } from '@/features/calendar/client/calendar'
+import { flashcardsKey } from '@/features/flashcards/client/flashcards'
 import { sync } from '@/features/notes/client/sync'
 import { useFontSize, usePref, type EditorMode } from '@/shared/client/prefs'
 import type { SessionInfo } from '@/features/auth/types'
@@ -319,9 +320,15 @@ function DataSection() {
   const input = useRef<HTMLInputElement>(null)
   const [targetFolder, setTargetFolder] = useState('')
   const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState<{ notes: number; attachments: number; folders: number; events: number; skipped: string[] } | null>(
-    null,
-  )
+  const [result, setResult] = useState<{
+    notes: number
+    attachments: number
+    folders: number
+    events: number
+    decks: number
+    cards: number
+    skipped: string[]
+  } | null>(null)
 
   async function runImport(files: File[]) {
     setImporting(true)
@@ -339,6 +346,7 @@ function DataSection() {
         qc.invalidateQueries({ queryKey: keys.tags }),
         qc.invalidateQueries({ queryKey: attachmentsKey }),
         qc.invalidateQueries({ queryKey: calendarKey }),
+        qc.invalidateQueries({ queryKey: flashcardsKey }),
       ])
     } catch (err) {
       toast.error(errorMessage(err))
@@ -355,8 +363,8 @@ function DataSection() {
         <div>
           <p className="mb-1 text-sm font-medium">Alles exportieren</p>
           <p className="mb-3 text-sm text-muted">
-            Alle Notizen in ihrer Ordnerstruktur, dazu Dateien (im Ordner „Anhänge“), Karteikarten und Termine
-            (Kalender.ics). Formatierter Text liegt als .html darin, Canvas als .canvas.
+            Alle Notizen in ihrer Ordnerstruktur, dazu Dateien (im Ordner „Anhänge“), Karteikarten (als Markdown und als
+            Stapel-Datei) und Termine (Kalender.ics). Formatierter Text liegt als .html darin, Canvas als .canvas.
           </p>
           <a
             href="/api/export"
@@ -368,8 +376,8 @@ function DataSection() {
         <div className="border-t border-border pt-5">
           <p className="mb-1 text-sm font-medium">Importieren</p>
           <p className="mb-3 text-sm text-muted">
-            Markdown (.md), HTML, Canvas (.canvas), Kalender (.ics) oder ein ZIP-Archiv, z. B. ein Export aus Noted. Andere
-            Dateien kommen in den Bereich „Dateien“.
+            Markdown (.md), HTML, Canvas (.canvas), Kalender (.ics), Karteikarten-Stapel (.noted-deck.zip) oder ein
+            ZIP-Archiv, z. B. ein Export aus Noted. Andere Dateien kommen in den Bereich „Dateien“.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">
@@ -402,7 +410,8 @@ function DataSection() {
           {result ? (
             <div className="mt-4 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
               Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Dateien
-              {result.events ? `, ${result.events} Termine` : ''}.
+              {result.events ? `, ${result.events} Termine` : ''}
+              {result.decks || result.cards ? `, ${result.decks} Stapel mit ${result.cards} Karteikarten` : ''}.
               {result.skipped.length > 0 ? (
                 <details className="mt-2 text-muted">
                   <summary className="cursor-pointer">{result.skipped.length} übersprungen</summary>

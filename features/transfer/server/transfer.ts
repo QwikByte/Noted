@@ -1,12 +1,15 @@
 import 'server-only'
-import { strToU8, unzipSync, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
+import { strToU8, unzipSync } from 'fflate'
 import { getDb } from '@/shared/server/db'
 import { getConfig } from '@/shared/server/config'
+import { zipBytes, zipStream, type ZipEntry } from '@/shared/server/zip'
 import { ApiError, badRequest } from '@/shared/server/http'
 import { createFolder, createNote, folderPathMap, listFolders, MAX_NOTE_LENGTH } from '@/features/notes/server/notes'
 import { listAttachments, readAttachmentData, saveAttachment } from '@/features/attachments/server/attachments'
 import { getFlashcardData } from '@/features/flashcards/server/flashcards'
 import { deckToMarkdown } from '@/features/flashcards/card-markdown'
+import { DECK_PACKAGE_EXT } from '@/features/flashcards/deck-package'
+import { deckPackage, importDeckPackage } from '@/features/flashcards/server/deck-package'
 import { exportIcs, importEvents, listEvents } from '@/features/calendar/server/events'
 import { parseIcs } from '@/features/calendar/ics'
 import { sanitizeFilename, sanitizeName, uniqueName } from '@/shared/lib/names'
@@ -16,12 +19,10 @@ import { canvasForExport, mapCanvasNodes, parseCanvas, type ExportIndex } from '
 import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
 import { EXPORT_ATTACHMENT_FOLDER, buildExportIndex, exportNotePath } from '../paths'
 
-/** Karteikarten-Stapel als Markdown (Frage::Antwort, siehe deckToMarkdown) */
+/** Karteikarten-Stapel als Markdown (Frage::Antwort, siehe deckToMarkdown) und verlustfrei als .noted-deck.zip */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 /** Alle Termine – lässt sich in jede Kalender-App importieren */
 const EXPORT_CALENDAR_FILE = 'Kalender.ics'
-
-type ExportEntry = { path: string; mtime: number; compress: boolean; data: () => Uint8Array }
 
 const ATTACHMENT_DIR_RE = new RegExp(`(\\ssrc=["'])(?:\\.\\./)*(?:${encodeURIComponent(EXPORT_ATTACHMENT_FOLDER)}|${EXPORT_ATTACHMENT_FOLDER})/`, 'gi')
 
@@ -75,7 +76,7 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
   let pathIndex: ExportIndex | null = null
   const getPathIndex = () => (pathIndex ??= indexFor(notes, paths, userId))
 
-  const entries: ExportEntry[] = notes.map((n) => {
+  const entries: ZipEntry[] = notes.map((n) => {
     const folders = foldersOf(n, paths)
     return {
       path: exportNotePath(folders, n.title, n.format),
@@ -99,11 +100,19 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
   for (const deck of decks) {
     const name = uniqueName(sanitizeName(deck.name), taken, '.md')
     taken.push(name)
+    const deckCards = cards.filter((c) => c.deckId === deck.id)
     entries.push({
       path: prefix + name,
       mtime: deck.updatedAt,
       compress: true,
-      data: () => strToU8(deckToMarkdown(deck, cards.filter((c) => c.deckId === deck.id))),
+      data: () => strToU8(deckToMarkdown(deck, deckCards)),
+    })
+    // Gleicher Name wie die .md – daran erkennt der Import, dass beide zum selben Stapel gehören
+    entries.push({
+      path: prefix + name.replace(/\.md$/, DECK_PACKAGE_EXT),
+      mtime: deck.updatedAt,
+      compress: false,
+      data: () => zipBytes(deckPackage(userId, deck, deckCards)),
     })
   }
   const events = listEvents(userId)
@@ -124,38 +133,26 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
     })
   }
 
-  let index = 0
-  let zip: Zip
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      zip = new Zip((err, chunk, final) => {
-        if (err) return controller.error(err)
-        controller.enqueue(chunk)
-        if (final) controller.close()
-      })
-    },
-    pull() {
-      if (index < entries.length) {
-        const e = entries[index++]
-        const file = e.compress ? new ZipDeflate(e.path, { level: 6 }) : new ZipPassThrough(e.path)
-        file.mtime = e.mtime
-        zip.add(file)
-        file.push(e.data(), true)
-      } else if (index === entries.length) {
-        index++
-        zip.end()
-      }
-    },
-  })
+  return zipStream(entries)
 }
 
-export type ImportResult = { notes: number; attachments: number; folders: number; events: number; skipped: string[] }
+export type ImportResult = {
+  notes: number
+  attachments: number
+  folders: number
+  events: number
+  /** Neue Karteikarten-Stapel und ihre Karten (aus .noted-deck.zip) */
+  decks: number
+  cards: number
+  skipped: string[]
+}
 
 const NOTE_EXT = /\.(md|markdown)$/i
 /** HTML-Dateien werden zu formatiertem Text (so lässt sich ein Export wieder importieren) */
 const HTML_EXT = /\.html?$/i
 const CANVAS_EXT = /\.canvas$/i
 const ICS_EXT = /\.ics$/i
+const isDeckPackage = (name: string) => name.toLowerCase().endsWith(DECK_PACKAGE_EXT)
 
 function isHiddenPath(p: string) {
   return p.split('/').some((seg) => seg.startsWith('.') || seg === '__MACOSX')
@@ -181,8 +178,8 @@ function importCanvasFiles(json: string): string {
 }
 
 /**
- * Importiert Markdown-, HTML- und Canvas-Dateien, Kalender (.ics), ZIP-Archive (z. B. ein Export aus Noted) und beliebige
- * Dateien (als Anhänge). Zeiten aus Kalendern werden in `timeZone` umgerechnet.
+ * Importiert Markdown-, HTML- und Canvas-Dateien, Kalender (.ics), Karteikarten-Stapel (.noted-deck.zip), ZIP-Archive
+ * (z. B. ein Export aus Noted) und beliebige Dateien (als Anhänge). Zeiten aus Kalendern werden in `timeZone` umgerechnet.
  */
 export async function importFiles(
   userId: number,
@@ -191,7 +188,7 @@ export async function importFiles(
   timeZone: string,
 ): Promise<ImportResult> {
   const { maxImportBytes, maxUploadBytes } = getConfig()
-  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, skipped: [] }
+  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, decks: 0, cards: 0, skipped: [] }
 
   // Ordner-Cache: "parentId|name" -> id
   const folderCache = new Map<string, string>()
@@ -252,6 +249,16 @@ export async function importFiles(
     result.attachments++
   }
 
+  const importDeck = (data: Uint8Array) => {
+    const r = importDeckPackage(userId, data)
+    if (r.deck.created) result.decks++
+    result.cards += r.cards
+    result.attachments += r.media
+    for (const s of r.skipped) result.skipped.push(`${r.deck.name}: ${s}`)
+    // Dateien des Stapels sind jetzt vorhanden – nicht noch einmal aus „Anhänge“ übernehmen
+    for (const a of listAttachments(userId)) existingAttachments.set(a.filename.toLowerCase(), a.size)
+  }
+
   let total = 0
   for (const file of files) {
     total += file.size
@@ -261,7 +268,13 @@ export async function importFiles(
     const data = new Uint8Array(await file.arrayBuffer())
     const name = file.name || 'Datei'
 
-    if (/\.zip$/i.test(name)) {
+    if (isDeckPackage(name)) {
+      try {
+        importDeck(data)
+      } catch (err) {
+        result.skipped.push(`${name} (${err instanceof Error ? err.message : 'Fehler'})`)
+      }
+    } else if (/\.zip$/i.test(name)) {
       let entries: Record<string, Uint8Array>
       let declared = 0
       let count = 0
@@ -271,7 +284,8 @@ export async function importFiles(
           filter: (f) => {
             if (f.name.endsWith('/') || isHiddenPath(f.name)) return false
             const isNote = NOTE_EXT.test(f.name) || HTML_EXT.test(f.name) || CANVAS_EXT.test(f.name)
-            const max = isNote ? MAX_NOTE_LENGTH * 4 : maxUploadBytes
+            // Ein Stapel mit seinen Bildern darf so groß sein wie der Import selbst
+            const max = isNote ? MAX_NOTE_LENGTH * 4 : isDeckPackage(f.name) ? maxImportBytes : maxUploadBytes
             if (f.originalSize > max) {
               result.skipped.push(`${f.name} (zu groß)`)
               return false
@@ -288,11 +302,16 @@ export async function importFiles(
         if (err instanceof ApiError) throw err
         throw badRequest(`„${name}“ ist kein gültiges ZIP-Archiv.`)
       }
+      // Gibt es einen Stapel als Paket und als Markdown (Export aus Noted), zählt nur das verlustfreie Paket
+      const packages = new Set(Object.keys(entries).filter((p) => isDeckPackage(p) && !p.startsWith(`${EXPORT_ATTACHMENT_FOLDER}/`)))
       for (const [entryPath, entryData] of Object.entries(entries)) {
         const segments = entryPath.split('/').filter(Boolean)
         const filename = segments.pop()!
         try {
-          if (isNoteFile(segments, filename)) {
+          if (NOTE_EXT.test(entryPath) && packages.has(entryPath.replace(NOTE_EXT, DECK_PACKAGE_EXT))) continue
+          if (isDeckPackage(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER) {
+            importDeck(entryData)
+          } else if (isNoteFile(segments, filename)) {
             let folderId = targetFolderId
             for (const seg of segments) folderId = ensureFolder(folderId, seg)
             importNote(folderId, filename, entryData)

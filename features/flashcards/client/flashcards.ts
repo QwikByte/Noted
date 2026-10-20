@@ -9,9 +9,20 @@ import { api, ApiError, NetworkError } from '@/shared/client/api'
 import { useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
-import type { AnkiImportResult, Card, CardOption, CardReview, CardType, Deck, FlashcardData, Occlusion, ReviewLogEntry } from '../types'
+import type {
+  AnkiImportResult,
+  Card,
+  CardOption,
+  CardReview,
+  CardType,
+  Deck,
+  DeckImportResult,
+  FlashcardData,
+  Occlusion,
+  ReviewLogEntry,
+} from '../types'
 
-const flashcardsKey = ['flashcards'] as const
+export const flashcardsKey = ['flashcards'] as const
 
 const FLUSH_DELAY = 1500
 const RETRY_INTERVAL = 30_000
@@ -381,6 +392,16 @@ export async function importAnki(qc: QueryClient, file: File, progress: boolean)
   form.append('file', file)
   if (progress) form.append('progress', '1')
   const result = await api<AnkiImportResult>('/api/flashcards/anki', { method: 'POST', form })
+  await qc.invalidateQueries({ queryKey: flashcardsKey })
+  return result
+}
+
+/** Stapel-Datei (.noted-deck.zip) importieren – als neuer Stapel oder in `deckId` */
+export async function importDeckPackage(qc: QueryClient, file: File, deckId: string | null): Promise<DeckImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  if (deckId) form.append('deckId', deckId)
+  const result = await api<DeckImportResult>('/api/decks/import', { method: 'POST', form })
   await qc.invalidateQueries({ queryKey: flashcardsKey })
   return result
 }

@@ -6,13 +6,13 @@ import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
 import { AutoTextarea } from './CardEditor'
-import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, updateDeck } from '../client/flashcards'
+import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, importDeckPackage, updateDeck } from '../client/flashcards'
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
 import { MAX_NEW_PER_DAY } from '../limits'
-import type { AnkiImportResult, Deck } from '../types'
+import type { AnkiImportResult, Deck, DeckImportResult } from '../types'
 
 /** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit, „Antwort eintippen“ und Wiederholungsplan ändern. */
 export function DeckSettingsDialog({
@@ -290,6 +290,120 @@ export function AnkiImportDialog({ onClose }: { onClose: () => void }) {
             label="Lernstand übernehmen"
             description="Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen (für die Statistik) aus Anki."
           />
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** Stapel-Datei (.noted-deck.zip, z. B. von Kommilitonen) importieren – als neuer Stapel oder in einen bestehenden */
+export function DeckPackageImportDialog({
+  decks,
+  onClose,
+  onOpenDeck,
+}: {
+  decks: Deck[]
+  onClose: () => void
+  onOpenDeck: (id: string) => void
+}) {
+  const qc = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [target, setTarget] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<DeckImportResult | null>(null)
+
+  async function submit() {
+    if (!file) return setError('Bitte wähle eine Datei aus.')
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await importDeckPackage(qc, file, target || null))
+      void qc.invalidateQueries({ queryKey: attachmentsKey })
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Stapel importieren"
+      footer={
+        result ? (
+          <>
+            <Button onClick={onClose}>Fertig</Button>
+            <Button variant="primary" onClick={() => onOpenDeck(result.deck.id)}>
+              Stapel öffnen
+            </Button>
+          </>
+        ) : (
+          <>
+            {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+            <Button onClick={onClose}>Abbrechen</Button>
+            <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!file} data-testid="deck-import">
+              Importieren
+            </Button>
+          </>
+        )
+      }
+    >
+      {result ? (
+        <div className="space-y-2 text-sm" data-testid="deck-import-result">
+          <p>
+            <strong>{result.cards.toLocaleString('de-DE')}</strong> {result.cards === 1 ? 'Karte' : 'Karten'} in{' '}
+            {result.deck.created ? 'den neuen Stapel' : 'den Stapel'} „{result.deck.name}“ importiert
+            {result.media ? `, ${result.media} ${result.media === 1 ? 'Datei' : 'Dateien'} unter Dateien` : ''}.
+          </p>
+          {result.duplicates ? (
+            <p className="text-muted">
+              {result.duplicates} {result.duplicates === 1 ? 'Karte gab' : 'Karten gab'} es im Stapel schon.
+            </p>
+          ) : null}
+          {result.skipped.length ? (
+            <div>
+              <p className="text-muted">Übersprungen:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted">
+                {result.skipped.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Eine Stapel-Datei (.noted-deck.zip) enthält alle Karten samt Bildern und Einstellungen – exportiert über
+            ⋮ → „Als Datei exportieren“ im Stapel. Der Lernstand kommt nicht mit.
+          </p>
+          <Field label="Datei">
+            {(id) => (
+              <Input
+                id={id}
+                type="file"
+                accept=".zip"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="py-2"
+                data-testid="deck-file"
+              />
+            )}
+          </Field>
+          <Field label="Importieren in">
+            {(id) => (
+              <Select id={id} value={target} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">Neuen Stapel anlegen</option>
+                {decks.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
         </div>
       )}
     </Modal>

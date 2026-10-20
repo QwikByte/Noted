@@ -150,6 +150,10 @@ function getDeckRow(userId: number, id: string): DeckRow {
   return row
 }
 
+export function getDeck(userId: number, id: string): Deck {
+  return toDeck(getDeckRow(userId, id))
+}
+
 function checkDeckName(userId: number, name: string, excludeId?: string): string {
   const clean = name.replace(/\s+/g, ' ').trim()
   if (!clean) throw badRequest('Bitte gib einen Namen ein.')
@@ -332,6 +336,44 @@ export function createCards(userId: number, deckId: string, inputs: CardInput[])
     db.prepare('UPDATE decks SET updated_at = ? WHERE id = ?').run(t, deckId)
   })()
   return ids.map((id) => toCard(getCardRow(userId, id)))
+}
+
+/**
+ * Karten in Blöcken anlegen (Importe); lehnt der Server einen Block ab, Karte für Karte – ungültige werden übersprungen
+ * und mit Grund an `skip` gemeldet. Nur das Kartenlimit des Kontos bricht ab.
+ */
+export function createCardsSkipping<T extends { input: CardInput }>(
+  userId: number,
+  deckId: string,
+  items: T[],
+  skip: (reason: string) => void,
+): [T, Card][] {
+  const out: [T, Card][] = []
+  for (let i = 0; i < items.length; i += 500) {
+    const chunk = items.slice(i, i + 500)
+    try {
+      createCards(userId, deckId, chunk.map((d) => d.input)).forEach((card, k) => out.push([chunk[k], card]))
+      continue
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status === 413) throw err
+    }
+    for (const d of chunk) {
+      try {
+        out.push([d, createCards(userId, deckId, [d.input])[0]])
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status === 413) throw err
+        skip(`„${d.input.front.slice(0, 60)}“ (${err.message})`)
+      }
+    }
+  }
+  return out
+}
+
+/** Karten aussetzen bzw. wieder freigeben, ohne sie sonst zu ändern (Importe) */
+export function setSuspended(userId: number, ids: string[], suspended: boolean) {
+  const db = getDb()
+  const stmt = db.prepare('UPDATE cards SET suspended = ? WHERE id = ? AND user_id = ?')
+  db.transaction(() => ids.forEach((id) => stmt.run(suspended ? 1 : 0, id, userId)))()
 }
 
 export function updateCard(

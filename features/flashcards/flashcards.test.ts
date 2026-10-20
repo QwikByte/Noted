@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { strFromU8, unzipSync } from 'fflate'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { ADMIN_PASSWORD, call, loginAs, setupTestEnv } from '@/tests/helpers'
 import * as flashcards from '@/app/api/flashcards/route'
 import * as decks from '@/app/api/decks/route'
@@ -14,8 +14,13 @@ import * as stats from '@/app/api/stats/route'
 import * as statsExport from '@/app/api/stats/export/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
+import * as deckExport from '@/app/api/decks/[id]/export/route'
+import * as deckImport from '@/app/api/decks/import/route'
+import * as attachments from '@/app/api/attachments/route'
+import * as files from '@/app/api/files/[...name]/route'
+import { MAX_CARD_TEXT } from './limits'
 import { schedule } from './srs'
-import type { Card, CardReview, Deck, FlashcardData, ReviewLogEntry, StudyStats } from './types'
+import type { Card, CardReview, Deck, DeckImportResult, FlashcardData, ReviewLogEntry, StudyStats } from './types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -422,5 +427,135 @@ describe('Trennung der Konten und Export', () => {
     const files = unzipSync(new Uint8Array(await r.res.arrayBuffer()))
     const md = strFromU8(files['Karteikarten/Export- Test.md'])
     expect(md).toBe('---\ntags:\n  - flashcards/Export-Test\n---\n\nFrage::Antwort\n\nMC\n?\n- [x] ja\n- [ ] nein\n')
+  })
+})
+
+describe('Stapel als Datei', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+  let other = ''
+  let exported: Uint8Array
+
+  async function upload(name: string, bytes: Uint8Array, cookie = token) {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(bytes)], name))
+    const r = await call(attachments.POST, '/', { cookie, form })
+    expect(r.status).toBe(201)
+    return r.data.attachment as { filename: string }
+  }
+
+  async function importPackage(bytes: Uint8Array, cookie: string, deckId?: string) {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(bytes)], 'Kardiologie.noted-deck.zip'))
+    if (deckId) form.append('deckId', deckId)
+    return call(deckImport.POST, '/', { cookie, form })
+  }
+
+  const comparable = (c: Card) => ({
+    type: c.type,
+    front: c.front,
+    back: c.back,
+    options: c.options,
+    occlusion: c.occlusion,
+    suspended: c.suspended,
+  })
+
+  it('überträgt einen Stapel samt Bildern und Einstellungen verlustfrei in ein anderes Konto', async () => {
+    await upload('Herz Skizze.png', png)
+    const settings = { description: 'Herz', newPerDay: 7, typeAnswer: true, scheduler: 'fsrs', retention: 0.8 } as const
+    const d = await newDeck('Kardiologie', settings)
+    const occlusion = {
+      image: 'Herz Skizze.png',
+      masks: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.1, label: 'Aorta' }],
+      hideAll: false,
+    }
+    const created = await addCards(d.id, [
+      { type: 'basic', front: 'Was ist das? ![[Herz Skizze.png|200]]', back: 'Das Herz' },
+      { type: 'reversed', front: 'Aorta', back: 'Hauptschlagader' },
+      { type: 'mc', front: 'Kammern?', back: 'Erklärung', options: [{ text: 'vier', correct: true }, { text: 'zwei', correct: false }] },
+      { type: 'cloze', front: 'Das Herz hat {{vier}} Kammern.', back: '' },
+      { type: 'occlusion', front: 'Herz beschriften', occlusion },
+    ])
+    expect(created.status).toBe(201)
+    const original = created.data.cards as Card[]
+    await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: original[1].id }, body: { suspended: true } })
+
+    const r = await call(deckExport.GET, '/', { cookie: token, params: { id: d.id } })
+    expect(r.status).toBe(200)
+    expect(r.res.headers.get('content-type')).toBe('application/zip')
+    expect(r.res.headers.get('content-disposition')).toContain('Kardiologie.noted-deck.zip')
+    exported = new Uint8Array(await r.res.arrayBuffer())
+    expect(Object.keys(unzipSync(exported)).sort()).toEqual(['deck.json', 'media/Herz Skizze.png'])
+
+    // Zweites Konto, in dem es schon eine andere Datei mit demselben Namen gibt
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'stapelgast', password: 'Stapel-Kennwort-1' } })
+    other = await loginAs('stapelgast', 'Stapel-Kennwort-1')
+    await call(password.POST, '/', { cookie: other, body: { currentPassword: 'Stapel-Kennwort-1', newPassword: 'Stapel-Kennwort-2' } })
+    await upload('Herz Skizze.png', new Uint8Array([1, 2]), other)
+
+    const imported = await importPackage(exported, other)
+    expect(imported.status).toBe(200)
+    const result = imported.data as DeckImportResult
+    expect(result).toMatchObject({ deck: { name: 'Kardiologie', created: true }, cards: 5, media: 1, duplicates: 0, skipped: [] })
+
+    const theirs = await data(other)
+    expect(theirs.decks).toHaveLength(1)
+    expect(theirs.decks[0]).toMatchObject({ name: 'Kardiologie', ...settings })
+    const copies = theirs.cards.filter((c) => c.deckId === result.deck.id)
+    const mine = (await data()).cards.filter((c) => c.deckId === d.id)
+    // Die neue Datei heißt anders – die Verweise folgen ihr
+    const rename = (c: ReturnType<typeof comparable>) =>
+      JSON.parse(JSON.stringify(c).replaceAll('Herz Skizze.png', 'Herz Skizze 1.png')) as ReturnType<typeof comparable>
+    expect(copies.map(comparable)).toEqual(mine.map(comparable).map(rename))
+    expect(copies.map((c) => c.noteId)).toEqual([null, null, null, null, null])
+    expect(theirs.reviews).toEqual([])
+    const image = await call(files.GET, '/', { cookie: other, params: { name: ['Herz Skizze 1.png'] } })
+    expect(new Uint8Array(await image.res.arrayBuffer())).toEqual(png)
+  })
+
+  it('legt beim erneuten Import in denselben Stapel keine Karte doppelt an', async () => {
+    const target = (await data(other)).decks[0]
+    const again = await importPackage(exported, other, target.id)
+    expect(again.data).toMatchObject({ deck: { id: target.id, created: false }, cards: 0, media: 0, duplicates: 5 })
+    expect((await data(other)).cards.filter((c) => c.deckId === target.id)).toHaveLength(5)
+    // Ohne Zielstapel entsteht ein neuer mit freiem Namen
+    const copy = await importPackage(exported, other)
+    expect(copy.data).toMatchObject({ deck: { name: 'Kardiologie 1', created: true }, cards: 5, media: 0 })
+  })
+
+  it('überspringt ungültige Karten und zu große Dateien, lehnt fremde Dateien und Stapel ab', async () => {
+    const manifest = {
+      noted: 1,
+      deck: { name: 'Manipuliert' },
+      cards: [
+        { type: 'basic', front: 'x'.repeat(MAX_CARD_TEXT + 1), back: 'zu lang' },
+        { type: 'geheim', front: 'Unbekannt' },
+        { type: 'basic', front: 'Gültig', back: 'Ja' },
+      ],
+      media: ['riesig.png'],
+    }
+    process.env.MAX_UPLOAD_MB = '1'
+    try {
+      const bytes = zipSync({
+        'deck.json': strToU8(JSON.stringify(manifest)),
+        'media/riesig.png': new Uint8Array(2 * 1024 * 1024),
+      })
+      const r = await importPackage(bytes, token)
+      expect(r.status).toBe(200)
+      expect(r.data.cards).toBe(1)
+      expect(r.data.skipped).toEqual([
+        'Karte 2 (unbekannte Kartenart)',
+        'riesig.png (zu groß)',
+        expect.stringMatching(/^„x+“ \(Eine Kartenseite darf höchstens 20\.000 Zeichen lang sein\.\)$/),
+      ])
+    } finally {
+      delete process.env.MAX_UPLOAD_MB
+    }
+
+    const notAPackage = await importPackage(zipSync({ 'notiz.md': strToU8('# Hallo') }), token)
+    expect(notAPackage.status).toBe(400)
+    expect(notAPackage.data.message).toMatch(/deck\.json fehlt/)
+    const mine = (await data()).decks.find((x) => x.name === 'Kardiologie')!
+    expect((await importPackage(exported, other, mine.id)).status).toBe(404)
+    expect((await call(deckExport.GET, '/', { cookie: other, params: { id: mine.id } })).status).toBe(404)
   })
 })

@@ -454,6 +454,42 @@ test('Anki-Deck importieren', async ({ page }) => {
   expect(data.cards.filter((c: { deckId: string }) => c.deckId === deck.id).map((c: { type: string }) => c.type)).toEqual(['reversed', 'cloze'])
 })
 
+test('Stapel als Datei exportieren und wieder importieren', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Pharmakologie', description: 'Wirkstoffe' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await page.request.post(`/api/decks/${deck.id}/cards`, {
+    headers: await apiHeaders(page),
+    data: { cards: [{ type: 'basic', front: 'Ibuprofen', back: 'NSAR' }, { type: 'cloze', front: '==Paracetamol== senkt Fieber' }] },
+  })
+
+  // Export über das Stapel-Menü
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'Als Datei exportieren' }).click()])
+  expect(download.suggestedFilename()).toBe('Pharmakologie.noted-deck.zip')
+  const file = await download.path()
+
+  // Import in der Übersicht – als neuer Stapel mit freiem Namen
+  await page.goto('/?v=cards')
+  await page.getByRole('main').getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel importieren …' }).click()
+  await page.getByTestId('deck-file').setInputFiles(file)
+  await page.getByTestId('deck-import').click()
+  await expect(page.getByTestId('deck-import-result')).toContainText('2 Karten in den neuen Stapel „Pharmakologie 1“ importiert')
+  await shot(page, '41-deck-import')
+  await page.getByRole('button', { name: 'Stapel öffnen' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pharmakologie 1')
+  const data = await flashcards(page)
+  const copy = data.decks.find((d: { name: string }) => d.name === 'Pharmakologie 1')
+  cleanup.push(`/api/decks/${copy.id}`)
+  expect(copy.description).toBe('Wirkstoffe')
+  expect(data.cards.filter((c: { deckId: string }) => c.deckId === copy.id).map((c: { front: string }) => c.front)).toEqual([
+    'Ibuprofen',
+    '==Paracetamol== senkt Fieber',
+  ])
+})
+
 test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'FSRS-Stapel' }, 'deck')

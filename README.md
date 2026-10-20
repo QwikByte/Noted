@@ -68,6 +68,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
 - **Notiz abfragen** (**⋮ → Abfragen** in einer Notiz): ein Selbsttest direkt aus der Mitschrift, ohne vorher Karten anzulegen. Jede Überschrift mit Text darunter wird zur Frage, der Abschnitt ist verdeckt, bis du ihn aufdeckst und selbst bewertest. Am Ende siehst du, was du nicht wusstest – ein Klick öffnet die Notiz an dieser Stelle –, kannst es wiederholen oder als Karteikarten übernehmen. Ohne Einfluss auf den Wiederholungsplan; geht mit Markdown, formatiertem Text, Mindmaps und Canvas.
 - Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort`, tabulatorgetrennt – z. B. aus Quizlet oder Anki kopiert – oder Lückentexte mit `{{…}}`).
+- **Stapel weitergeben** (Stapel → ⋮ → **Als Datei exportieren**): eine `.noted-deck.zip` mit allen Karten (alle Kartenarten, Antworten, Lückentexte, Bildverdeckungen), den verwendeten Bildern und den Einstellungen des Stapels – ohne Lernstand. Importieren lässt sie sich in jedem Noted-Konto über Karteikarten → ⋮ → **Stapel importieren** (als neuer Stapel oder in einen bestehenden) oder über den allgemeinen Import. Karten, die es im Stapel schon gibt, kommen nicht doppelt.
 - **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (unter **Dateien**). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
 - **Lernstatistik** (Karteikarten → **Statistik**): Lerntage als Heatmap über das letzte Jahr, Serie (Tage am Stück), Bewertungen heute, Trefferquote und Zeit pro Karte (30 Tage, auch je Stapel), eine Vorschau, wie viele Karten in den nächsten 7 bzw. 30 Tagen fällig werden, und die Lernzeit je Fach aus dem Fokus-Timer. Grundlage ist ein Protokoll aller Bewertungen – auch offline gesammelte werden beim Hochladen mitprotokolliert. Über ⋮ lässt es sich als CSV herunterladen (für Excel oder LibreOffice).
 - **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe, Lückentexte (Absätze mit `{{Lücke}}`, auf Wunsch auch mit `==Markierungen==`) und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen.
@@ -100,9 +101,9 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
-- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen.
+- Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen. Daneben liegt jeder Stapel als verlustfreie `.noted-deck.zip`; beim Import zählt dann nur sie, damit keine Notiz aus der `.md` entsteht.
 - Die Termine liegen als `Kalender.ics` im ZIP.
-- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
+- Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), Karteikarten-Stapeln (`.noted-deck.zip`), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
@@ -308,7 +309,7 @@ docker compose start noted
 ## Notizen mitnehmen
 
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
-- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und die Termine als `Kalender.ics`.
+- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
 - **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
 
 Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
@@ -356,7 +357,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche
-  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Notiz abfragen
+  flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Stapel als Datei, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
@@ -370,7 +371,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
   ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten
   client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
-  server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll
+  server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll, ZIP, Volltextsuche
   markdown/             Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
   lib/                  Namensregeln, Formatierung, HTML-Hilfen
 sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt

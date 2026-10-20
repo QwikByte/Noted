@@ -1,13 +1,13 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { ChartColumn, CloudOff, Dumbbell, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
+import { ChartColumn, CloudOff, Dumbbell, FileArchive, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
 import { Menu, MenuItem } from '@/shared/ui/menu'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { ProgressBar, statusCounts } from './common'
 import { useNow } from '@/shared/client/now'
-import { AnkiImportDialog, DeckSettingsDialog } from './DeckDialogs'
+import { AnkiImportDialog, DeckPackageImportDialog, DeckSettingsDialog } from './DeckDialogs'
 import { useFlashcards } from '../client/flashcards'
 import { NetworkError } from '@/shared/client/api'
 import { deckCounts, type DeckCounts } from '../study'
@@ -39,6 +39,7 @@ export function CardsView() {
   const now = useNow()
   const [creating, setCreating] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [importingPackage, setImportingPackage] = useState(false)
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -82,6 +83,9 @@ export function CardsView() {
                 </Button>
               )}
             >
+              <MenuItem icon={<FileArchive />} onSelect={() => setImportingPackage(true)}>
+                Stapel importieren …
+              </MenuItem>
               <MenuItem icon={<Upload />} onSelect={() => setImporting(true)}>
                 Anki-Deck importieren …
               </MenuItem>
@@ -135,6 +139,13 @@ export function CardsView() {
         <DeckSettingsDialog onClose={() => setCreating(false)} onSaved={(deck) => app.go({ kind: 'deck', id: deck.id })} />
       ) : null}
       {importing ? <AnkiImportDialog onClose={() => setImporting(false)} /> : null}
+      {importingPackage ? (
+        <DeckPackageImportDialog
+          decks={data?.decks ?? []}
+          onClose={() => setImportingPackage(false)}
+          onOpenDeck={(id) => app.go({ kind: 'deck', id })}
+        />
+      ) : null}
     </Page>
   )
 }
