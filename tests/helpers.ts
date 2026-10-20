@@ -20,7 +20,10 @@ export async function setupTestEnv() {
   bootstrapAdmin(getDb())
   return {
     dir,
-    cleanup() {
+    /** Wartet auf das Auslesen hochgeladener Dateien im Hintergrund, dann Datenbank schließen und Verzeichnis löschen */
+    async cleanup() {
+      const { indexPending } = await import('@/features/attachments/server/index')
+      await indexPending()
       closeDb()
       fs.rmSync(dir, { recursive: true, force: true })
     },

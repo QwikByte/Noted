@@ -1,4 +1,5 @@
 // Typen für Notizen und Ordner (API-Verträge zwischen Server und Browser)
+import type { FileSearchResult } from '@/features/attachments/types'
 
 export type Folder = {
   id: string
@@ -47,4 +48,26 @@ export type SearchResult = {
   updatedAt: number
 }
 
+/** Antwort der Suche: Notizen und Treffer in Dateien (#tag-Filter gelten nur für Notizen) */
+export type SearchResponse = { results: SearchResult[]; files: FileSearchResult[] }
+
 export type TagCount = { tag: string; count: number }
+
+/**
+ * Anlass, zu dem ein älterer Stand gesichert wurde: edit – Bearbeiten nach einer Pause · conflict – vor dem
+ * Überschreiben bei einem Konflikt · restore – vor dem Wiederherstellen · format – vor einem Formatwechsel
+ */
+export type NoteVersionReason = 'edit' | 'conflict' | 'restore' | 'format'
+
+/** Gesicherter Stand einer Notiz (ohne Inhalt, für die Liste) – size: Größe des Inhalts in Bytes */
+export type NoteVersion = {
+  id: number
+  version: number
+  title: string
+  format: NoteFormat
+  reason: NoteVersionReason
+  createdAt: number
+  size: number
+}
+
+export type NoteVersionWithContent = NoteVersion & { content: string }

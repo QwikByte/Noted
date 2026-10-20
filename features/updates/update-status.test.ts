@@ -17,10 +17,10 @@ beforeAll(async () => {
   process.env.UPDATE_STATUS_DIR = dir
 })
 
-afterAll(() => {
+afterAll(async () => {
   delete process.env.UPDATE_STATUS_DIR
   fs.rmSync(dir, { recursive: true, force: true })
-  env.cleanup()
+  await env.cleanup()
 })
 
 beforeEach(() => {

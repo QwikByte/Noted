@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  ChevronDown,
   ChevronRight,
   Cloud,
   CloudOff,
@@ -18,6 +19,7 @@ import {
   FileText,
   FolderInput,
   GraduationCap,
+  History,
   Info,
   Layers,
   Link2,
@@ -38,6 +40,7 @@ import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
+import { HistoryDialog } from './dialogs'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
@@ -60,7 +63,7 @@ import type { NoteEditorHandle } from '../client/editor-handle'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
-import { findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
+import { extractLinks, findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
 import { buildExportIndex } from '@/features/transfer/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
@@ -81,6 +84,10 @@ const MindmapEditor = dynamic(() => import('@/features/mindmap/components/Mindma
   loading: editorLoading,
 })
 const CanvasEditor = dynamic(() => import('@/features/canvas/components/CanvasEditor'), {
+  ssr: false,
+  loading: editorLoading,
+})
+const LocalGraph = dynamic(() => import('@/features/graph/components/GraphView').then((m) => m.LocalGraph), {
   ssr: false,
   loading: editorLoading,
 })
@@ -216,6 +223,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [mode, setModeState] = useState<EditorMode>(() => (note.content.trim() === '' ? 'edit' : storedMode))
   const [infoOpen, setInfoOpen] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
@@ -519,6 +527,19 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     }
   }
 
+  // Lokaler Graph nur, wenn die Notiz mit anderen verbunden ist (ein- oder ausgehend)
+  const { data: backlinks = [] } = useBacklinks(mode === 'read' ? note.id : null)
+  const hasLinks = useMemo(
+    () =>
+      mode === 'read' &&
+      (backlinks.length > 0 ||
+        extractLinks(text).some((key) => {
+          const target = app.resolveTitle(key)
+          return !!target && target.id !== note.id
+        })),
+    [mode, backlinks, text, app, note.id],
+  )
+
   const { data: flashcards } = useFlashcards()
   const linkedCards = useMemo(() => flashcards?.cards.filter((c) => c.noteId === note.id).length ?? 0, [flashcards, note.id])
   // Im Lesemodus auf Karten in der Notiz hinweisen (Frage::Antwort, Frage-Callouts …)
@@ -704,6 +725,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
               Format …
             </MenuItem>
+            <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
+              Verlauf …
+            </MenuItem>
             <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
               Informationen
             </MenuItem>
@@ -816,7 +840,10 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                     onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                   />
                 ) : null}
-                <Backlinks id={note.id} />
+                <div className="mx-auto max-w-[44rem] space-y-4 px-5 pb-16">
+                  <Backlinks id={note.id} />
+                  {hasLinks ? <NoteGraph id={note.id} /> : null}
+                </div>
               </>
             ) : null}
           </div>
@@ -835,6 +862,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }}
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
+      <HistoryDialog
+        noteId={note.id}
+        title={title}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={(restored) => {
+          loadedVersion.current = restored.version
+          applyRemote(restored)
+        }}
+      />
       <Modal open={infoOpen} onClose={() => setInfoOpen(false)} title="Informationen" size="sm">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-muted">Erstellt</dt>
@@ -934,21 +971,38 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
     return compact ? <p className="text-sm text-muted">Keine anderen Notizen verlinken hierher.</p> : null
   }
   return (
-    <div className={cn(compact ? '' : 'mx-auto max-w-[44rem] px-5 pb-16')}>
-      <div className={cn('rounded-lg border border-border', compact ? 'p-3' : 'p-4')}>
-        <h3 className="mb-2 text-sm font-semibold text-muted">
-          Verlinkt in {data.length} {data.length === 1 ? 'Notiz' : 'Notizen'}
-        </h3>
-        <ul className="space-y-1">
-          {data.map((b) => (
-            <li key={b.id}>
-              <button type="button" onClick={() => app.go({ kind: 'note', id: b.id })} className="text-sm text-accent-text hover:underline">
-                {b.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div className={cn('rounded-lg border border-border', compact ? 'p-3' : 'p-4')}>
+      <h3 className="mb-2 text-sm font-semibold text-muted">
+        Verlinkt in {data.length} {data.length === 1 ? 'Notiz' : 'Notizen'}
+      </h3>
+      <ul className="space-y-1">
+        {data.map((b) => (
+          <li key={b.id}>
+            <button type="button" onClick={() => app.go({ kind: 'note', id: b.id })} className="text-sm text-accent-text hover:underline">
+              {b.title}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Lesemodus: Graph der verlinkten Notizen – zugeklappt, bis man ihn braucht (React Flow wird erst dann geladen) */
+function NoteGraph({ id }: { id: string }) {
+  const [open, setOpen] = usePref<'1' | '0'>('noted:noteGraph', '0')
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen(open === '1' ? '0' : '1')}
+        aria-expanded={open === '1'}
+        className="flex w-full items-center gap-1 p-4 text-sm font-semibold text-muted hover:text-fg"
+      >
+        {open === '1' ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        Lokaler Graph
+      </button>
+      {open === '1' ? <LocalGraph noteId={id} /> : null}
     </div>
   )
 }

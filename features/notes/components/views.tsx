@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CloudOff,
   FileText,
+  File,
   Files,
   Folder as FolderIcon,
   FolderPlus,
@@ -31,7 +32,8 @@ import { keys, useFolders, useNotes } from '../client/queries'
 import { startDrag, useDraggedId, useDropTarget } from '../client/drag'
 import { folderPath, sortByName } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
-import type { Folder, NoteSummary, SearchResult } from '../types'
+import type { FileSearchResult } from '@/features/attachments/types'
+import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 
 /** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
 function NoteList({ children }: { children: React.ReactNode }) {
@@ -331,6 +333,38 @@ function snippetHtml(snippet: string) {
   return escapeHtml(snippet).replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>')
 }
 
+/** Treffer in einer Datei: PDFs öffnen im eingebauten Viewer auf der Seite, andere Dateien werden heruntergeladen */
+function FileHit({ hit }: { hit: FileSearchResult }) {
+  const app = useApp()
+  const pdf = hit.mime === 'application/pdf'
+  const className =
+    'group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-subtle focus-visible:-outline-offset-2'
+  const body = (
+    <>
+      {pdf ? <FileText className="mt-1 size-4 shrink-0 text-faint" /> : <File className="mt-1 size-4 shrink-0 text-faint" />}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate font-semibold group-hover:text-accent-text">{hit.filename}</span>
+          {pdf ? <span className="shrink-0 text-xs text-faint tabular-nums">Seite {hit.page}</span> : null}
+        </span>
+        <span
+          className="search-snippet line-clamp-2 text-sm text-muted"
+          dangerouslySetInnerHTML={{ __html: snippetHtml(hit.snippet) }}
+        />
+      </span>
+    </>
+  )
+  return pdf ? (
+    <button type="button" onClick={() => app.openPdf(hit.filename, hit.page)} className={className}>
+      {body}
+    </button>
+  ) : (
+    <a href={`/api/attachments/${hit.id}?download=1`} className={className}>
+      {body}
+    </a>
+  )
+}
+
 export function SearchView({ initialQuery }: { initialQuery: string }) {
   const app = useApp()
   const [query, setQuery] = useState(initialQuery)
@@ -353,10 +387,12 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
 
   const search = useQuery({
     queryKey: keys.search(debounced),
-    queryFn: () => api<{ results: SearchResult[] }>(`/api/search?q=${encodeURIComponent(debounced)}`).then((r) => r.results),
+    queryFn: () => api<SearchResponse>(`/api/search?q=${encodeURIComponent(debounced)}`),
     enabled: debounced.length > 0,
     staleTime: 5_000,
   })
+  const results = search.data?.results ?? []
+  const files = search.data?.files ?? []
 
   // Offline: zumindest Titel und Auszüge lokal durchsuchen
   const offlineResults = useMemo(() => {
@@ -380,7 +416,11 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
         />
       </div>
       {!debounced ? (
-        <EmptyState icon={<Search />} title="Volltextsuche" text="Mit #tag filterst du nach Tags." />
+        <EmptyState
+          icon={<Search />}
+          title="Volltextsuche"
+          text="Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags."
+        />
       ) : offlineResults ? (
         <>
           <p className="mb-3 flex items-center gap-2 text-sm text-warning">
@@ -396,18 +436,34 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
         <div className="flex justify-center py-10 text-faint">
           <Loader2 className="size-6 animate-spin" />
         </div>
-      ) : (search.data ?? []).length === 0 ? (
+      ) : results.length === 0 && files.length === 0 ? (
         <EmptyState icon={<Search />} title="Nichts gefunden" />
       ) : (
         <>
-          <p className="mb-3 text-sm text-muted">
-            {search.data!.length} {search.data!.length === 1 ? 'Treffer' : 'Treffer'}
-          </p>
-          <NoteList>
-            {search.data!.map((r) => (
-              <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
-            ))}
-          </NoteList>
+          {results.length > 0 ? (
+            <>
+              <p className="mb-3 text-sm text-muted">
+                {results.length} {results.length === 1 ? 'Treffer' : 'Treffer'}
+              </p>
+              <NoteList>
+                {results.map((r) => (
+                  <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
+                ))}
+              </NoteList>
+            </>
+          ) : null}
+          {files.length > 0 ? (
+            <section className={cn(results.length > 0 && 'mt-8')} aria-labelledby="search-files" data-testid="search-files">
+              <h2 id="search-files" className="mb-3 text-sm text-muted">
+                In Dateien
+              </h2>
+              <NoteList>
+                {files.map((f) => (
+                  <FileHit key={`${f.id}:${f.page}`} hit={f} />
+                ))}
+              </NoteList>
+            </section>
+          ) : null}
         </>
       )}
     </Page>

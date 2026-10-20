@@ -21,6 +21,8 @@ export type Draft = {
   format?: NoteFormat
   /** Server-Version, auf der der Entwurf basiert */
   baseVersion: number | null
+  /** Nach einem Konflikt bewusst „Meine Version“ gewählt – der Server sichert seinen Stand dann im Verlauf */
+  overwrite?: boolean
   rev: number
   updatedAt: number
 }
@@ -245,6 +247,7 @@ class SyncStore {
             format: draft.format,
             baseVersion: draft.baseVersion ?? undefined,
             autoRename: true,
+            reason: draft.overwrite ? 'conflict' : undefined,
           },
           keepalive,
         })
@@ -260,6 +263,7 @@ class SyncStore {
         // Während des Speicherns wurde weitergeschrieben
         current.isNew = false
         current.baseVersion = note.version
+        delete current.overwrite
         if (current.title !== undefined && current.title === draft.title) current.title = note.title
         this.setStatus(id, { state: 'pending' })
         this.schedule(id, SAVE_DELAY)
@@ -299,6 +303,7 @@ class SyncStore {
     if (!draft) return
     if (mode === 'mine' && serverNote) {
       draft.baseVersion = serverNote.version
+      draft.overwrite = true
       this.setStatus(id, { state: 'pending' })
       this.persist()
       this.emit()

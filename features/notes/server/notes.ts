@@ -4,11 +4,22 @@ import { getDb } from '@/shared/server/db'
 import { badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
 import { getConfig } from '@/shared/server/config'
+import { buildFtsQuery, parseSearch, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
 import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
 import { noteText } from '../format'
 import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
-import type { Folder, Note, NoteFormat, NoteSummary, SearchResult, TagCount, TrashedNote } from '../types'
+import { getVersion, snapshotIfDue } from './versions'
+import type {
+  Folder,
+  Note,
+  NoteFormat,
+  NoteSummary,
+  NoteVersionReason,
+  SearchResult,
+  TagCount,
+  TrashedNote,
+} from '../types'
 
 export const MAX_NOTE_LENGTH = 2_000_000 // ca. 2 MB Text pro Notiz
 
@@ -295,6 +306,12 @@ export type NotePatch = {
   baseVersion?: number
   /** Bei Titel-Konflikt automatisch einen freien Namen wählen statt Fehler */
   autoRename?: boolean
+  /**
+   * Anlass, wenn es kein gewöhnliches Bearbeiten ist – der bisherige Stand wird dann immer im Verlauf gesichert:
+   * conflict – die eigene Version überschreibt nach einem Konflikt den Server-Stand · restore – ein älterer Stand
+   * wird wiederhergestellt
+   */
+  reason?: 'conflict' | 'restore'
 }
 
 export function updateNote(userId: number, id: string, patch: NotePatch): { note: Note; linksUpdated: number } {
@@ -337,8 +354,11 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   let linksUpdated = 0
 
   const text = contentChanged || bump ? noteText(format, content) : ''
+  const snapshotReason: NoteVersionReason | null =
+    patch.reason && bump ? patch.reason : format !== current.format ? 'format' : contentChanged ? 'edit' : null
 
   db.transaction(() => {
+    if (snapshotReason) snapshotIfDue(db, current, snapshotReason)
     db.prepare(
       `UPDATE notes SET title = ?, folder_id = ?, content = ?, format = ?, excerpt = ?, pinned = ?,
          version = version + ?, updated_at = ?
@@ -361,6 +381,12 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   return { note: getNote(userId, id), linksUpdated }
 }
 
+/** Älteren Stand zurückholen – ein gewöhnliches Speichern, dabei wird der bisherige Stand gesichert ('restore') */
+export function restoreVersion(userId: number, noteId: string, versionId: number) {
+  const { title, format, content } = getVersion(userId, noteId, versionId)
+  return updateNote(userId, noteId, { title, format, content, reason: 'restore', autoRename: true })
+}
+
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -374,11 +400,12 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
        WHERE n.user_id = ? AND n.deleted_at IS NULL AND l.target = ? AND n.id != ?`,
     )
     .all(userId, key, noteId) as NoteRow[]
-  // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern
-  const other = db
-    .prepare('SELECT 1 FROM notes WHERE user_id = ? AND deleted_at IS NULL AND id != ? AND lower(title) = ?')
-    .get(userId, noteId, key)
-  if (other) return 0
+  // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern. Verglichen wird
+  // in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein, „Übungen“ bliebe sonst unerkannt
+  const others = db
+    .prepare('SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND id != ?')
+    .all(userId, noteId) as { title: string }[]
+  if (others.some((n) => linkKey(n.title) === key)) return 0
 
   // In formatiertem Text (HTML) steht „&“ als „&amp;“ – andere Sonderzeichen sind in Titeln nicht erlaubt
   const pattern = (title: string) =>
@@ -497,21 +524,9 @@ export function purgeTrash(userId?: number) {
 // Suche, Tags, Backlinks
 // ---------------------------------------------------------------------------
 
-const SNIPPET_START = '\u0002'
-const SNIPPET_END = '\u0003'
-
-function buildFtsQuery(terms: string[]): string {
-  return terms.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ')
-}
-
 export function searchNotes(userId: number, query: string, limit = 50): SearchResult[] {
   const db = getDb()
-  const parts = query.trim().split(/\s+/).filter(Boolean).slice(0, 12)
-  const tags = parts.filter((p) => p.startsWith('#') && p.length > 1).map((p) => p.slice(1).toLowerCase())
-  const terms = parts
-    .filter((p) => !p.startsWith('#'))
-    .map((p) => p.replace(/[\u0000-\u001f]/g, ''))
-    .filter(Boolean)
+  const { terms, tags } = parseSearch(query)
   if (tags.length === 0 && terms.length === 0) return []
 
   const tagFilter = tags

@@ -8,5 +8,17 @@ export type Attachment = {
   createdAt: number
 }
 
-/** Datei samt den Notizen, die sie einbetten oder verlinken – danach richtet sich ihr Ordner im Bereich „Dateien“ */
-export type FileEntry = Attachment & { noteIds: string[] }
+/**
+ * Volltextsuche in einer Datei: done – durchsuchbar (reason: Hinweis, falls gekürzt) · skipped – nicht durchsucht
+ * (reason: Grund, z. B. kein Text oder zu groß) · failed – Fehler beim Lesen · pending – wird noch gelesen
+ */
+export type SearchIndexInfo = { state: 'done' | 'skipped' | 'failed' | 'pending'; pages: number; reason: string | null }
+
+/**
+ * Datei samt den Notizen, die sie einbetten oder verlinken – danach richtet sich ihr Ordner im Bereich „Dateien“.
+ * search fehlt bei Dateien, deren Text nicht durchsucht wird (z. B. Bilder).
+ */
+export type FileEntry = Attachment & { noteIds: string[]; search?: SearchIndexInfo }
+
+/** Treffer der Volltextsuche in einer Datei – page: Seite im PDF (Textdateien: 1) */
+export type FileSearchResult = { id: string; filename: string; mime: string; page: number; snippet: string }

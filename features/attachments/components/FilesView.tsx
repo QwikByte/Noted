@@ -13,6 +13,7 @@ import {
   FileVideo,
   Folder as FolderIcon,
   Loader2,
+  RefreshCw,
   Trash2,
   Unlink,
   Upload,
@@ -30,7 +31,7 @@ import { formatBytes, formatRelative } from '@/shared/lib/format'
 import { copyText } from '@/shared/client/clipboard'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '../client/upload'
 import { filesAt, UNLINKED, type FileItem } from '../folders'
-import type { FileEntry } from '../types'
+import type { FileEntry, SearchIndexInfo } from '../types'
 
 function FileIcon({ mime }: { mime: string }) {
   if (mime.startsWith('audio/')) return <FileAudio className="size-6" />
@@ -83,6 +84,19 @@ export function FilesView({ folder: level }: { folder?: string }) {
     }
     setUploading(false)
     qc.invalidateQueries({ queryKey: attachmentsKey })
+  }
+
+  /** Text für die Volltextsuche erneut auslesen (z. B. nach einem Fehler) */
+  async function reindex(file: FileEntry) {
+    toast.show(`Lese „${file.filename}“ …`)
+    try {
+      const { search } = await api<{ search: SearchIndexInfo }>(`/api/attachments/${file.id}/index`, { method: 'POST' })
+      await qc.invalidateQueries({ queryKey: attachmentsKey })
+      if (search.state === 'done') toast.success(`„${file.filename}“ ist durchsuchbar.`)
+      else toast.error(`„${file.filename}“: ${searchLabel(search)}`)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
   }
 
   if (level && !unlinked && !folder) {
@@ -197,7 +211,12 @@ export function FilesView({ folder: level }: { folder?: string }) {
       ) : content.files.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {content.files.map((item) => (
-            <FileCard key={item.file.id} item={item} onDelete={() => setToDelete(item.file)} />
+            <FileCard
+              key={item.file.id}
+              item={item}
+              onDelete={() => setToDelete(item.file)}
+              onReindex={() => void reindex(item.file)}
+            />
           ))}
         </div>
       ) : null}
@@ -239,7 +258,21 @@ function FolderTile({ icon, name, count, onClick }: FolderTileProps) {
   )
 }
 
-function FileCard({ item, onDelete }: { item: FileItem; onDelete: () => void }) {
+/** Ob die Volltextsuche die Datei findet – nur bei PDFs und Textdateien */
+function searchLabel(search: SearchIndexInfo): string {
+  switch (search.state) {
+    case 'done':
+      return search.reason ? `durchsuchbar (${search.reason})` : 'durchsuchbar'
+    case 'pending':
+      return 'wird für die Suche gelesen …'
+    case 'skipped':
+      return `nicht indiziert: ${search.reason ?? 'unbekannt'}`
+    case 'failed':
+      return 'nicht indiziert: Fehler beim Lesen'
+  }
+}
+
+function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () => void; onReindex: () => void }) {
   const app = useApp()
   const toast = useToast()
   const { file: f, notes } = item
@@ -273,6 +306,11 @@ function FileCard({ item, onDelete }: { item: FileItem; onDelete: () => void }) 
         <p className="text-xs text-faint">
           {formatBytes(f.size)} · {formatRelative(f.createdAt)}
         </p>
+        {f.search ? (
+          <p className="truncate text-xs text-faint" title={searchLabel(f.search)} data-testid="file-search-state">
+            {searchLabel(f.search)}
+          </p>
+        ) : null}
         {notes.length > 0 ? (
           <button
             type="button"
@@ -310,6 +348,11 @@ function FileCard({ item, onDelete }: { item: FileItem; onDelete: () => void }) 
           <a href={`${url}?download=1`} title="Herunterladen" aria-label="Herunterladen" className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg">
             <Download className="size-4" />
           </a>
+          {f.search && f.search.state !== 'pending' ? (
+            <Button size="icon-sm" variant="ghost" title="Erneut indizieren" aria-label="Erneut indizieren" onClick={onReindex}>
+              <RefreshCw className="size-4" />
+            </Button>
+          ) : null}
           <Button size="icon-sm" variant="ghost" title="Löschen" aria-label="Löschen" onClick={onDelete} className="ml-auto">
             <Trash2 className="size-4 text-danger" />
           </Button>

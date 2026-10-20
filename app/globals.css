@@ -907,6 +907,15 @@ html.dragging * {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Vorschau im Verlauf: ohne den Leerraum unter dem Text, den Lesemodus und Editor brauchen */
+.history-preview .markdown-body,
+.history-preview .plain-text {
+  max-width: none;
+  padding: 0 4px 16px;
+}
+.history-preview .markdown-body > div > :first-child {
+  margin-top: 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* Karteikarten                                                         */
@@ -1030,6 +1039,64 @@ html.dragging * {
 }
 .mindmap-flow[data-ready] .react-flow {
   opacity: 1;
+}
+
+/* ---- Graph der Wikilinks ---- */
+.graph-flow .react-flow__node {
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.graph-node {
+  position: relative;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 2px var(--bg-subtle);
+}
+/* Unsichtbare Anschlüsse in der Mitte: Die Kanten verbinden die Mittelpunkte */
+.graph-node .react-flow__handle {
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.graph-label {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 50%;
+  max-width: 14rem;
+  overflow: hidden;
+  transform: translateX(-50%);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.graph-flow[data-labels='off'] .graph-label {
+  display: none;
+}
+.graph-flow[data-labels='off'] :is(.graph-match, .graph-center) .graph-label {
+  display: block;
+}
+.graph-match,
+.graph-center {
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--accent);
+}
+.graph-match .graph-label,
+.graph-center .graph-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.graph-searching .react-flow__node:not(:has(.graph-match)) {
+  opacity: 0.25;
 }
 
 /* ---- Mindmap ---- */

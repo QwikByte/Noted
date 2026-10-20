@@ -408,4 +408,39 @@ export const migrations: string[] = [
   DROP TABLE exercise_sheets;
   DROP TABLE courses;
   `,
+
+  /* 19: Versionsverlauf. Gesichert wird jeweils der bisherige Stand einer Notiz, bevor er überschrieben wird
+     (reason: Bearbeiten nach einer Pause, Konflikt, Wiederherstellen, Formatwechsel). */ `
+  CREATE TABLE note_versions (
+    id INTEGER PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL,
+    content TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('edit', 'conflict', 'restore', 'format')),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX note_versions_note ON note_versions(note_id, created_at);
+  `,
+
+  /* 20: Volltextsuche in Anhängen (PDF und Textdateien). Eine Zeile je Seite, damit Treffer eine Seitenzahl haben
+     (Textdateien: Seite 1). attachments_index merkt sich je Datei, ob sie durchsuchbar ist (done), übersprungen
+     wurde (skipped, Grund in reason – z. B. kein Text oder zu groß) oder beim Lesen ein Fehler auftrat (failed). */ `
+  CREATE VIRTUAL TABLE attachments_fts USING fts5(
+    attachment_id UNINDEXED,
+    user_id UNINDEXED,
+    page UNINDEXED,
+    content,
+    tokenize = 'unicode61 remove_diacritics 2'
+  );
+  CREATE TABLE attachments_index (
+    attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK (state IN ('done', 'skipped', 'failed')),
+    pages INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    indexed_at INTEGER NOT NULL
+  );
+  `,
 ]
