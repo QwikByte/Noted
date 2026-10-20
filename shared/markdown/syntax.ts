@@ -13,6 +13,8 @@ export type RenderEnv = {
   fileUrl?: (name: string) => string
   /** Zeilenversatz (z. B. durch entferntes Frontmatter) für Checkbox-Zeilennummern */
   lineOffset?: number
+  /** Links auf Notizen nur als Text – ohne Ziel, ID oder „anlegen“ (geteilte Ansicht für Gäste) */
+  plainNoteLinks?: boolean
 }
 
 function slugify(text: string): string {
@@ -105,6 +107,7 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
   if (!target && heading) {
     return `<a class="wikilink" href="${anchor}">${label}</a>`
   }
+  if (env.plainNoteLinks) return `<span class="wikilink-text">${label}</span>`
   const attrs = `data-target="${escapeHtml(target)}"${heading ? ` data-heading="${escapeHtml(heading)}"` : ''}`
   if (embed) {
     return note

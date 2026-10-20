@@ -907,6 +907,12 @@ html.dragging * {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Geteilte Notiz: bündig mit dem Titel und ohne den Leerraum unter dem Text, den der Lesemodus in der App braucht */
+.shared-note .markdown-body:not(.card-markdown),
+.shared-note .plain-text {
+  max-width: none;
+  padding: 0 20px 2rem;
+}
 /* Vorschau im Verlauf: ohne den Leerraum unter dem Text, den Lesemodus und Editor brauchen */
 .history-preview .markdown-body,
 .history-preview .plain-text {

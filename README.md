@@ -230,6 +230,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
 | `EXTERNAL_IMAGES` | `true` | Bilder von fremden Servern in Notizen anzeigen; `false` blockiert sie (ein externes Bild verrät dem fremden Server beim Öffnen die IP-Adresse) |
+| `SHARING` | `true` | Notizen per Link zum Lesen teilen (`/s/…`, ohne Anmeldung); `false` schaltet alle Freigaben ab |
 | `MAX_UPLOAD_MB` | `25` | Maximale Größe hochgeladener Dateien |
 | `MAX_IMPORT_MB` | `200` | Maximale Größe eines Imports |
 | `SESSION_DAYS` | `30` | Sitzungsdauer ohne Aktivität |
@@ -311,6 +312,7 @@ docker compose start noted
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
 - **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
 - **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
+- **Teilen** (**⋮ → Teilen …** in der Notiz): erzeugt einen Link, mit dem Kommilitonen die Notiz ohne Konto lesen können – nicht bearbeiten. Gültig 7 Tage, 30 Tage oder unbegrenzt. Eingebettete Bilder und PDFs der Notiz sind dabei, Links auf andere Notizen erscheinen nur als Text, Canvas lässt sich nicht teilen. Den Link siehst du nur beim Erstellen (gespeichert wird nur ein Hash). Widerrufen kannst du ihn im Dialog oder unter **Einstellungen → Geteilte Links**; dort steht auch, wie oft er geöffnet wurde. Liegt die Notiz im Papierkorb, ist der Link so lange tot. Mit `SHARING=false` ist Teilen für die ganze Instanz abgeschaltet.
 
 Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
 
@@ -350,7 +352,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 **Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
 
 ```
-app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin) und API-Routen (app/api)
+app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin, geteilte Notizen) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
   notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
@@ -360,6 +362,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan, Klausurmodus, Karten ↔ Markdown, Stapel als Datei, Notiz abfragen
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
+  sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
@@ -376,7 +379,7 @@ shared/                 Feature-unabhängiger Code (importiert nie aus features/
   lib/                  Namensregeln, Formatierung, HTML-Hilfen
 sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 instrumentation.ts      Serverstart: Datenbank öffnen und migrieren, ersten Admin anlegen, regelmäßig aufräumen
-proxy.ts                Content-Security-Policy und Login-Umleitung
+proxy.ts                Content-Security-Policy und Login-Umleitung (außer /login und geteilten Notizen unter /s)
 scripts/install.sh      Installer für Ubuntu/Debian
 scripts/auto-update.sh  Automatische Updates auf dem Server (Status in .update/)
 scripts/domain.sh       Domain anzeigen/ändern (sudo noted-domain)

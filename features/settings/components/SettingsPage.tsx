@@ -24,6 +24,9 @@ import { flashcardsKey } from '@/features/flashcards/client/flashcards'
 import { sync } from '@/features/notes/client/sync'
 import { useFontSize, usePref, type EditorMode } from '@/shared/client/prefs'
 import type { SessionInfo } from '@/features/auth/types'
+import { useSharingEnabled } from '@/features/sharing/client/enabled'
+import { useShares } from '@/features/sharing/client/queries'
+import { ShareList } from '@/features/sharing/components/ShareList'
 
 export function SettingsPage() {
   const user = useUser()
@@ -38,6 +41,7 @@ export function SettingsPage() {
         <MfaSection />
         <SessionsSection />
         <AppearanceSection />
+        <SharesSection />
         <DataSection />
         <Section title="Abmelden" description={`Angemeldet als @${user.username}.`}>
           <Button onClick={confirmLogout}>
@@ -259,6 +263,20 @@ function SessionsSection() {
           Alle anderen Geräte abmelden
         </Button>
       ) : null}
+    </Section>
+  )
+}
+
+function SharesSection() {
+  if (!useSharingEnabled()) return null
+  return <SharesList />
+}
+
+function SharesList() {
+  const shares = useShares()
+  return (
+    <Section title="Geteilte Links" description="Notizen, die du per Link zum Lesen freigegeben hast. Ein widerrufener Link führt sofort ins Leere.">
+      <ShareList query={shares} empty="Du hast keine Notizen geteilt." withTitle />
     </Section>
   )
 }

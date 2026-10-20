@@ -443,4 +443,18 @@ export const migrations: string[] = [
     indexed_at INTEGER NOT NULL
   );
   `,
+
+  /* 21: Notizen per Link teilen (nur lesen). id ist der SHA-256 des Tokens aus dem Link – das Token selbst wird nicht
+     gespeichert. expires_at NULL = unbegrenzt; opens und last_opened_at zählen Aufrufe der geteilten Seite. */ `
+  CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    last_opened_at INTEGER,
+    opens INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX shares_note ON shares(note_id);
+  `,
 ]

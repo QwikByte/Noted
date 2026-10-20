@@ -6,12 +6,14 @@ export async function register() {
   const { purgeExpiredSessions } = await import('@/features/auth/server/session')
   const { purgeTrash } = await import('@/features/notes/server/notes')
   const { purgeVersions } = await import('@/features/notes/server/versions')
+  const { purgeExpiredShares } = await import('@/features/sharing/server/shares')
   bootstrapAdmin(getDb())
   const cleanup = () => {
     try {
       purgeExpiredSessions()
       purgeTrash()
       purgeVersions()
+      purgeExpiredShares()
     } catch (err) {
       console.error('[noted] Aufräumen fehlgeschlagen', err)
     }

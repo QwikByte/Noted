@@ -246,3 +246,62 @@ test('Graph: verlinkte Notizen sehen und per Klick öffnen', async ({ page }) =>
   await expect(page.getByTestId('note-title')).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 1, name: 'Graph Entropie' })).toBeVisible()
 })
+
+test('Notiz per Link teilen: Gäste lesen ohne Konto, nach dem Widerruf ist der Link tot', async ({ page, browser }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  // 1×1-PNG
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+  const up = await page.request.post('/api/attachments', { headers, multipart: { file: { name: 'Teilbild.png', mimeType: 'image/png', buffer: png } } })
+  const att = (await up.json()).attachment as { id: string; filename: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const content = [
+    '# Zusammenfassung',
+    '',
+    `Für die Lerngruppe ![[${att.filename}]]`,
+    '',
+    'Mehr in [[Private Notiz]].',
+    '',
+    '<script>window.__xss = 1</script><img src="x" onerror="window.__xss = 2">',
+  ].join('\n')
+  const data = { title: 'Für Kommilitonen', content, folderId: null }
+  const note = (await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }
+  cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Teilen …' }).click()
+  await page.getByRole('radio', { name: '7 Tage' }).click()
+  await page.getByRole('button', { name: 'Link erstellen' }).click()
+  const url = await page.getByTestId('share-url').inputValue()
+  expect(url).toMatch(/\/s\/[A-Za-z0-9_-]{43}$/)
+  await expect(page.getByTestId('share-list')).toContainText('gültig bis')
+  await shot(page, '95-share-dialog')
+
+  // Gast ohne Konto
+  const guest = await browser.newContext({ locale: 'de-DE' })
+  const g = await guest.newPage()
+  const res = await g.goto(url)
+  expect(res?.status()).toBe(200)
+  expect(res?.headers()['x-robots-tag']).toContain('noindex')
+  await expect(g.getByTestId('shared-title')).toHaveText('Für Kommilitonen')
+  const view = g.getByTestId('shared-content')
+  await expect(view.getByRole('heading', { name: 'Zusammenfassung' })).toBeVisible()
+  const img = view.locator('img.embed-image')
+  await expect(img).toHaveAttribute('src', /\/api\/s\/.+\/files\/Teilbild\.png$/)
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1)
+  // Links auf andere Notizen sind reiner Text, Skripte aus der Notiz laufen nie
+  await expect(view.getByText('Private Notiz')).toBeVisible()
+  await expect(view.locator('a', { hasText: 'Private Notiz' })).toHaveCount(0)
+  await expect(view.locator('script, [onerror]')).toHaveCount(0)
+  expect(await g.evaluate(() => (window as { __xss?: number }).__xss)).toBeUndefined()
+  await shot(g, '96-shared-note')
+
+  // Widerrufen: Der Link führt ins Leere
+  await page.getByTestId('share-list').getByRole('button', { name: 'Widerrufen' }).click()
+  await expect(page.getByText('Link widerrufen')).toBeVisible()
+  const gone = await g.goto(url)
+  expect(gone?.status()).toBe(404)
+  await expect(g.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible()
+  await guest.close()
+})

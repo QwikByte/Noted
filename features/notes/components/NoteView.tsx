@@ -30,6 +30,7 @@ import {
   PenLine,
   Pin,
   PinOff,
+  Share2,
   Trash2,
   Type,
   Upload,
@@ -41,6 +42,8 @@ import { Preview, type PreviewLinks } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { HistoryDialog } from './dialogs'
+import { ShareDialog } from '@/features/sharing/components/ShareDialog'
+import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
@@ -224,6 +227,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [infoOpen, setInfoOpen] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
@@ -725,6 +730,11 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
               Format …
             </MenuItem>
+            {sharing && format !== 'canvas' ? (
+              <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
+                Teilen …
+              </MenuItem>
+            ) : null}
             <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
               Verlauf …
             </MenuItem>
@@ -862,6 +872,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }}
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
+      {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
       <HistoryDialog
         noteId={note.id}
         title={title}

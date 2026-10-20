@@ -30,13 +30,18 @@ export function errorResponse(err: ApiError) {
 
 /** Client-IP. Hinter einem Reverse Proxy ist der letzte Eintrag in X-Forwarded-For die echte Adresse. */
 export function clientIp(req: NextRequest): string | null {
-  const xff = req.headers.get('x-forwarded-for')
+  return clientIpFromHeaders(req.headers)
+}
+
+/** Wie clientIp – für Server-Komponenten, die nur die Header haben (next/headers) */
+export function clientIpFromHeaders(headers: Headers): string | null {
+  const xff = headers.get('x-forwarded-for')
   if (xff) {
     const parts = xff.split(',').map((p) => p.trim()).filter(Boolean)
     const ip = parts[parts.length - 1]
     if (ip) return ip.replace(/^::ffff:/, '').slice(0, 64)
   }
-  return req.headers.get('x-real-ip')?.slice(0, 64) ?? null
+  return headers.get('x-real-ip')?.slice(0, 64) ?? null
 }
 
 export function isSecureRequest(req: NextRequest): boolean {

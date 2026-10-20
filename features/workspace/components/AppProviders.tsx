@@ -11,9 +11,19 @@ import { focusSessions } from '@/features/focus/client/sessions'
 import { startUpdateWatcher } from '@/features/updates/client/app-update'
 import { applyTheme, type Theme } from '@/shared/client/prefs'
 import { UserProvider } from '@/features/auth/client/current-user'
+import { SharingProvider } from '@/features/sharing/client/enabled'
 import type { PublicUser } from '@/features/auth/types'
 
-export function AppProviders({ user, children }: { user: PublicUser; children: React.ReactNode }) {
+export function AppProviders({
+  user,
+  sharing,
+  children,
+}: {
+  user: PublicUser
+  /** Notizen per Link teilen erlaubt (SHARING) */
+  sharing: boolean
+  children: React.ReactNode
+}) {
   const [client] = useState(() => {
     setApiUser(user.id)
     return new QueryClient({
@@ -43,12 +53,14 @@ export function AppProviders({ user, children }: { user: PublicUser; children: R
 
   return (
     <UserProvider user={user}>
-      <QueryClientProvider client={client}>
-        <ToastProvider sticky={<UpdateBanner />}>
-          {children}
-          <GlobalToolbar />
-        </ToastProvider>
-      </QueryClientProvider>
+      <SharingProvider enabled={sharing}>
+        <QueryClientProvider client={client}>
+          <ToastProvider sticky={<UpdateBanner />}>
+            {children}
+            <GlobalToolbar />
+          </ToastProvider>
+        </QueryClientProvider>
+      </SharingProvider>
     </UserProvider>
   )
 }
