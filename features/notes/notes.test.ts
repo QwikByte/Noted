@@ -116,6 +116,36 @@ describe('Ordner und Notizen', () => {
     expect(bl.data.backlinks.map((b: { id: string }) => b.id)).toEqual([src.id])
   })
 
+  it('lässt mehrdeutige Links beim Umbenennen stehen – auch bei Titeln mit Umlauten', async () => {
+    const winter = await newFolder('Physik WS')
+    const summer = await newFolder('Physik SS')
+    const first = await newNote('Übungen', 'Blatt 1', winter.id)
+    const second = await newNote('Übungen', 'Blatt 2', summer.id)
+    const src = await newNote('Alle Blätter', 'Siehe [[Übungen]]')
+    const r = await call(note.PUT, '/', {
+      method: 'PUT',
+      cookie: token,
+      params: { id: first.id },
+      body: { title: 'Übungen Winter' },
+    })
+    expect(r.status).toBe(200)
+    // [[Übungen]] meint weiterhin die zweite Notiz mit diesem Titel
+    expect(r.data.linksUpdated).toBe(0)
+    const after = await call(note.GET, '/', { cookie: token, params: { id: src.id } })
+    expect(after.data.note.content).toBe('Siehe [[Übungen]]')
+
+    // Jetzt eindeutig: Umbenennen passt den Link an
+    const r2 = await call(note.PUT, '/', {
+      method: 'PUT',
+      cookie: token,
+      params: { id: second.id },
+      body: { title: 'Übungen Sommer' },
+    })
+    expect(r2.data.linksUpdated).toBe(1)
+    const renamed = await call(note.GET, '/', { cookie: token, params: { id: src.id } })
+    expect(renamed.data.note.content).toBe('Siehe [[Übungen Sommer]]')
+  })
+
   it('lehnt ungültige oder doppelte Titel beim Umbenennen ab', async () => {
     const a = await newNote('Eins')
     await newNote('Zwei')

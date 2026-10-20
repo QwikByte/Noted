@@ -400,11 +400,12 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
        WHERE n.user_id = ? AND n.deleted_at IS NULL AND l.target = ? AND n.id != ?`,
     )
     .all(userId, key, noteId) as NoteRow[]
-  // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern
-  const other = db
-    .prepare('SELECT 1 FROM notes WHERE user_id = ? AND deleted_at IS NULL AND id != ? AND lower(title) = ?')
-    .get(userId, noteId, key)
-  if (other) return 0
+  // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern. Verglichen wird
+  // in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein, „Übungen“ bliebe sonst unerkannt
+  const others = db
+    .prepare('SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND id != ?')
+    .all(userId, noteId) as { title: string }[]
+  if (others.some((n) => linkKey(n.title) === key)) return 0
 
   // In formatiertem Text (HTML) steht „&“ als „&amp;“ – andere Sonderzeichen sind in Titeln nicht erlaubt
   const pattern = (title: string) =>
