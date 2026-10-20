@@ -10,11 +10,13 @@ import {
   Copy,
   Download,
   FileText,
+  Highlighter,
   ImageIcon,
   Layers,
   Link2,
   Loader2,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MoreVertical,
   MoveHorizontal,
@@ -38,7 +40,15 @@ import { copyText } from '@/shared/client/clipboard'
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { errorMessage } from '@/shared/client/api'
+import { usePref } from '@/shared/client/prefs'
 import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, renderPdfPage } from '../client/pdfjs'
+import { pdfAnnotations, useAnnotations } from '../client/annotations'
+import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
+import { cleanQuote, sortAnnotations } from '../geometry'
+import { DEFAULT_ANNOTATION_COLOR } from '../limits'
+import type { AnnotationColor, PdfAnnotation, PdfRect } from '../types'
+import AnnotationBar from './AnnotationBar'
+import AnnotationList from './AnnotationList'
 
 // Zuletzt gelesene Seite je PDF merken
 const POS_KEY = 'noted:pdfpos'
@@ -63,6 +73,10 @@ function savePosition(file: string, page: number) {
 
 const AUTO_SCALES = new Set(['page-width', 'page-fit', 'auto'])
 const baseName = (file: string) => file.split('/').pop()!.replace(/\.pdf$/i, '')
+/** Farbe für neue Markierungen (zuletzt gewählte) */
+const COLOR_KEY = 'noted:pdf:color'
+/** Ab dieser Breite steht die Liste der Anmerkungen neben den Seiten (@2xl), darunter liegt sie darüber */
+const LIST_BESIDE_WIDTH = 672
 
 type Matches = { current: number; total: number }
 
@@ -88,7 +102,11 @@ export default function PdfPanel({
   const toast = useToast()
   const { data: attachments = [] } = useAttachments()
   const pdfs = attachments.filter((a) => a.mime === 'application/pdf')
+  const fileName = file.split('/').pop()!.toLowerCase()
+  const attachment = pdfs.find((a) => a.filename.toLowerCase() === fileName) ?? null
+  const { annotations } = useAnnotations(attachment?.id ?? null)
 
+  const panelRef = useRef<HTMLElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<PDFViewer | null>(null)
@@ -105,7 +123,28 @@ export default function PdfPanel({
   const [findOpen, setFindOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<Matches | null>(null)
-  const [selection, setSelection] = useState<{ text: string; page: number } | null>(null)
+  const [selection, setSelection] = useState<{ text: string; page: number; rects: PdfRect[] } | null>(null)
+  const [listOpen, setListOpen] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [focusComment, setFocusComment] = useState(false)
+  const [colorPref, setColorPref] = usePref(COLOR_KEY, String(DEFAULT_ANNOTATION_COLOR))
+  const active = annotations.find((a) => a.id === activeId) ?? null
+  const sorted = sortAnnotations(annotations)
+
+  // Markierungen über den Seiten: pdf.js zeichnet Seiten beim Blättern und Zoomen neu – die Ebene wird dann
+  // aus overlay neu aufgebaut (Stand für Ereignisse von pdf.js, die außerhalb von React eintreffen)
+  const overlay = useRef({ annotations, activeId, flashId: null as string | null })
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const drawPage = useCallback((pageNumber: number) => {
+    const view = viewerRef.current?.getPageView(pageNumber - 1) as PageView | undefined
+    if (!view?.div) return
+    const { annotations, activeId, flashId } = overlay.current
+    drawAnnotations(view, annotations.filter((a) => a.page === pageNumber), { activeId, flashId })
+  }, [])
+  const drawAll = useCallback(() => {
+    const count = viewerRef.current?.pagesCount ?? 0
+    for (let n = 1; n <= count; n++) drawPage(n)
+  }, [drawPage])
 
   // Dokument laden
   useEffect(() => {
@@ -118,6 +157,7 @@ export default function PdfPanel({
     pendingPage.current = page ?? loadPositions()[file] ?? 1
     setStatus({ state: 'loading' })
     setSelection(null)
+    setActiveId(null)
     setMatches(null)
     ;(async () => {
       try {
@@ -153,7 +193,12 @@ export default function PdfPanel({
           setPageInput(String(e.pageNumber))
           savePosition(file, e.pageNumber)
         })
-        eventBus.on('scalechanging', (e: { scale: number }) => setScale(e.scale))
+        eventBus.on('scalechanging', (e: { scale: number }) => {
+          setScale(e.scale)
+          requestAnimationFrame(drawAll)
+        })
+        eventBus.on('pagerendered', (e: { pageNumber: number }) => drawPage(e.pageNumber))
+        eventBus.on('textlayerrendered', (e: { pageNumber: number }) => drawPage(e.pageNumber))
         eventBus.on('updatefindmatchescount', (e: { matchesCount: Matches }) => setMatches(e.matchesCount))
         eventBus.on('updatefindcontrolstate', (e: { matchesCount: Matches }) => setMatches(e.matchesCount))
         viewer.setDocument(doc)
@@ -187,6 +232,31 @@ export default function PdfPanel({
     if (viewer?.pagesCount) viewer.currentPageNumber = Math.min(page, viewer.pagesCount)
     else pendingPage.current = page
   }, [page, nonce])
+
+  // Geänderte Markierungen (auch aus anderen Tabs und nach dem Laden vom Server) neu zeichnen
+  useEffect(() => {
+    overlay.current.annotations = annotations
+    overlay.current.activeId = activeId
+    if (status.state === 'ready') drawAll()
+  }, [annotations, activeId, status.state, drawAll])
+
+  // Klick auf eine Markierung öffnet sie (Kommentar, Farbe, Löschen), ein Klick daneben schließt sie wieder
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const onClick = (e: MouseEvent) => {
+      if (!(e.target instanceof Element) || e.target.closest('a, button, input, textarea, select')) return
+      if (document.getSelection()?.isCollapsed === false) return
+      const n = Number(e.target.closest<HTMLElement>('.page')?.dataset.pageNumber)
+      const view = n ? (viewerRef.current?.getPageView(n - 1) as PageView | undefined) : undefined
+      const onPage = overlay.current.annotations.filter((a) => a.page === n)
+      const hit = view ? annotationAtPoint(view, onPage, e.clientX, e.clientY) : null
+      setActiveId(hit?.id ?? null)
+      setFocusComment(false)
+    }
+    container.addEventListener('click', onClick)
+    return () => container.removeEventListener('click', onClick)
+  }, [])
 
   // Breite/Höhe des Panels ändert sich (Teilen, Ziehen, Drehen) → wieder auf Seitenbreite einpassen
   useEffect(() => {
@@ -248,7 +318,7 @@ export default function PdfPanel({
     }
   }, [])
 
-  // Markierter Text im PDF → Aktionen (Zitat, Karteikarte, Kopieren)
+  // Ausgewählter Text im PDF → Aktionen (Markieren, Kommentieren, Zitat, Karteikarte, Kopieren)
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const onChange = () => {
@@ -264,10 +334,13 @@ export default function PdfPanel({
         setSelection(null)
         return
       }
-      const text = sel.toString().replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim()
       const pageEl = (sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement)?.closest<HTMLElement>('.page')
       const pageNo = Number(pageEl?.dataset.pageNumber) || viewerRef.current?.currentPageNumber || 1
-      setSelection(text ? { text, page: pageNo } : null)
+      // Text und Rechtecke gleich festhalten: Auf dem Handy hebt der Tipp auf „Markieren“ die Auswahl womöglich auf
+      const view = viewerRef.current?.getPageView(pageNo - 1) as PageView | undefined
+      const onPage = view?.div && sel.rangeCount ? selectionOnPage(sel.getRangeAt(0), view) : { text: '', rects: [] }
+      const text = (onPage.text || sel.toString()).replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim()
+      setSelection(text ? { text, page: pageNo, rects: onPage.rects } : null)
     }
     document.addEventListener('selectionchange', onChange)
     return () => {
@@ -321,6 +394,53 @@ export default function PdfPanel({
 
   const pageLink = (n: number, label?: string) => pdfPageLink({ file, page: n }, label)
 
+  /** Ausgewählten Text markieren – mit Kommentar: gleich das Kommentarfeld öffnen */
+  function markSelection(withComment: boolean) {
+    if (!selection || !attachment || selection.rects.length === 0) return
+    const pref = Number(colorPref)
+    const annotation = pdfAnnotations.create({
+      attachmentId: attachment.id,
+      page: selection.page,
+      rects: selection.rects,
+      quote: cleanQuote(selection.text),
+      comment: '',
+      color: (pref >= 1 && pref <= 6 ? pref : DEFAULT_ANNOTATION_COLOR) as AnnotationColor,
+    })
+    document.getSelection()?.removeAllRanges()
+    setSelection(null)
+    setActiveId(withComment ? annotation.id : null)
+    setFocusComment(withComment)
+  }
+
+  /** Zur Markierung blättern und sie kurz aufleuchten lassen */
+  function showAnnotation(a: PdfAnnotation) {
+    const v = viewerRef.current
+    if (!v?.pagesCount) return
+    const top = Math.max(...a.rects.map((r) => r[3]))
+    v.scrollPageIntoView({ pageNumber: a.page, destArray: [null, { name: 'XYZ' }, 0, top + 24, null] })
+    setActiveId(a.id)
+    setFocusComment(false)
+    clearTimeout(flashTimer.current)
+    overlay.current.flashId = a.id
+    drawPage(a.page)
+    flashTimer.current = setTimeout(() => {
+      overlay.current.flashId = null
+      drawPage(a.page)
+    }, 1600)
+    // Liegt die Liste über den Seiten, gibt sie den Blick auf die Markierung frei
+    if ((panelRef.current?.offsetWidth ?? 0) < LIST_BESIDE_WIDTH) setListOpen(false)
+  }
+
+  function deleteAnnotation(a: PdfAnnotation) {
+    pdfAnnotations.remove(a)
+    setActiveId(null)
+    toast.show('Markierung gelöscht.', {
+      action: { label: 'Rückgängig', onClick: () => pdfAnnotations.save({ ...a, updatedAt: Date.now() }) },
+    })
+  }
+
+  const quoteOf = (a: PdfAnnotation) => ({ text: a.quote, ref: { file, page: a.page } })
+
   async function upload(files: File[]) {
     const f = files[0]
     if (!f) return
@@ -355,7 +475,12 @@ export default function PdfPanel({
   }
 
   return (
-    <section className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-subtle" aria-label={`PDF: ${file}`} data-testid="pdf-panel">
+    <section
+      ref={panelRef}
+      className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-subtle"
+      aria-label={`PDF: ${file}`}
+      data-testid="pdf-panel"
+    >
       {/* Werkzeugleiste – passt sich der Breite des Panels an */}
       <div className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border bg-bg px-1.5">
         <div className="min-w-0 flex-1">
@@ -432,6 +557,22 @@ export default function PdfPanel({
           </button>
           <Button variant="ghost" size="icon-sm" onClick={() => viewerRef.current?.increaseScale()} disabled={!ready} aria-label="Vergrößern" className="@max-2xl:hidden">
             <ZoomIn className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setListOpen((o) => !o)}
+            aria-label="Anmerkungen"
+            aria-pressed={listOpen}
+            title={annotations.length ? `Anmerkungen (${annotations.length})` : 'Anmerkungen'}
+            className="relative"
+          >
+            <Highlighter className="size-4" />
+            {annotations.length ? (
+              <span className="absolute top-0.5 right-0.5 min-w-3.5 rounded-full bg-accent px-0.5 text-[9px] leading-3.5 font-semibold text-on-accent tabular-nums">
+                {annotations.length > 99 ? '99+' : annotations.length}
+              </span>
+            ) : null}
           </Button>
           <Button
             variant="ghost"
@@ -558,11 +699,27 @@ export default function PdfPanel({
         </div>
       ) : null}
 
-      {/* Seiten (pdf.js braucht einen absolut positionierten Container) */}
-      <div className="relative min-h-0 flex-1">
-        <div ref={containerRef} className="pdf-container absolute inset-0 overflow-auto" tabIndex={0}>
-          <div ref={innerRef} className="pdfViewer" />
+      {/* Seiten (pdf.js braucht einen absolut positionierten Container) und die Liste der Anmerkungen */}
+      <div className="relative flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          <div ref={containerRef} className="pdf-container absolute inset-0 overflow-auto" tabIndex={0}>
+            <div ref={innerRef} className="pdfViewer" />
+          </div>
         </div>
+        {listOpen ? (
+          <AnnotationList
+            annotations={sorted}
+            activeId={activeId}
+            onSelect={showAnnotation}
+            onInsertAll={() =>
+              insert(
+                { kind: 'quotes', quotes: sorted.map(quoteOf) },
+                sorted.length === 1 ? 'Zitat' : `${sorted.length} Zitate`,
+              )
+            }
+            onClose={() => setListOpen(false)}
+          />
+        ) : null}
         {status.state !== 'ready' ? (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted">
             {status.state === 'loading' ? (
@@ -580,7 +737,7 @@ export default function PdfPanel({
         ) : null}
       </div>
 
-      {/* Aktionen für markierten Text */}
+      {/* Aktionen für ausgewählten Text – oder die angeklickte Markierung */}
       {selection ? (
         <div className="flex items-center gap-1 border-t border-border bg-bg px-2 py-1.5" data-testid="pdf-selection">
           <span className="min-w-0 flex-1 truncate text-xs text-muted" title={selection.text}>
@@ -590,14 +747,36 @@ export default function PdfPanel({
             size="sm"
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() =>
-              insert({ kind: 'quote', text: selection.text, ref: { file, page: selection.page } }, 'Zitat')
-            }
+            onClick={() => markSelection(false)}
+            disabled={!attachment || selection.rects.length === 0}
+            aria-label="Markieren"
+            title="Markieren"
           >
-            <Quote className="size-4" /> <span className="@max-md:hidden">Zitieren</span>
+            <Highlighter className="size-4" /> <span className="@max-md:hidden">Markieren</span>
           </Button>
           <Button
             size="sm"
+            variant="ghost"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => markSelection(true)}
+            disabled={!attachment || selection.rects.length === 0}
+            aria-label="Kommentieren"
+            title="Markieren und kommentieren"
+          >
+            <MessageSquare className="size-4" /> <span className="@max-xl:hidden">Kommentieren</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insert({ kind: 'quote', text: selection.text, ref: { file, page: selection.page } }, 'Zitat')}
+            aria-label="Als Zitat einfügen"
+            title="Als Zitat mit Seitenlink in die Notiz einfügen"
+          >
+            <Quote className="size-4" /> <span className="@max-2xl:hidden">Als Zitat einfügen</span>
+          </Button>
+          <Button
+            size="icon-sm"
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() =>
@@ -607,8 +786,10 @@ export default function PdfPanel({
                 deckName: baseName(file),
               })
             }
+            aria-label="Karteikarte"
+            title="Karteikarte anlegen"
           >
-            <Layers className="size-4" /> <span className="@max-md:hidden">Karteikarte</span>
+            <Layers className="size-4" />
           </Button>
           <Button
             size="icon-sm"
@@ -618,10 +799,21 @@ export default function PdfPanel({
               if (await copyText(selection.text)) toast.success('Kopiert.')
             }}
             aria-label="Kopieren"
+            title="Kopieren"
           >
             <Copy className="size-4" />
           </Button>
         </div>
+      ) : active ? (
+        <AnnotationBar
+          key={active.id}
+          annotation={active}
+          focusComment={focusComment}
+          onInsert={() => insert({ kind: 'quote', ...quoteOf(active) }, 'Zitat')}
+          onColor={(color) => setColorPref(String(color))}
+          onDelete={() => deleteAnnotation(active)}
+          onClose={() => setActiveId(null)}
+        />
       ) : null}
 
       <input

@@ -12,10 +12,14 @@ function pdfLink(ref: PdfRef, label: string): string {
 
 /** Seitenlink oder Zitat aus dem PDF-Viewer als HTML */
 export function insertionToHtml(insertion: Insertion): string {
-  const { ref } = insertion
-  if (insertion.kind === 'page-link') return `<p>${pdfLink(ref, `${ref.file}, S. ${ref.page}`)}</p>`
-  const text = escapeHtml(insertion.text).replace(/\n/g, '<br>')
-  return `<blockquote><p>${text}<br>${pdfLink(ref, `S. ${ref.page}`)}</p></blockquote>`
+  if (insertion.kind === 'page-link') {
+    const { ref } = insertion
+    return `<p>${pdfLink(ref, `${ref.file}, S. ${ref.page}`)}</p>`
+  }
+  const quotes = insertion.kind === 'quotes' ? insertion.quotes : [insertion]
+  return quotes
+    .map(({ text, ref }) => `<blockquote><p>${escapeHtml(text).replace(/\n/g, '<br>')}<br>${pdfLink(ref, `S. ${ref.page}`)}</p></blockquote>`)
+    .join('')
 }
 
 /** Bilder eingebettet, alle anderen Dateien als Link */

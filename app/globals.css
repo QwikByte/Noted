@@ -1002,6 +1002,64 @@ html.dragging * {
   /* Seiten bleiben weiß (Folien und Skripte sind so gestaltet), nur etwas gedämpft */
   filter: brightness(0.92);
 }
+/* Markierungen (Anmerkungen) wie mit einem Textmarker – ohne Mausereignisse, damit Text auswählbar bleibt */
+.pdf-annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.pdf-annotation {
+  --hl: var(--swatch-3);
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--hl) 38%, transparent);
+  mix-blend-mode: multiply;
+}
+.pdf-annotation[data-color='1'] {
+  --hl: var(--swatch-1);
+}
+.pdf-annotation[data-color='2'] {
+  --hl: var(--swatch-2);
+}
+.pdf-annotation[data-color='4'] {
+  --hl: var(--swatch-4);
+}
+.pdf-annotation[data-color='5'] {
+  --hl: var(--swatch-5);
+}
+.pdf-annotation[data-color='6'] {
+  --hl: var(--swatch-6);
+}
+.pdf-annotation.is-active {
+  box-shadow: 0 0 0 1.5px var(--hl);
+}
+.pdf-annotation.has-comment::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--hl);
+  box-shadow: 0 0 0 1.5px #fff;
+}
+.pdf-annotation.is-flashing {
+  animation: pdf-annotation-flash 0.5s ease-in-out 3;
+}
+@keyframes pdf-annotation-flash {
+  50% {
+    background: color-mix(in srgb, var(--hl) 75%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--hl) 45%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-annotation.is-flashing {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--hl);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Mindmap und Canvas (React Flow)                                      */

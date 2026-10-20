@@ -17,12 +17,16 @@ import { htmlBody, htmlDocument } from '@/shared/lib/html'
 import type { NoteFormat } from '@/features/notes/types'
 import { canvasForExport, mapCanvasNodes, parseCanvas, type ExportIndex } from '@/features/canvas/canvas'
 import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
+import { annotationsByAttachment } from '@/features/pdf/server/annotations'
+import { annotationsMarkdown } from '@/features/pdf/geometry'
 import { EXPORT_ATTACHMENT_FOLDER, buildExportIndex, exportNotePath } from '../paths'
 
 /** Karteikarten-Stapel als Markdown (Frage::Antwort, siehe deckToMarkdown) und verlustfrei als .noted-deck.zip */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 /** Alle Termine – lässt sich in jede Kalender-App importieren */
 const EXPORT_CALENDAR_FILE = 'Kalender.ics'
+/** Anmerkungen eines PDFs liegen im Export neben der Datei – nur zum Lesen, der Import übergeht sie */
+const ANNOTATIONS_SUFFIX = '.anmerkungen.md'
 
 const ATTACHMENT_DIR_RE = new RegExp(`(\\ssrc=["'])(?:\\.\\./)*(?:${encodeURIComponent(EXPORT_ATTACHMENT_FOLDER)}|${EXPORT_ATTACHMENT_FOLDER})/`, 'gi')
 
@@ -124,12 +128,26 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
       data: () => strToU8(exportIcs(userId)),
     })
   }
-  for (const att of listAttachments(userId)) {
+  const attachments = listAttachments(userId)
+  const annotations = annotationsByAttachment(userId)
+  const attachmentNames = attachments.map((a) => a.filename)
+  for (const att of attachments) {
     entries.push({
       path: `${EXPORT_ATTACHMENT_FOLDER}/${att.filename}`,
       mtime: att.createdAt,
       compress: /^(text\/|application\/(json|xml)|image\/(svg\+xml|bmp))/.test(att.mime),
       data: () => readAttachmentData(userId, att.id),
+    })
+    // Markierungen eines PDFs daneben als lesbares Markdown („Skript.pdf.anmerkungen.md“)
+    const list = annotations.get(att.id)
+    if (!list) continue
+    const name = uniqueName(att.filename, attachmentNames, ANNOTATIONS_SUFFIX)
+    attachmentNames.push(name)
+    entries.push({
+      path: `${EXPORT_ATTACHMENT_FOLDER}/${name}`,
+      mtime: Math.max(...list.map((a) => a.updatedAt)),
+      compress: true,
+      data: () => strToU8(annotationsMarkdown(att.filename, list)),
     })
   }
 
@@ -153,6 +171,12 @@ const HTML_EXT = /\.html?$/i
 const CANVAS_EXT = /\.canvas$/i
 const ICS_EXT = /\.ics$/i
 const isDeckPackage = (name: string) => name.toLowerCase().endsWith(DECK_PACKAGE_EXT)
+
+/** Anmerkungen zu einem PDF aus einem Export von Noted („Anhänge/Skript.pdf.anmerkungen.md“ neben „Skript.pdf“) */
+function isAnnotationsFile(entryPath: string, entries: Record<string, Uint8Array>) {
+  if (!entryPath.startsWith(`${EXPORT_ATTACHMENT_FOLDER}/`) || !entryPath.endsWith(ANNOTATIONS_SUFFIX)) return false
+  return Object.hasOwn(entries, entryPath.slice(0, -ANNOTATIONS_SUFFIX.length))
+}
 
 function isHiddenPath(p: string) {
   return p.split('/').some((seg) => seg.startsWith('.') || seg === '__MACOSX')
@@ -309,6 +333,7 @@ export async function importFiles(
         const filename = segments.pop()!
         try {
           if (NOTE_EXT.test(entryPath) && packages.has(entryPath.replace(NOTE_EXT, DECK_PACKAGE_EXT))) continue
+          if (isAnnotationsFile(entryPath, entries)) continue
           if (isDeckPackage(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER) {
             importDeck(entryData)
           } else if (isNoteFile(segments, filename)) {

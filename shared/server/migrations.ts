@@ -457,4 +457,22 @@ export const migrations: string[] = [
   );
   CREATE INDEX shares_note ON shares(note_id);
   `,
+
+  /* 22: Anmerkungen in PDFs. rects ist eine JSON-Liste von Rechtecken [x1, y1, x2, y2] in PDF-Koordinaten der Seite
+     (unabhängig von Zoom und Gerät), quote der markierte Text. Die ID vergibt der Browser, damit Markierungen auch
+     offline entstehen und später gesendet werden können. */ `
+  CREATE TABLE pdf_annotations (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    page INTEGER NOT NULL,
+    rects TEXT NOT NULL,
+    quote TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    color INTEGER NOT NULL DEFAULT 1 CHECK (color BETWEEN 1 AND 6),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX pdf_annotations_attachment ON pdf_annotations(user_id, attachment_id, page);
+  `,
 ]

@@ -53,7 +53,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Dateien**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
 - Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
-- Markierten Text **zitieren** (als Zitat mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- **Anmerkungen:** Ausgewählten Text **markieren** oder **kommentieren** – wie mit einem Textmarker, in sechs Farben. Ein Klick auf eine Markierung öffnet Kommentar, Farbe, **Als Zitat einfügen** und Löschen. Die Seitenleiste **Anmerkungen** (Textmarker-Knopf oben) listet alle Markierungen des PDFs nach Seite; ein Klick springt zur Stelle, **Alle als Zitate einfügen** übernimmt sie mit Seitenlinks in die Notiz. Markierungen liegen auf dem Server (auf jedem Gerät an derselben Textstelle, auch nach dem Zoomen) und entstehen auch offline – sie werden gesendet, sobald wieder Verbindung besteht. Gescannte PDFs ohne Textebene lassen sich nicht markieren.
 - Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
 
 **Karteikarten**
@@ -101,6 +102,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
+- Anmerkungen eines PDFs liegen daneben als lesbare Markdown-Datei (`Anhänge/Skript.pdf.anmerkungen.md`: Seite, Zitat, Kommentar). Beim Import eines Exports werden sie übersprungen.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen. Daneben liegt jeder Stapel als verlustfreie `.noted-deck.zip`; beim Import zählt dann nur sie, damit keine Notiz aus der `.md` entsteht.
 - Die Termine liegen als `Kalender.ics` im ZIP.
 - Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), Karteikarten-Stapeln (`.noted-deck.zip`), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
@@ -310,7 +312,7 @@ docker compose start noted
 ## Notizen mitnehmen
 
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
-- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/`, die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
+- **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/` (mit den Anmerkungen zu PDFs), die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
 - **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
 - **Teilen** (**⋮ → Teilen …** in der Notiz): erzeugt einen Link, mit dem Kommilitonen die Notiz ohne Konto lesen können – nicht bearbeiten. Gültig 7 Tage, 30 Tage oder unbegrenzt. Eingebettete Bilder und PDFs der Notiz sind dabei, Links auf andere Notizen erscheinen nur als Text, Canvas lässt sich nicht teilen. Den Link siehst du nur beim Erstellen (gespeichert wird nur ein Hash). Widerrufen kannst du ihn im Dialog oder unter **Einstellungen → Geteilte Links**; dort steht auch, wie oft er geöffnet wurde. Liegt die Notiz im Papierkorb, ist der Link so lange tot. Mit `SHARING=false` ist Teilen für die ganze Instanz abgeschaltet.
 
@@ -365,7 +367,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
-  pdf/                  PDF-Viewer (pdf.js) und geteilte Ansicht
+  pdf/                  PDF-Viewer (pdf.js), geteilte Ansicht und Anmerkungen (Markierungen mit Kommentar)
   transfer/             Export und Import (ZIP mit Ordnerstruktur, Dateien, Karteikarten und Kalender)
   auth/                 Anmeldung, MFA, Passwörter, Sitzungen, Konten, Absicherung der API-Routen
   admin/                Benutzerverwaltung (Administration)

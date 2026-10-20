@@ -191,7 +191,7 @@ test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {
     getSelection()!.removeAllRanges()
     getSelection()!.addRange(range)
   })
-  await panel.getByTestId('pdf-selection').getByRole('button', { name: /Zitieren/ }).click()
+  await panel.getByTestId('pdf-selection').getByRole('button', { name: 'Als Zitat einfügen' }).click()
   await expect(page.getByText('Zitat in „Stetigkeit“ eingefügt.')).toBeVisible()
   await expect(page.locator('.markdown-body blockquote')).toContainText('Jede stetige Funktion nimmt jeden Zwischenwert an.')
   await expect
