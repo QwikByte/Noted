@@ -62,6 +62,7 @@ import { pdfPageLink } from '@/features/notes/client/active-editor'
 import { attachmentMarkdown } from '@/features/attachments/client/upload'
 import type { NoteEditorHandle } from '@/features/notes/client/editor-handle'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { cn } from '@/shared/ui/cn'
 
 /** Werkzeug der Leiste: Ein offenes Textfeld verliert beim Klicken den Fokus und speichert, bevor das Werkzeug wirkt */
@@ -255,6 +256,7 @@ export default function MindmapEditor(props: Props) {
 
 function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onUpload, onCreateCard, autoFocus, header }: Props) {
   const flow = useReactFlow<MindFlowNode, BranchEdge>()
+  const openContextMenu = useContextMenu()
   const wrapperRef = useRef<HTMLDivElement>(null)
   // Baum zum gespeicherten Text; ändert sich der Text von außen (anderes Gerät, Textansicht), wird neu gelesen
   const [doc, setDoc] = useState(() => ({ source: content, root: parseMindmap(content, title) }))
@@ -357,9 +359,11 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
   }
 
   /** Neuen leeren Knoten anlegen und gleich bearbeiten */
-  /** Neuer Punkt – bei mehreren Texten (z. B. allen Zitaten aus einem PDF) mehrere nacheinander */
-  function insert(where: 'child' | 'sibling', text: string | string[] = '') {
-    const target = selected ?? root
+  /**
+   * Neuer Punkt – bei mehreren Texten (z. B. allen Zitaten aus einem PDF) mehrere nacheinander. `target`: das
+   * Kontextmenü nennt seinen Knoten selbst, seine Einträge sehen die Auswahl durch den Rechtsklick noch nicht
+   */
+  function insert(where: 'child' | 'sibling', text: string | string[] = '', target: MindNode = selected ?? root) {
     const nodes = (Array.isArray(text) ? text : [text]).map((t): MindNode => ({ id: newNodeId(), text: t, children: [] }))
     const next = nodes.reduce(
       (tree, child, i) =>
@@ -550,6 +554,94 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
     return hit?.id ?? null
   }
 
+  // ---- Ansicht und Kontextmenü ----
+
+  const zoomIn = () => void flow.zoomIn({ duration: 150 })
+  const zoomOut = () => void flow.zoomOut({ duration: 150 })
+  const fitAll = () => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 200 })
+
+  /** Rechtsklick auf einen Knoten: dieselben Befehle wie Leiste und Tastatur – zum Lesen nur Ein- und Ausklappen */
+  function nodeMenu(id: string) {
+    const p = placed.find((n) => n.node.id === id)
+    if (!p) return null
+    const fold =
+      p.node.children.length > 0 && p.depth > 0 ? (
+        <MenuItem icon={collapsed.has(id) ? <ChevronsUpDown /> : <ChevronsDownUp />} onSelect={() => toggleCollapsed(id)}>
+          {collapsed.has(id) ? 'Aufklappen' : 'Einklappen'}
+        </MenuItem>
+      ) : null
+    if (readOnly) return fold
+    const isRoot = id === root.id
+    return (
+      <>
+        <MenuItem icon={<Pencil />} onSelect={() => startEdit(id)} hint="F2">
+          Bearbeiten
+        </MenuItem>
+        <MenuItem icon={<ListIndentIncrease />} onSelect={() => insert('child', '', p.node)} hint="Tab">
+          Unterpunkt
+        </MenuItem>
+        <MenuItem icon={<CornerDownRight />} onSelect={() => insert('sibling', '', p.node)} hint="Enter">
+          Nächster Punkt
+        </MenuItem>
+        {fold}
+        {isRoot ? null : (
+          <>
+            <MenuItem icon={<ArrowUp />} onSelect={() => commit(shiftNode(root, id, -1))} hint="Alt+↑">
+              Nach oben
+            </MenuItem>
+            <MenuItem icon={<ArrowDown />} onSelect={() => commit(shiftNode(root, id, 1))} hint="Alt+↓">
+              Nach unten
+            </MenuItem>
+          </>
+        )}
+        <MenuSeparator />
+        <MenuItem icon={<Layers />} onSelect={onCreateCard}>
+          Karteikarte aus Knoten
+        </MenuItem>
+        {isRoot ? null : (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<Trash2 />} danger onSelect={() => remove(id)} hint="Entf">
+              Löschen
+            </MenuItem>
+          </>
+        )}
+      </>
+    )
+  }
+
+  /** Rechtsklick auf die freie Fläche: Verlauf, Äste und Ansicht */
+  function paneMenu() {
+    return (
+      <>
+        {readOnly ? null : (
+          <>
+            <MenuItem icon={<Undo2 />} onSelect={undo} disabled={history.current.past.length === 0} hint="Strg+Z">
+              Rückgängig
+            </MenuItem>
+            <MenuItem icon={<Redo2 />} onSelect={redo} disabled={history.current.future.length === 0} hint="Strg+Umschalt+Z">
+              Wiederholen
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem icon={allCollapsed ? <ChevronsUpDown /> : <ChevronsDownUp />} onSelect={toggleAll}>
+          {allCollapsed ? 'Alles aufklappen' : 'Äste einklappen'}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<ZoomIn />} onSelect={zoomIn}>
+          Vergrößern
+        </MenuItem>
+        <MenuItem icon={<ZoomOut />} onSelect={zoomOut}>
+          Verkleinern
+        </MenuItem>
+        <MenuItem icon={<Maximize />} onSelect={fitAll}>
+          Alles anzeigen
+        </MenuItem>
+      </>
+    )
+  }
+
   // Beim ersten Anzeigen alles einpassen – erst, wenn alle Knoten gemessen und angeordnet sind
   const measured = placed.every((p) => sizes.has(p.node.id))
   const fitted = useRef(false)
@@ -662,6 +754,12 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
             // React Flow verhindert den Fokus beim Klicken – Tastenbefehle sollen trotzdem hier ankommen
             if (!(e.target as HTMLElement).closest('textarea, input, button, a')) focusFlow()
           }}
+          onContextMenu={(e) => {
+            // Freie Fläche – oder die Fläche selbst, wenn das Menü mit der Tastatur geöffnet wird
+            if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('react-flow__pane')) {
+              openContextMenu(e, paneMenu())
+            }
+          }}
           data-testid="mindmap"
         >
           <ReactFlow<MindFlowNode, BranchEdge>
@@ -677,6 +775,13 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
               else select(n.id)
             }}
             onNodeDoubleClick={(_e, n) => startEdit(n.id)}
+            onNodeContextMenu={(e, n) => {
+              // Im Textfeld des Knotens bleibt das Menü des Browsers (Rechtschreibung, Einfügen)
+              if (editing?.id === n.id) return
+              openContextMenu(e, nodeMenu(n.id))
+              // Wie ein Klick wählt der Rechtsklick den Knoten aus – nur, wenn das eigene Menü aufging
+              if (e.isDefaultPrevented()) select(n.id)
+            }}
             onPaneClick={() => select(null)}
             onNodeDrag={(_e, n) => setDropTargetId(dropTargetFor(n))}
             onNodeDragStop={(_e, n) => {
@@ -706,13 +811,13 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
           >
             <Background variant={BackgroundVariant.Lines} gap={20} />
             <Panel position="bottom-right" className="flow-panel">
-              <ToolButton label="Verkleinern" onClick={() => void flow.zoomOut({ duration: 150 })}>
+              <ToolButton label="Verkleinern" onClick={zoomOut}>
                 <ZoomOut />
               </ToolButton>
-              <ToolButton label="Vergrößern" onClick={() => void flow.zoomIn({ duration: 150 })}>
+              <ToolButton label="Vergrößern" onClick={zoomIn}>
                 <ZoomIn />
               </ToolButton>
-              <ToolButton label="Alles anzeigen" onClick={() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 200 })}>
+              <ToolButton label="Alles anzeigen" onClick={fitAll}>
                 <Maximize />
               </ToolButton>
             </Panel>

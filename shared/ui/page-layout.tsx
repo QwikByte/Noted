@@ -26,9 +26,18 @@ export function PageHeader({
   )
 }
 
-export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
+export function Page({
+  children,
+  className,
+  onContextMenu,
+}: {
+  children: React.ReactNode
+  className?: string
+  /** Rechtsklick auf die ganze Seite, z. B. für „Neu …“ (siehe useContextMenu) */
+  onContextMenu?: React.MouseEventHandler<HTMLDivElement>
+}) {
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto" onContextMenu={onContextMenu}>
       {/* Beim Wechsel der Ansicht sanft einblenden statt hart umzuschalten */}
       <div className={cn('mx-auto w-full max-w-3xl animate-fade-in px-4 pt-6 pb-28 sm:px-8 sm:pt-10', className)}>{children}</div>
     </div>

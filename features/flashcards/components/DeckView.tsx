@@ -32,7 +32,7 @@ import { useNow } from '@/shared/client/now'
 import { DeckSettingsDialog, ImportCardsDialog } from './DeckDialogs'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
-import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
@@ -92,6 +92,7 @@ export function DeckView({ id }: { id: string }) {
   const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | null>(null)
   const [toDelete, setToDelete] = useState<Card | null>(null)
   const [busy, setBusy] = useState(false)
+  const openContextMenu = useContextMenu()
 
   const deck = data?.decks.find((d) => d.id === id)
   const cards = useMemo(() => (data ? data.cards.filter((c) => c.deckId === id).sort(byPosition) : []), [data, id])
@@ -153,8 +154,63 @@ export function DeckView({ id }: { id: string }) {
     }
   }
 
+  // Dieselben Einträge im Menü „…“ und beim Rechtsklick auf die freie Fläche
+  const deckItems = (
+    <>
+      <MenuItem icon={<Settings2 />} onSelect={() => setDialog('settings')}>
+        Stapel bearbeiten …
+      </MenuItem>
+      <MenuItem icon={<Upload />} onSelect={() => setDialog('import')}>
+        Karten importieren …
+      </MenuItem>
+      <MenuItem
+        icon={<Copy />}
+        onSelect={async () => {
+          const ok = await copyText(deckToMarkdown(deck, cards))
+          if (ok) toast.success('Als Markdown kopiert.')
+          else toast.error('Kopieren nicht möglich.')
+        }}
+      >
+        Als Markdown kopieren
+      </MenuItem>
+      <MenuItem
+        icon={<FileArchive />}
+        onSelect={() => {
+          // Mit Bildern und Einstellungen – zum Weitergeben an andere Konten
+          const a = document.createElement('a')
+          a.href = `/api/decks/${deck.id}/export`
+          a.download = ''
+          a.click()
+        }}
+      >
+        Als Datei exportieren
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<RotateCcw />} onSelect={() => setDialog('reset')}>
+        Lernstand zurücksetzen …
+      </MenuItem>
+      <MenuItem icon={<Trash2 />} danger onSelect={() => setDialog('delete')}>
+        Stapel löschen …
+      </MenuItem>
+    </>
+  )
+
   return (
-    <Page>
+    <Page
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            <MenuItem icon={<Plus />} onSelect={() => app.openCardEditor({ deckId: deck.id })}>
+              Karte anlegen …
+            </MenuItem>
+            <MenuSeparator />
+            {deckItems}
+          </>,
+          { text: true, copy: true },
+        )
+      }
+    >
       <PageHeader
         breadcrumb={
           <button type="button" onClick={() => app.go({ kind: 'cards' })} className="mb-2 flex items-center gap-1 text-sm text-muted hover:text-fg">
@@ -171,41 +227,7 @@ export function DeckView({ id }: { id: string }) {
               </Button>
             )}
           >
-            <MenuItem icon={<Settings2 />} onSelect={() => setDialog('settings')}>
-              Stapel bearbeiten …
-            </MenuItem>
-            <MenuItem icon={<Upload />} onSelect={() => setDialog('import')}>
-              Karten importieren …
-            </MenuItem>
-            <MenuItem
-              icon={<Copy />}
-              onSelect={async () => {
-                const ok = await copyText(deckToMarkdown(deck, cards))
-                if (ok) toast.success('Als Markdown kopiert.')
-                else toast.error('Kopieren nicht möglich.')
-              }}
-            >
-              Als Markdown kopieren
-            </MenuItem>
-            <MenuItem
-              icon={<FileArchive />}
-              onSelect={() => {
-                // Mit Bildern und Einstellungen – zum Weitergeben an andere Konten
-                const a = document.createElement('a')
-                a.href = `/api/decks/${deck.id}/export`
-                a.download = ''
-                a.click()
-              }}
-            >
-              Als Datei exportieren
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={<RotateCcw />} onSelect={() => setDialog('reset')}>
-              Lernstand zurücksetzen …
-            </MenuItem>
-            <MenuItem icon={<Trash2 />} danger onSelect={() => setDialog('delete')}>
-              Stapel löschen …
-            </MenuItem>
+            {deckItems}
           </Menu>
         }
       />
@@ -330,8 +352,48 @@ export function DeckView({ id }: { id: string }) {
             const noteTitle = card.noteId ? noteTitles.get(card.noteId) : undefined
             const problem = problems.has(card.id)
             const learned = sidesOf(card).some((side) => data.states.has(reviewKey(card.id, side)))
+            const toggleSuspended = () =>
+              void cardAction(
+                () => updateCard(qc, card.id, { suspended: !card.suspended }),
+                card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.',
+              )
+            const relearn = () => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.')
             return (
-              <li key={card.id} className="group rounded-xl border border-border bg-elevated p-3 sm:p-4">
+              <li
+                key={card.id}
+                className="group rounded-xl border border-border bg-elevated p-3 sm:p-4"
+                onContextMenu={(e) =>
+                  openContextMenu(
+                    e,
+                    <>
+                      <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
+                        Karte bearbeiten …
+                      </MenuItem>
+                      {noteTitle ? (
+                        <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: card.noteId! })}>
+                          Zur Notiz
+                        </MenuItem>
+                      ) : null}
+                      {/* Wie die Knöpfe an der Karte: nur bei Problemkarten und ausgesetzten */}
+                      {problem || card.suspended ? (
+                        <MenuItem icon={card.suspended ? <Play /> : <Pause />} onSelect={toggleSuspended}>
+                          {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
+                        </MenuItem>
+                      ) : null}
+                      {(problem || card.suspended) && learned ? (
+                        <MenuItem icon={<RotateCcw />} onSelect={relearn}>
+                          Neu lernen
+                        </MenuItem>
+                      ) : null}
+                      <MenuSeparator />
+                      <MenuItem icon={<Trash2 />} danger onSelect={() => setToDelete(card)}>
+                        Karte löschen …
+                      </MenuItem>
+                    </>,
+                    { text: true, copy: true },
+                  )
+                }
+              >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <CardMarkdown text={card.front} className="line-clamp-4 font-medium" />
@@ -367,16 +429,7 @@ export function DeckView({ id }: { id: string }) {
                     </div>
                     {problem || card.suspended ? (
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="subtle"
-                          onClick={() =>
-                            void cardAction(
-                              () => updateCard(qc, card.id, { suspended: !card.suspended }),
-                              card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.',
-                            )
-                          }
-                        >
+                        <Button size="sm" variant="subtle" onClick={toggleSuspended}>
                           {card.suspended ? <Play className="size-4" /> : <Pause className="size-4" />}
                           {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
                         </Button>
@@ -384,7 +437,7 @@ export function DeckView({ id }: { id: string }) {
                           <Button
                             size="sm"
                             variant="subtle"
-                            onClick={() => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.')}
+                            onClick={relearn}
                             title="Lernstand dieser Karte zurücksetzen, z. B. nach dem Überarbeiten"
                           >
                             <RotateCcw className="size-4" /> Neu lernen

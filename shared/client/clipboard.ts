@@ -44,3 +44,16 @@ export async function copyHtml(html: string, text: string): Promise<boolean> {
   }
   return copyText(text)
 }
+
+/**
+ * Text aus der Zwischenablage lesen (für „Einfügen“ im Kontextmenü). null, wenn der Browser es nicht erlaubt – z. B.
+ * über http im LAN oder ohne Zustimmung; dann bleibt Strg+V.
+ */
+export async function readText(): Promise<string | null> {
+  try {
+    if (navigator.clipboard?.readText && window.isSecureContext) return await navigator.clipboard.readText()
+  } catch {
+    /* nicht erlaubt */
+  }
+  return null
+}

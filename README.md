@@ -330,6 +330,8 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Strg/⌘ + F` | Im Editor suchen und ersetzen |
 | `Strg/⌘ + B` / `I` | Fett / kursiv |
 | `Strg/⌘ + Shift + H` | ==Markieren== |
+| Rechtsklick, `Umschalt + F10` oder Kontextmenütaste | Kontextmenü mit den Aktionen für das, was darunter liegt (Notiz, Ordner, Text im Editor, Link, Karte, Termin, Datei …) |
+| `Umschalt` + Rechtsklick | Das Menü des Browsers statt des eigenen (in Eingabefeldern und Dialogen gibt es immer das des Browsers) |
 
 ## Entwicklung
 

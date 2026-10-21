@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { cn } from '@/shared/ui/cn'
 import { api, NetworkError } from '@/shared/client/api'
@@ -34,6 +34,7 @@ import { folderPath, sortByName } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
+import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 
 /** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
 function NoteList({ children }: { children: React.ReactNode }) {
@@ -42,13 +43,18 @@ function NoteList({ children }: { children: React.ReactNode }) {
 
 function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
   const app = useApp()
+  const { notes } = useNotes()
+  const openContextMenu = useContextMenu()
   const dragged = useDraggedId() === note.id
+  // Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste
+  const summary = notes.find((n) => n.id === note.id)
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
   return (
     <button
       type="button"
       onClick={() => app.go({ kind: 'note', id: note.id })}
+      onContextMenu={(e) => openContextMenu(e, summary ? <NoteMenuItems note={summary} context /> : null)}
       // In einen Ordner der Seitenleiste oder der Ordneransicht ziehen
       onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
       className={cn(
@@ -176,6 +182,7 @@ export function HomeNotes() {
 
 export function FolderView({ id }: { id: string }) {
   const app = useApp()
+  const openContextMenu = useContextMenu()
   const { notes } = useNotes()
   const { data: folders = [], isLoading } = useFolders()
   const dropTarget = useDropTarget()
@@ -269,6 +276,7 @@ export function FolderView({ id }: { id: string }) {
                 type="button"
                 data-drop-folder={f.id}
                 onClick={() => app.go({ kind: 'folder', id: f.id })}
+                onContextMenu={(e) => openContextMenu(e, <FolderMenuItems folder={f} context />)}
                 onPointerDown={(e) => startDrag(e, { kind: 'folder', id: f.id, name: f.name })}
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition-colors select-none [-webkit-touch-callout:none] hover:border-border-strong hover:bg-subtle',

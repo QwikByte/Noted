@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CloudOff, Download, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { NetworkError, errorMessage } from '@/shared/client/api'
@@ -28,6 +28,7 @@ import { blankEvent, occurrences, onDay } from '../event'
 import { layoutDay } from '../layout'
 import { useEventMutations, useEvents, type ImportSummary } from '../client/calendar'
 import { EventDialog, ExamMark, eventColor, type DialogTarget } from './EventDialog'
+import { EventMenuItems } from './EventMenuItems'
 import type { CalendarEvent, Occurrence } from '../types'
 
 /** Höhe einer Stunde im Wochenraster in px */
@@ -36,6 +37,16 @@ const HOUR = 48
 const MONTH_CHIPS = 3
 
 type Mode = 'week' | 'month'
+
+/** Kontextmenü für einen Termin bzw. ein freies Feld im Raster (ohne Uhrzeit: in der Monatsansicht) */
+type EventMenu = (e: React.MouseEvent, occurrence: Occurrence) => void
+type SlotMenu = (e: React.MouseEvent, date: string, minutes?: number) => void
+
+/** Angeklickte halbe Stunde in einer Tagesspalte der Woche */
+function slotAt(e: React.MouseEvent<HTMLElement>): number {
+  const y = e.clientY - e.currentTarget.getBoundingClientRect().top
+  return Math.min(23 * 60 + 30, Math.max(0, Math.floor((y / HOUR) * 2) * 30))
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -64,6 +75,7 @@ export function CalendarView() {
   const [dialog, setDialog] = useState<DialogTarget | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const touch = useRef<{ x: number; y: number } | null>(null)
+  const openContextMenu = useContextMenu()
 
   // Waagerechtes Wischen blättert hier die Tage – sonst wertet der Browser es zusätzlich als „Zurück“ und verlässt
   // den Kalender. Abschalten lässt sich das nur an der Wurzel, daher nur, solange die schmale Ansicht offen ist.
@@ -104,6 +116,35 @@ export function CalendarView() {
     }
   }
 
+  const eventMenu: EventMenu = (e, occurrence) =>
+    openContextMenu(e, <EventMenuItems occurrence={occurrence} onDialog={setDialog} />, { copy: true })
+  // Wie ein Klick ins Raster: neuer Termin an diesem Tag (in der Woche zur angeklickten halben Stunde)
+  const slotMenu: SlotMenu = (e, date, minutes) =>
+    openContextMenu(
+      e,
+      <>
+        <MenuLabel>
+          {weekdayName(date)}, {longDate(date)}
+          {minutes === undefined ? null : ` · ${timeOf(addMinutes(`${date}T00:00`, minutes))}`}
+        </MenuLabel>
+        <MenuItem icon={<Plus />} onSelect={() => openNew(date, minutes)}>
+          Neuer Termin …
+        </MenuItem>
+      </>,
+    )
+
+  // Dieselben Einträge im Menü „…“ und beim Rechtsklick auf die freie Fläche
+  const moreItems = (
+    <>
+      <MenuItem icon={<Upload />} onSelect={() => fileInput.current?.click()} disabled={m.importFile.isPending}>
+        .ics importieren
+      </MenuItem>
+      <MenuItem icon={<Download />} onSelect={() => window.location.assign('/api/calendar/export')}>
+        Als .ics exportieren
+      </MenuItem>
+    </>
+  )
+
   const unit = mode === 'month' ? 'Einen Monat' : wide ? 'Eine Woche' : 'Einen Tag'
   let label: string
   if (mode === 'month') label = `${monthName(month)} ${month.slice(0, 4)}`
@@ -118,7 +159,23 @@ export function CalendarView() {
   }
 
   return (
-    <div className="flex h-full flex-col px-3 pt-4 pb-16 sm:px-6 sm:pt-6" data-testid="calendar">
+    <div
+      className="flex h-full flex-col px-3 pt-4 pb-16 sm:px-6 sm:pt-6"
+      data-testid="calendar"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            <MenuItem icon={<Plus />} onSelect={() => openNew(newDate)}>
+              Neuer Termin …
+            </MenuItem>
+            <MenuSeparator />
+            {moreItems}
+          </>,
+          { text: true, copy: true },
+        )
+      }
+    >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* Beim Blättern wird der neue Zeitraum vorgelesen – mit KW, die sich innerhalb eines Monats als Einziges ändert */}
         <h1 className="mr-auto flex min-w-0 items-baseline gap-2.5 text-xl font-bold tracking-tight sm:text-2xl" aria-live="polite" aria-atomic="true">
@@ -171,12 +228,7 @@ export function CalendarView() {
             </Button>
           )}
         >
-          <MenuItem icon={<Upload />} onSelect={() => fileInput.current?.click()} disabled={m.importFile.isPending}>
-            .ics importieren
-          </MenuItem>
-          <MenuItem icon={<Download />} onSelect={() => window.location.assign('/api/calendar/export')}>
-            Als .ics exportieren
-          </MenuItem>
+          {moreItems}
         </Menu>
         <input
           ref={fileInput}
@@ -224,6 +276,8 @@ export function CalendarView() {
                 nowMinutes={now.getHours() * 60 + now.getMinutes()}
                 onSlot={openNew}
                 onOpen={(occurrence) => setDialog({ kind: 'edit', occurrence })}
+                onEventMenu={eventMenu}
+                onSlotMenu={slotMenu}
               />
             ) : (
               <MonthView
@@ -234,6 +288,8 @@ export function CalendarView() {
                 onDay={showDay}
                 onSlot={(date) => openNew(date)}
                 onOpen={(occurrence) => setDialog({ kind: 'edit', occurrence })}
+                onEventMenu={eventMenu}
+                onSlotMenu={slotMenu}
               />
             )}
           </div>
@@ -252,6 +308,8 @@ function WeekView({
   nowMinutes,
   onSlot,
   onOpen,
+  onEventMenu,
+  onSlotMenu,
 }: {
   days: string[]
   events: CalendarEvent[]
@@ -259,6 +317,8 @@ function WeekView({
   nowMinutes: number
   onSlot: (date: string, minutes: number) => void
   onOpen: (o: Occurrence) => void
+  onEventMenu: EventMenu
+  onSlotMenu: SlotMenu
 }) {
   const items = useMemo(() => occurrences(events, days[0], addDays(days[days.length - 1], 1)), [events, days])
   const allDay = days.map((d) => items.filter((o) => o.event.allDay && onDay(o, d)))
@@ -300,6 +360,7 @@ function WeekView({
                     key={`${o.event.id}-${o.date}`}
                     type="button"
                     onClick={() => onOpen(o)}
+                    onContextMenu={(e) => onEventMenu(e, o)}
                     className="block w-full truncate rounded px-1.5 text-left text-xs leading-5 font-medium hover:brightness-95"
                     style={{ background: `color-mix(in srgb, ${eventColor(o.event.color)} 22%, var(--bg-elevated))` }}
                     data-testid="calendar-event"
@@ -333,11 +394,9 @@ function WeekView({
             key={d}
             className="relative min-w-0 flex-1 cursor-pointer border-l border-border"
             data-testid={`day-${d}`}
-            onClick={(e) => {
-              // Klick ins Raster: neuer Termin zur angeklickten halben Stunde
-              const y = e.clientY - e.currentTarget.getBoundingClientRect().top
-              onSlot(d, Math.min(23 * 60 + 30, Math.max(0, Math.floor((y / HOUR) * 2) * 30)))
-            }}
+            // Klick ins Raster: neuer Termin zur angeklickten halben Stunde
+            onClick={(e) => onSlot(d, slotAt(e))}
+            onContextMenu={(e) => onSlotMenu(e, d, slotAt(e))}
           >
             {layoutDay(items, d).map((p) => {
               const o = p.occurrence
@@ -354,6 +413,7 @@ function WeekView({
                     e.stopPropagation()
                     onOpen(o)
                   }}
+                  onContextMenu={(e) => onEventMenu(e, o)}
                   className="absolute overflow-hidden rounded-md px-1.5 py-0.5 text-left text-xs leading-tight shadow-sm hover:brightness-95"
                   style={{
                     top,
@@ -407,6 +467,8 @@ function MonthView({
   onDay: showDay,
   onSlot,
   onOpen,
+  onEventMenu,
+  onSlotMenu,
 }: {
   month: string
   events: CalendarEvent[]
@@ -415,6 +477,8 @@ function MonthView({
   onDay: (date: string) => void
   onSlot: (date: string) => void
   onOpen: (o: Occurrence) => void
+  onEventMenu: EventMenu
+  onSlotMenu: SlotMenu
 }) {
   const cells = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(startOfWeek(month), i)), [month])
   const items = useMemo(() => occurrences(events, cells[0], addDays(cells[41], 1)), [events, cells])
@@ -439,6 +503,7 @@ function MonthView({
               data-testid={`month-${d}`}
               // Auf dem Handy sind die Felder zu klein für Termine – ein Tipp zeigt den Tag
               onClick={() => (wide ? onSlot(d) : showDay(d))}
+              onContextMenu={(e) => onSlotMenu(e, d)}
             >
               <button
                 type="button"
@@ -458,7 +523,7 @@ function MonthView({
               {wide ? (
                 <div className="mt-0.5 space-y-px">
                   {list.slice(0, MONTH_CHIPS).map((o) => (
-                    <MonthChip key={`${o.event.id}-${o.date}`} occurrence={o} day={d} onOpen={onOpen} />
+                    <MonthChip key={`${o.event.id}-${o.date}`} occurrence={o} day={d} onOpen={onOpen} onMenu={onEventMenu} />
                   ))}
                   {list.length > MONTH_CHIPS ? (
                     <button
@@ -493,7 +558,17 @@ function MonthView({
   )
 }
 
-function MonthChip({ occurrence: o, day, onOpen }: { occurrence: Occurrence; day: string; onOpen: (o: Occurrence) => void }) {
+function MonthChip({
+  occurrence: o,
+  day,
+  onOpen,
+  onMenu,
+}: {
+  occurrence: Occurrence
+  day: string
+  onOpen: (o: Occurrence) => void
+  onMenu: EventMenu
+}) {
   const color = eventColor(o.event.color)
   return (
     <button
@@ -502,6 +577,7 @@ function MonthChip({ occurrence: o, day, onOpen }: { occurrence: Occurrence; day
         e.stopPropagation()
         onOpen(o)
       }}
+      onContextMenu={(e) => onMenu(e, o)}
       className="flex w-full min-w-0 items-center gap-1 rounded px-1 text-left text-[11px] leading-5 hover:bg-hover"
       style={o.event.allDay ? { background: `color-mix(in srgb, ${color} 22%, var(--bg-elevated))` } : undefined}
       data-testid="calendar-event"

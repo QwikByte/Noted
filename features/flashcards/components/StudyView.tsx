@@ -6,6 +6,7 @@ import { CardMarkdown } from './CardMarkdown'
 import { useNow } from '@/shared/client/now'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
+import { MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
@@ -129,6 +130,7 @@ function StudySession({
 }) {
   const app = useApp()
   const toast = useToast()
+  const openContextMenu = useContextMenu()
   const { notes } = useNotes()
   const { title, back } = snapshot.scope
 
@@ -400,7 +402,26 @@ function StudySession({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
               {/* Karteikarte: Frage über dem roten Kopfstrich, darunter Antwortfeld (leer liniert bis zum Aufdecken) */}
-              <div className="index-card" data-testid="study-card">
+              <div
+                className="index-card"
+                data-testid="study-card"
+                onContextMenu={(e) =>
+                  openContextMenu(
+                    e,
+                    <>
+                      <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
+                        Karte bearbeiten …
+                      </MenuItem>
+                      {revealed && note ? (
+                        <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: note.id })}>
+                          Zur Notiz
+                        </MenuItem>
+                      ) : null}
+                    </>,
+                    { text: true, copy: true },
+                  )
+                }
+              >
                 <div className="px-5 pt-4 pb-5 sm:px-7 sm:pt-5">
                   <div className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-faint">
                     {current.kind === 'new' ? <span className="rounded-full bg-subtle px-2 py-0.5 font-medium text-muted">Neu</span> : null}

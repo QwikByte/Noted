@@ -24,6 +24,8 @@ import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
 import { CardsFromNoteDialog } from '@/features/flashcards/components/FromNoteDialog'
 import { SplitPane } from '@/features/pdf/components/SplitPane'
 import { Button } from '@/shared/ui/button'
+import { ContextMenuProvider, useContextMenu } from '@/shared/ui/menu'
+import { CreateMenuItems, isEmptySpot } from '@/features/notes/components/ItemMenus'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
@@ -322,157 +324,175 @@ export default function NotesApp() {
 
   return (
     <AppContext.Provider value={actions}>
-      <div className="flex h-dvh overflow-hidden bg-bg">
-        {/* Für die Tastatur: an Suche, Navigation und Ordnerbaum vorbei direkt zum Inhalt */}
-        <a
-          href="#main"
-          className="sr-only z-50 rounded-lg bg-elevated px-3 py-2 text-sm font-medium shadow-pop focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
-        >
-          Zum Inhalt springen
-        </a>
-        {/* Seitenleiste: Desktop fest, mobil als Schublade */}
-        <aside ref={sidebarSpace} className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col xl:w-80">
-          <Sidebar currentFolderId={currentFolderId} />
-        </aside>
-        {sidebarOpen ? (
-          <div className="fixed inset-0 z-40 lg:hidden">
-            <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setSidebarOpen(false)} />
-            <aside
-              className="pt-safe absolute inset-y-0 left-0 flex w-[86%] max-w-80 animate-slide-in-left flex-col overscroll-contain bg-sidebar shadow-pop"
-              aria-label="Navigation"
-            >
-              <Sidebar currentFolderId={currentFolderId} />
-            </aside>
-          </div>
-        ) : null}
-
-        <main id="main" tabIndex={-1} className="relative flex min-w-0 flex-1 flex-col outline-none">
-          {showTopBar ? (
-            <header className="pt-safe border-b border-border lg:hidden">
-              <div className="flex h-12 items-center gap-1 px-2">
-                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen" aria-expanded={sidebarOpen}>
-                  <MenuIcon className="size-5" />
-                </Button>
-                <span className="flex-1 truncate px-1 font-semibold">Noted</span>
-                <Button variant="ghost" size="icon" onClick={() => setSwitcherOpen(true)} aria-label="Suchen">
-                  <Search className="size-5" />
-                </Button>
-              </div>
-            </header>
+      {/* Eigene Ebene für Kontextmenüs: Ihre Einträge brauchen die Aktionen der App (useApp) */}
+      <ContextMenuProvider>
+        <div className="flex h-dvh overflow-hidden bg-bg">
+          {/* Für die Tastatur: an Suche, Navigation und Ordnerbaum vorbei direkt zum Inhalt */}
+          <a
+            href="#main"
+            className="sr-only z-50 rounded-lg bg-elevated px-3 py-2 text-sm font-medium shadow-pop focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+          >
+            Zum Inhalt springen
+          </a>
+          {/* Seitenleiste: Desktop fest, mobil als Schublade */}
+          <aside ref={sidebarSpace} className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col xl:w-80">
+            <Sidebar currentFolderId={currentFolderId} />
+          </aside>
+          {sidebarOpen ? (
+            <div className="fixed inset-0 z-40 lg:hidden">
+              <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setSidebarOpen(false)} />
+              <aside
+                className="pt-safe absolute inset-y-0 left-0 flex w-[86%] max-w-80 animate-slide-in-left flex-col overscroll-contain bg-sidebar shadow-pop"
+                aria-label="Navigation"
+              >
+                <Sidebar currentFolderId={currentFolderId} />
+              </aside>
+            </div>
           ) : null}
-          <SplitPane
-            main={main}
-            side={
-              pdf ? (
-                <PdfPanel
-                  file={pdf.file}
-                  page={pdfJump.page}
-                  nonce={pdfJump.nonce}
-                  full={pdfFull === '1'}
-                  onToggleFull={() => setPdfFull(pdfFull === '1' ? '0' : '1')}
-                  onClose={() => {
-                    setPdfPref('')
-                    setPdfFull('0')
-                  }}
-                  onOpen={(file, page) => actions.openPdf(file, page)}
-                />
-              ) : null
+
+          <MainArea folderId={currentFolderId}>
+            {showTopBar ? (
+              <header className="pt-safe border-b border-border lg:hidden">
+                <div className="flex h-12 items-center gap-1 px-2">
+                  <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen" aria-expanded={sidebarOpen}>
+                    <MenuIcon className="size-5" />
+                  </Button>
+                  <span className="flex-1 truncate px-1 font-semibold">Noted</span>
+                  <Button variant="ghost" size="icon" onClick={() => setSwitcherOpen(true)} aria-label="Suchen">
+                    <Search className="size-5" />
+                  </Button>
+                </div>
+              </header>
+            ) : null}
+            <SplitPane
+              main={main}
+              side={
+                pdf ? (
+                  <PdfPanel
+                    file={pdf.file}
+                    page={pdfJump.page}
+                    nonce={pdfJump.nonce}
+                    full={pdfFull === '1'}
+                    onToggleFull={() => setPdfFull(pdfFull === '1' ? '0' : '1')}
+                    onClose={() => {
+                      setPdfPref('')
+                      setPdfFull('0')
+                    }}
+                    onOpen={(file, page) => actions.openPdf(file, page)}
+                  />
+                ) : null
+              }
+              full={pdfFull === '1'}
+              size={Number(pdfSize) || 50}
+              onResize={(n) => setPdfSize(String(n))}
+            />
+            {showFab ? (
+              <button
+                type="button"
+                onClick={() => setNewNote({ folderId: currentFolderId })}
+                className={cn(
+                  'fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-30 flex size-14 items-center justify-center rounded-2xl bg-accent text-on-accent shadow-pop transition hover:bg-accent-hover active:scale-95 lg:hidden',
+                )}
+                aria-label="Neue Notiz"
+              >
+                <Plus className="size-6" />
+              </button>
+            ) : null}
+          </MainArea>
+        </div>
+
+        <NewNoteDialog options={newNote} onClose={() => setNewNote(null)} />
+        {cardEditor ? <CardEditorDialog key={cardEditor.n} init={cardEditor.init} onClose={() => setCardEditor(null)} /> : null}
+        {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
+        <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+        <DragLayer />
+        <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
+        <PromptDialog
+          open={!!folderPrompt}
+          title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}
+          label="Name"
+          initialValue={folderPrompt && 'folder' in folderPrompt ? folderPrompt.folder.name : ''}
+          confirmLabel={folderPrompt && 'folder' in folderPrompt ? 'Umbenennen' : 'Anlegen'}
+          validate={validateName}
+          onClose={() => setFolderPrompt(null)}
+          onSubmit={async (name) => {
+            if (!folderPrompt) return
+            if ('folder' in folderPrompt) {
+              await api(`/api/folders/${folderPrompt.folder.id}`, { method: 'PATCH', body: { name } })
+            } else {
+              await api('/api/folders', { method: 'POST', body: { name, parentId: folderPrompt.parentId } })
             }
-            full={pdfFull === '1'}
-            size={Number(pdfSize) || 50}
-            onResize={(n) => setPdfSize(String(n))}
-          />
-          {showFab ? (
-            <button
-              type="button"
-              onClick={() => setNewNote({ folderId: currentFolderId })}
-              className={cn(
-                'fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-30 flex size-14 items-center justify-center rounded-2xl bg-accent text-on-accent shadow-pop transition hover:bg-accent-hover active:scale-95 lg:hidden',
-              )}
-              aria-label="Neue Notiz"
-            >
-              <Plus className="size-6" />
-            </button>
-          ) : null}
-        </main>
-      </div>
-
-      <NewNoteDialog options={newNote} onClose={() => setNewNote(null)} />
-      {cardEditor ? <CardEditorDialog key={cardEditor.n} init={cardEditor.init} onClose={() => setCardEditor(null)} /> : null}
-      {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
-      <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
-      <DragLayer />
-      <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
-      <PromptDialog
-        open={!!folderPrompt}
-        title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}
-        label="Name"
-        initialValue={folderPrompt && 'folder' in folderPrompt ? folderPrompt.folder.name : ''}
-        confirmLabel={folderPrompt && 'folder' in folderPrompt ? 'Umbenennen' : 'Anlegen'}
-        validate={validateName}
-        onClose={() => setFolderPrompt(null)}
-        onSubmit={async (name) => {
-          if (!folderPrompt) return
-          if ('folder' in folderPrompt) {
-            await api(`/api/folders/${folderPrompt.folder.id}`, { method: 'PATCH', body: { name } })
-          } else {
-            await api('/api/folders', { method: 'POST', body: { name, parentId: folderPrompt.parentId } })
+            await qc.invalidateQueries({ queryKey: keys.folders })
+            setFolderPrompt(null)
+          }}
+        />
+        <PromptDialog
+          open={!!renameTarget}
+          title="Notiz umbenennen"
+          label="Titel"
+          initialValue={renameTarget?.title ?? ''}
+          confirmLabel="Umbenennen"
+          validate={validateName}
+          onClose={() => setRenameTarget(null)}
+          onSubmit={async (title) => {
+            if (!renameTarget) return
+            sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
+            setRenameTarget(null)
+          }}
+        />
+        <ConfirmModal
+          open={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          title="Ordner löschen?"
+          description={
+            deleteTarget
+              ? `„${deleteTarget.name}“ und alle Unterordner werden gelöscht. Enthaltene Notizen landen im Papierkorb.`
+              : undefined
           }
-          await qc.invalidateQueries({ queryKey: keys.folders })
-          setFolderPrompt(null)
-        }}
-      />
-      <PromptDialog
-        open={!!renameTarget}
-        title="Notiz umbenennen"
-        label="Titel"
-        initialValue={renameTarget?.title ?? ''}
-        confirmLabel="Umbenennen"
-        validate={validateName}
-        onClose={() => setRenameTarget(null)}
-        onSubmit={async (title) => {
-          if (!renameTarget) return
-          sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
-          setRenameTarget(null)
-        }}
-      />
-      <ConfirmModal
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        title="Ordner löschen?"
-        description={
-          deleteTarget
-            ? `„${deleteTarget.name}“ und alle Unterordner werden gelöscht. Enthaltene Notizen landen im Papierkorb.`
-            : undefined
-        }
-        confirmLabel="Löschen"
-        danger
-        loading={deleting}
-        onConfirm={async () => {
-          if (!deleteTarget) return
-          setDeleting(true)
-          try {
-            const res = await api<{ trashedNotes: number }>(`/api/folders/${deleteTarget.id}`, { method: 'DELETE' })
-            await Promise.all([
-              qc.invalidateQueries({ queryKey: keys.folders }),
-              qc.invalidateQueries({ queryKey: keys.notes }),
-              qc.invalidateQueries({ queryKey: keys.trash }),
-              qc.invalidateQueries({ queryKey: graphKey }),
-            ])
-            if (view.kind === 'folder' && view.id === deleteTarget.id) navigate({ kind: 'home' }, { replace: true })
-            toast.success(
-              res.trashedNotes
-                ? `Ordner gelöscht – ${res.trashedNotes} ${res.trashedNotes === 1 ? 'Notiz' : 'Notizen'} im Papierkorb.`
-                : 'Ordner gelöscht.',
-            )
-            setDeleteTarget(null)
-          } catch (err) {
-            toast.error(errorMessage(err))
-          } finally {
-            setDeleting(false)
-          }
-        }}
-      />
+          confirmLabel="Löschen"
+          danger
+          loading={deleting}
+          onConfirm={async () => {
+            if (!deleteTarget) return
+            setDeleting(true)
+            try {
+              const res = await api<{ trashedNotes: number }>(`/api/folders/${deleteTarget.id}`, { method: 'DELETE' })
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: keys.folders }),
+                qc.invalidateQueries({ queryKey: keys.notes }),
+                qc.invalidateQueries({ queryKey: keys.trash }),
+                qc.invalidateQueries({ queryKey: graphKey }),
+              ])
+              if (view.kind === 'folder' && view.id === deleteTarget.id) navigate({ kind: 'home' }, { replace: true })
+              toast.success(
+                res.trashedNotes
+                  ? `Ordner gelöscht – ${res.trashedNotes} ${res.trashedNotes === 1 ? 'Notiz' : 'Notizen'} im Papierkorb.`
+                  : 'Ordner gelöscht.',
+              )
+              setDeleteTarget(null)
+            } catch (err) {
+              toast.error(errorMessage(err))
+            } finally {
+              setDeleting(false)
+            }
+          }}
+        />
+      </ContextMenuProvider>
     </AppContext.Provider>
+  )
+}
+
+/** Hauptbereich. Rechtsklick auf freie Fläche: neu anlegen und suchen – Bereiche mit eigenem Menü gehen vor. */
+function MainArea({ folderId, children }: { folderId: string | null; children: React.ReactNode }) {
+  const openContextMenu = useContextMenu()
+  return (
+    <main
+      id="main"
+      tabIndex={-1}
+      className="relative flex min-w-0 flex-1 flex-col outline-none"
+      onContextMenu={(e) => openContextMenu(e, isEmptySpot(e.target) ? <CreateMenuItems folderId={folderId} /> : null)}
+    >
+      {children}
+    </main>
   )
 }

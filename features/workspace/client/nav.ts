@@ -57,7 +57,8 @@ function viewFromParams(params: URLSearchParams): View {
   return { kind: 'home' }
 }
 
-function viewToUrl(view: View): string {
+/** Adresse einer Ansicht – auch zum Öffnen in einem neuen Tab */
+export function viewToUrl(view: View): string {
   switch (view.kind) {
     case 'note':
       return `/?n=${encodeURIComponent(view.id)}${view.heading ? `&h=${encodeURIComponent(view.heading)}` : ''}`

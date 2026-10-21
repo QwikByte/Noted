@@ -1,28 +1,15 @@
 'use client'
 import { useEffect, useMemo } from 'react'
-import {
-  ChevronRight,
-  FileText,
-  Folder as FolderIcon,
-  FolderOpen,
-  FolderInput,
-  FolderPlus,
-  List,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  PinOff,
-  Plus,
-  Trash2,
-} from 'lucide-react'
+import { ChevronRight, FileText, Folder as FolderIcon, FolderOpen, MoreHorizontal, Pin } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
-import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, useContextMenu } from '@/shared/ui/menu'
 import { cn } from '@/shared/ui/cn'
 import { buildTree, folderPath, type FolderNode } from '../tree'
 import { useFolders, useNotes } from '../client/queries'
 import { useExpanded } from '../client/expanded'
 import { ROOT, startDrag, useDraggedId, useDropTarget } from '../client/drag'
 import type { NoteSummary } from '../types'
+import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 
 /** Zugeklappter Ordner, über dem beim Ziehen so lange verweilt wird, klappt auf */
 const EXPAND_DELAY_MS = 600
@@ -35,6 +22,7 @@ export function FolderTree() {
   const dropTarget = useDropTarget()
   const dragged = useDraggedId()
   const tree = useMemo(() => buildTree(folders, notes), [folders, notes])
+  const openContextMenu = useContextMenu()
 
   const activeNoteId = app.view.kind === 'note' ? app.view.id : null
   const activeFolderId = app.view.kind === 'folder' ? app.view.id : null
@@ -62,6 +50,7 @@ export function FolderTree() {
           dragged === note.id && 'opacity-50',
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
+        onContextMenu={(e) => openContextMenu(e, <NoteMenuItems note={note} context />)}
       >
         <button
           type="button"
@@ -99,6 +88,7 @@ export function FolderTree() {
             dragged === node.id && 'opacity-50',
           )}
           style={{ paddingLeft: 8 + node.depth * 14 }}
+          onContextMenu={(e) => openContextMenu(e, <FolderMenuItems folder={node} context />)}
         >
           <button
             type="button"
@@ -155,7 +145,6 @@ export function FolderTree() {
 }
 
 function NoteMenu({ note }: { note: NoteSummary }) {
-  const app = useApp()
   return (
     <Menu
       trigger={(p) => (
@@ -169,25 +158,12 @@ function NoteMenu({ note }: { note: NoteSummary }) {
         </button>
       )}
     >
-      <MenuItem icon={<Pencil />} onSelect={() => app.renameNote(note)}>
-        Umbenennen
-      </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note })}>
-        Verschieben …
-      </MenuItem>
-      <MenuItem icon={note.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(note)}>
-        {note.pinned ? 'Lösen' : 'Anheften'}
-      </MenuItem>
-      <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote(note)}>
-        In den Papierkorb
-      </MenuItem>
+      <NoteMenuItems note={note} />
     </Menu>
   )
 }
 
 function FolderMenu({ node }: { node: FolderNode }) {
-  const app = useApp()
   return (
     <Menu
       trigger={(p) => (
@@ -201,26 +177,7 @@ function FolderMenu({ node }: { node: FolderNode }) {
         </button>
       )}
     >
-      <MenuItem icon={<Plus />} onSelect={() => app.openNewNote({ folderId: node.id })}>
-        Neue Notiz hier
-      </MenuItem>
-      <MenuItem icon={<FolderPlus />} onSelect={() => app.openNewFolder(node.id)}>
-        Neuer Unterordner
-      </MenuItem>
-      <MenuItem icon={<List />} onSelect={() => app.go({ kind: 'folder', id: node.id })}>
-        Als Liste anzeigen
-      </MenuItem>
-      <MenuSeparator />
-      <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(node)}>
-        Umbenennen
-      </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'folder', folder: node })}>
-        Verschieben …
-      </MenuItem>
-      <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(node)}>
-        Löschen
-      </MenuItem>
+      <FolderMenuItems folder={node} />
     </Menu>
   )
 }

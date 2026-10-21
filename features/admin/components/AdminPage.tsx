@@ -27,7 +27,7 @@ import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
 import { ConfirmModal, Modal } from '@/shared/ui/modal'
-import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { ErrorText, useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
@@ -130,6 +130,7 @@ function UsersTab() {
   const [del, setDel] = useState<AdminUser | null>(null)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [busy, setBusy] = useState(false)
+  const openContextMenu = useContextMenu()
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin'] })
 
@@ -141,6 +142,50 @@ function UsersTab() {
     } catch (err) {
       toast.error(errorMessage(err))
     }
+  }
+
+  /** Aktionen für ein Konto – im Menü der Zeile und im Kontextmenü */
+  function userItems(u: AdminUser) {
+    const isMe = u.id === me.id
+    return (
+      <>
+        <MenuItem icon={<Pencil />} onSelect={() => setEdit(u)}>
+          Bearbeiten
+        </MenuItem>
+        <MenuItem icon={<KeyRound />} onSelect={() => setResetPw(u)}>
+          Passwort zurücksetzen
+        </MenuItem>
+        {u.mfaEnabled && !isMe ? (
+          <MenuItem icon={<ShieldOff />} onSelect={() => setConfirm({ user: u, action: 'mfa' })}>
+            MFA zurücksetzen
+          </MenuItem>
+        ) : null}
+        {u.lockedUntil ? (
+          <MenuItem icon={<Unlock />} onSelect={() => patch(u, { unlock: true }, 'Konto entsperrt.')}>
+            Entsperren
+          </MenuItem>
+        ) : null}
+        {!isMe ? (
+          <>
+            <MenuItem icon={<LogOut />} onSelect={() => setConfirm({ user: u, action: 'sessions' })}>
+              Alle Sitzungen beenden
+            </MenuItem>
+            <MenuItem
+              icon={<Power />}
+              onSelect={() =>
+                u.isActive ? setConfirm({ user: u, action: 'deactivate' }) : patch(u, { isActive: true }, 'Konto aktiviert.')
+              }
+            >
+              {u.isActive ? 'Deaktivieren' : 'Aktivieren'}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<Trash2 />} danger onSelect={() => setDel(u)}>
+              Löschen
+            </MenuItem>
+          </>
+        ) : null}
+      </>
+    )
   }
 
   return (
@@ -163,7 +208,12 @@ function UsersTab() {
           {users.map((u) => {
             const isMe = u.id === me.id
             return (
-              <li key={u.id} className="flex items-start gap-3 px-4 py-3.5" data-testid={`user-${u.username}`}>
+              <li
+                key={u.id}
+                className="flex items-start gap-3 px-4 py-3.5"
+                data-testid={`user-${u.username}`}
+                onContextMenu={(e) => openContextMenu(e, userItems(u), { copy: true })}
+              >
                 <Avatar name={u.displayName} className={cn('mt-0.5', !u.isActive && 'opacity-50')} />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -204,41 +254,7 @@ function UsersTab() {
                     </Button>
                   )}
                 >
-                  <MenuItem icon={<Pencil />} onSelect={() => setEdit(u)}>
-                    Bearbeiten
-                  </MenuItem>
-                  <MenuItem icon={<KeyRound />} onSelect={() => setResetPw(u)}>
-                    Passwort zurücksetzen
-                  </MenuItem>
-                  {u.mfaEnabled && !isMe ? (
-                    <MenuItem icon={<ShieldOff />} onSelect={() => setConfirm({ user: u, action: 'mfa' })}>
-                      MFA zurücksetzen
-                    </MenuItem>
-                  ) : null}
-                  {u.lockedUntil ? (
-                    <MenuItem icon={<Unlock />} onSelect={() => patch(u, { unlock: true }, 'Konto entsperrt.')}>
-                      Entsperren
-                    </MenuItem>
-                  ) : null}
-                  {!isMe ? (
-                    <>
-                      <MenuItem icon={<LogOut />} onSelect={() => setConfirm({ user: u, action: 'sessions' })}>
-                        Alle Sitzungen beenden
-                      </MenuItem>
-                      <MenuItem
-                        icon={<Power />}
-                        onSelect={() =>
-                          u.isActive ? setConfirm({ user: u, action: 'deactivate' }) : patch(u, { isActive: true }, 'Konto aktiviert.')
-                        }
-                      >
-                        {u.isActive ? 'Deaktivieren' : 'Aktivieren'}
-                      </MenuItem>
-                      <MenuSeparator />
-                      <MenuItem icon={<Trash2 />} danger onSelect={() => setDel(u)}>
-                        Löschen
-                      </MenuItem>
-                    </>
-                  ) : null}
+                  {userItems(u)}
                 </Menu>
               </li>
             )

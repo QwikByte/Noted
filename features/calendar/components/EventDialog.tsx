@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { FilePlus2, FileText, GraduationCap, Repeat, Timer, Trash2 } from 'lucide-react'
-import { useApp } from '@/features/workspace/client/context'
+import { useApp, type AppActions } from '@/features/workspace/client/context'
 import { useNotes } from '@/features/notes/client/queries'
+import type { NoteSummary } from '@/features/notes/types'
 import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { focusTimer } from '@/features/focus/client/focus-timer'
 import { SETTING_LIMITS } from '@/features/focus/timer'
@@ -20,8 +21,11 @@ import { MAX_LOCATION, MAX_NOTES, MAX_TITLE } from '../limits'
 import { useEventMutations } from '../client/calendar'
 import type { CalendarEvent, EventColor, EventInput, Occurrence } from '../types'
 
-/** Neuer Termin mit Vorgaben oder ein vorhandener (bei Serien: das angeklickte Vorkommen) */
-export type DialogTarget = { kind: 'new'; input: EventInput } | { kind: 'edit'; occurrence: Occurrence }
+/**
+ * Neuer Termin mit Vorgaben oder ein vorhandener (bei Serien: das angeklickte Vorkommen). `delete`: nur die Rückfrage
+ * zum Löschen, ohne das Formular dahinter (aus dem Kontextmenü).
+ */
+export type DialogTarget = { kind: 'new'; input: EventInput } | { kind: 'edit' | 'delete'; occurrence: Occurrence }
 
 const COLORS: { id: EventColor; label: string }[] = [
   { id: 1, label: 'Rot' },
@@ -108,15 +112,18 @@ function moveStart(d: Draft, patch: Partial<Pick<Draft, 'startDate' | 'startTime
 export function EventDialog({ target, onClose }: { target: DialogTarget; onClose: () => void }) {
   const toast = useToast()
   const m = useEventMutations()
-  const occurrence = target.kind === 'edit' ? target.occurrence : null
+  const occurrence = target.kind !== 'new' ? target.occurrence : null
   const series = occurrence?.event.repeat ? occurrence.event : null
   // Bei Serien gilt eine Änderung zunächst nur für den angeklickten Termin
   const [scope, setScope] = useState<'one' | 'all'>('one')
   const [draft, setDraft] = useState(() =>
-    toDraft(target.kind === 'edit' ? { ...target.occurrence.event, start: target.occurrence.start, end: target.occurrence.end } : target.input),
+    toDraft(target.kind !== 'new' ? { ...target.occurrence.event, start: target.occurrence.start, end: target.occurrence.end } : target.input),
   )
   const [error, setError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const deleteOnly = target.kind === 'delete'
+  const [confirmDelete, setConfirmDelete] = useState(deleteOnly)
+  // Ohne Formular dahinter schließt Abbrechen alles, statt zurück ins Formular zu führen
+  const cancelDelete = () => (deleteOnly ? onClose() : setConfirmDelete(false))
   const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     setError(null)
@@ -154,7 +161,7 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
   return (
     <>
       <Modal
-        open
+        open={!deleteOnly}
         onClose={onClose}
         title={occurrence ? 'Termin bearbeiten' : 'Neuer Termin'}
         description={occurrence ? `${weekdayName(occurrence.date)}, ${longDate(occurrence.date)}${series ? ' · wiederholt sich' : ''}` : undefined}
@@ -340,14 +347,14 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
 
       <Modal
         open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
+        onClose={cancelDelete}
         size="sm"
         title={series ? 'Wiederkehrenden Termin löschen?' : 'Termin löschen?'}
         description={series ? undefined : `„${occurrence?.event.title}“ wird gelöscht.`}
         footer={
           series ? (
             <>
-              <Button onClick={() => setConfirmDelete(false)}>Abbrechen</Button>
+              <Button onClick={cancelDelete}>Abbrechen</Button>
               <Button variant="danger" onClick={() => void remove('all')} loading={m.remove.isPending}>
                 Alle Termine
               </Button>
@@ -357,7 +364,7 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
             </>
           ) : (
             <>
-              <Button onClick={() => setConfirmDelete(false)}>Abbrechen</Button>
+              <Button onClick={cancelDelete}>Abbrechen</Button>
               <Button variant="danger" onClick={() => void remove('all')} loading={m.remove.isPending}>
                 Löschen
               </Button>
@@ -444,12 +451,21 @@ function FocusStart({ occurrence, onDone }: { occurrence: Occurrence; onDone: ()
   )
 }
 
-/** Mitschrift zum Termin öffnen oder mit der Vorlage „Vorlesung“ anlegen */
+/** Mitschrift zum Termin: die gleichnamige Notiz öffnen oder sie mit der Vorlage „Vorlesung“ anlegen */
+export function lectureNote(occurrence: Occurrence, notes: NoteSummary[], app: AppActions) {
+  const title = noteTitleFor(occurrence)
+  const note = notes.find((n) => n.title.toLowerCase() === title.toLowerCase())
+  return {
+    title,
+    note,
+    open: () => (note ? app.go({ kind: 'note', id: note.id }) : app.openNewNote({ templateId: 'lecture', title })),
+  }
+}
+
 function NoteLink({ occurrence, onDone }: { occurrence: Occurrence; onDone: () => void }) {
   const app = useApp()
   const { notes } = useNotes()
-  const title = noteTitleFor(occurrence)
-  const note = notes.find((n) => n.title.toLowerCase() === title.toLowerCase())
+  const { title, note, open } = lectureNote(occurrence, notes, app)
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
       <span className="min-w-0 flex-1 truncate text-sm text-muted">Mitschrift „{title}“</span>
@@ -458,7 +474,7 @@ function NoteLink({ occurrence, onDone }: { occurrence: Occurrence; onDone: () =
           size="sm"
           onClick={() => {
             onDone()
-            app.go({ kind: 'note', id: note.id })
+            open()
           }}
         >
           <FileText className="size-4" /> Öffnen
@@ -468,7 +484,7 @@ function NoteLink({ occurrence, onDone }: { occurrence: Occurrence; onDone: () =
           size="sm"
           onClick={() => {
             onDone()
-            app.openNewNote({ templateId: 'lecture', title })
+            open()
           }}
         >
           <FilePlus2 className="size-4" /> Anlegen

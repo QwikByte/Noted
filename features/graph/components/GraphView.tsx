@@ -16,7 +16,7 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { Loader2, Maximize, Search, ZoomIn, ZoomOut } from 'lucide-react'
+import { FileText, Link2, Loader2, Maximize, Search, ZoomIn, ZoomOut } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useFolders, useTags } from '@/features/notes/client/queries'
 import { descendantFolderIds, folderPath } from '@/features/notes/tree'
@@ -24,9 +24,12 @@ import { ToolButton } from '@/features/notes/components/toolbar'
 import type { Folder } from '@/features/notes/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
 import { Select } from '@/shared/ui/input'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
+import { copyText } from '@/shared/client/clipboard'
 import { useGraph } from '../client/queries'
 import { layoutGraph, neighborhood } from '../layout'
 import { GRAPH_NODE_LIMIT, filterGraph, nodeSize, rootColors } from '../filter'
@@ -80,6 +83,8 @@ function GraphCanvas({
   onOpen: (id: string) => void
 }) {
   const flow = useReactFlow()
+  const openContextMenu = useContextMenu()
+  const toast = useToast()
   const scope = useId()
   const { data: folders = [] } = useFolders()
   const colorOf = useFolderColor(folders)
@@ -143,12 +148,60 @@ function GraphCanvas({
         stroke: var(--accent); stroke-width: 1.5 }`
   }, [hover, neighbors, positions, scope])
 
+  const zoomIn = () => void flow.zoomIn({ duration: 150 })
+  const zoomOut = () => void flow.zoomOut({ duration: 150 })
+  const fitAll = () => void flow.fitView({ padding: 0.15, maxZoom: 1.5, duration: 200 })
+
+  async function copyWikilink(title: string) {
+    if (await copyText(`[[${title}]]`)) toast.success('Wikilink kopiert.')
+    else toast.error('Kopieren nicht möglich.')
+  }
+
+  /** Rechtsklick auf eine Notiz: öffnen (wie ein Klick) oder als Wikilink kopieren */
+  function nodeMenu(n: NoteFlowNode) {
+    return (
+      <>
+        {n.id === centerId ? null : (
+          <>
+            <MenuItem icon={<FileText />} onSelect={() => onOpen(n.id)}>
+              Notiz öffnen
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem icon={<Link2 />} onSelect={() => void copyWikilink(n.data.title)}>
+          Als [[Wikilink]] kopieren
+        </MenuItem>
+      </>
+    )
+  }
+
+  /** Rechtsklick auf die freie Fläche: dieselben Befehle wie die Knöpfe unten rechts */
+  function paneMenu() {
+    return (
+      <>
+        <MenuItem icon={<ZoomIn />} onSelect={zoomIn}>
+          Vergrößern
+        </MenuItem>
+        <MenuItem icon={<ZoomOut />} onSelect={zoomOut}>
+          Verkleinern
+        </MenuItem>
+        <MenuItem icon={<Maximize />} onSelect={fitAll}>
+          Alles anzeigen
+        </MenuItem>
+      </>
+    )
+  }
+
   return (
     <div
       className={cn('graph-flow flow-surface h-full', q && 'graph-searching')}
       data-graph={scope}
       data-labels={showLabels ? 'on' : 'off'}
       data-testid="graph"
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).classList.contains('react-flow__pane')) openContextMenu(e, paneMenu())
+      }}
     >
       {hoverCss ? <style>{hoverCss}</style> : null}
       <ReactFlow<NoteFlowNode>
@@ -158,6 +211,7 @@ function GraphCanvas({
         onNodeClick={(_e, n) => {
           if (n.id !== centerId) onOpen(n.id)
         }}
+        onNodeContextMenu={(e, n) => openContextMenu(e, nodeMenu(n))}
         onNodeMouseEnter={(_e, n) => setHover(n.id)}
         onNodeMouseLeave={() => setHover(null)}
         nodesDraggable={false}
@@ -179,17 +233,13 @@ function GraphCanvas({
       >
         <Background variant={BackgroundVariant.Dots} gap={24} />
         <Panel position="bottom-right" className="flow-panel">
-          <ToolButton label="Verkleinern" keepFocus={false} onClick={() => void flow.zoomOut({ duration: 150 })}>
+          <ToolButton label="Verkleinern" keepFocus={false} onClick={zoomOut}>
             <ZoomOut />
           </ToolButton>
-          <ToolButton label="Vergrößern" keepFocus={false} onClick={() => void flow.zoomIn({ duration: 150 })}>
+          <ToolButton label="Vergrößern" keepFocus={false} onClick={zoomIn}>
             <ZoomIn />
           </ToolButton>
-          <ToolButton
-            label="Alles anzeigen"
-            keepFocus={false}
-            onClick={() => void flow.fitView({ padding: 0.15, maxZoom: 1.5, duration: 200 })}
-          >
+          <ToolButton label="Alles anzeigen" keepFocus={false} onClick={fitAll}>
             <Maximize />
           </ToolButton>
         </Panel>

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/shared/ui/toast'
 import { UpdateBanner } from '@/features/updates/components/UpdateBanner'
 import { GlobalToolbar } from './GlobalToolbar'
+import { AppContextMenu } from './AppContextMenu'
 import { NetworkError, setApiUser } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
@@ -59,8 +60,10 @@ export function AppProviders({
       <SharingProvider enabled={sharing}>
         <QueryClientProvider client={client}>
           <ToastProvider sticky={<UpdateBanner />}>
-            {children}
-            <GlobalToolbar />
+            <AppContextMenu>
+              {children}
+              <GlobalToolbar />
+            </AppContextMenu>
           </ToastProvider>
         </QueryClientProvider>
       </SharingProvider>

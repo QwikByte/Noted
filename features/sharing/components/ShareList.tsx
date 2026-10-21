@@ -1,14 +1,18 @@
 'use client'
 import { useState } from 'react'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { FileText, Link2Off } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { ConfirmModal } from '@/shared/ui/modal'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { errorMessage } from '@/shared/client/api'
 import { formatDateTime, formatRelative } from '@/shared/lib/format'
 import { revokeShare } from '../client/queries'
 import type { Share } from '../types'
+
+const noteUrl = (share: Share) => `/?n=${encodeURIComponent(share.noteId)}`
 
 /** Links mit Laufzeit und Aufrufen – `withTitle`: mit der Notiz (Übersicht in den Einstellungen) */
 export function ShareList({ query, empty, withTitle }: { query: UseQueryResult<Share[]>; empty: string; withTitle?: boolean }) {
@@ -17,6 +21,7 @@ export function ShareList({ query, empty, withTitle }: { query: UseQueryResult<S
   const shares = query.data ?? []
   const [toRevoke, setToRevoke] = useState<Share | null>(null)
   const [busy, setBusy] = useState(false)
+  const openContextMenu = useContextMenu()
 
   async function revoke(share: Share) {
     setBusy(true)
@@ -38,11 +43,33 @@ export function ShareList({ query, empty, withTitle }: { query: UseQueryResult<S
     <>
       <ul className="divide-y divide-border" data-testid="share-list">
         {shares.map((s) => (
-          <li key={s.id} className="flex items-center gap-3 py-2.5 first:pt-0">
+          <li
+            key={s.id}
+            className="flex items-center gap-3 py-2.5 first:pt-0"
+            onContextMenu={(e) =>
+              openContextMenu(
+                e,
+                <>
+                  {withTitle ? (
+                    <>
+                      <MenuItem icon={<FileText />} onSelect={() => location.assign(noteUrl(s))}>
+                        Notiz öffnen
+                      </MenuItem>
+                      <MenuSeparator />
+                    </>
+                  ) : null}
+                  <MenuItem icon={<Link2Off />} danger onSelect={() => setToRevoke(s)}>
+                    Widerrufen
+                  </MenuItem>
+                </>,
+                { copy: true },
+              )
+            }
+          >
             <div className="min-w-0 flex-1">
               {withTitle ? (
                 <p className="flex items-center gap-2 text-sm font-medium">
-                  <a href={`/?n=${encodeURIComponent(s.noteId)}`} className="truncate hover:text-accent-text">
+                  <a href={noteUrl(s)} className="truncate hover:text-accent-text">
                     {s.noteTitle}
                   </a>
                   {s.noteTrashed ? <Badge tone="warning">Im Papierkorb</Badge> : null}

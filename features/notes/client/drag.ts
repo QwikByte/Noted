@@ -168,10 +168,17 @@ export function startDrag(e: React.PointerEvent<HTMLElement>, item: DragItem) {
     },
     false,
   )
-  // Langes Drücken öffnet sonst das Kontextmenü
-  on('contextmenu', (ev) => {
-    if (started) ev.preventDefault()
-  })
+  // Langes Drücken öffnet sonst ein Kontextmenü – das des Systems und das eigene der App. Daher schon in der
+  // Capture-Phase abfangen, bevor React es an die Bereiche verteilt
+  window.addEventListener(
+    'contextmenu',
+    (ev) => {
+      if (!started) return
+      ev.preventDefault()
+      ev.stopPropagation()
+    },
+    { signal: listening.signal, capture: true },
+  )
   on('keydown', (ev) => {
     if (ev.key === 'Escape') end(false)
   })

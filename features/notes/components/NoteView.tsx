@@ -44,7 +44,8 @@ import { HistoryDialog } from './dialogs'
 import { ShareDialog } from '@/features/sharing/components/ShareDialog'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import { MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
@@ -573,6 +574,107 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     note.content === '' && (note.version === 0 || (isVisualFormat(note.format) && sync.wasCreatedHere(note.id))),
   )
 
+  const openContextMenu = useContextMenu()
+  // Rechtsklick neben das Blatt (Tisch, Kopfzeile, Mindmap und Canvas ohne eigenes Menü): Ansicht und Aktionen
+  const modeItems = (
+    <>
+      {effectiveMode !== 'edit' ? (
+        <MenuItem icon={<PenLine />} onSelect={() => setMode('edit')}>
+          Bearbeiten
+        </MenuItem>
+      ) : null}
+      {effectiveMode !== 'read' ? (
+        <MenuItem icon={<BookOpen />} onSelect={() => setMode('read')}>
+          Lesen
+        </MenuItem>
+      ) : null}
+      {canSplit && effectiveMode !== 'split' ? (
+        <MenuItem icon={<Columns2 />} onSelect={() => setMode('split')}>
+          Geteilt
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+    </>
+  )
+  const editorMenu = (e: React.MouseEvent) => {
+    const view = cmRef.current?.view()
+    const items = view ? <MarkdownEditorMenu view={view} markdown={format !== 'text'} onCreateCard={createCard} /> : null
+    openContextMenu(e, items, { text: true })
+  }
+  const readMenu = (e: React.MouseEvent) =>
+    openContextMenu(
+      e,
+      <ReadViewMenu
+        target={e.target as Element}
+        links={previewLinks}
+        onCreateCard={createCard}
+        onEdit={effectiveMode === 'read' ? () => setMode('edit') : undefined}
+      />,
+      { text: true },
+    )
+
+  // Aktionen der Notiz: im Menü „⋮“ und beim Rechtsklick neben das Blatt (auf den Tisch)
+  const actionItems = (
+    <>
+      <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
+        {copyLabel}
+      </MenuItem>
+      {format === 'markdown' || format === 'mindmap' ? (
+        <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
+          Ohne Properties kopieren
+        </MenuItem>
+      ) : null}
+      <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
+        Als [[Wikilink]] kopieren
+      </MenuItem>
+      <MenuItem icon={<Download />} onSelect={download}>
+        Als {noteExtension(format)} herunterladen
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
+        {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
+      </MenuItem>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
+        Verschieben …
+      </MenuItem>
+      <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
+        Format …
+      </MenuItem>
+      {sharing && format !== 'canvas' ? (
+        <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
+          Teilen …
+        </MenuItem>
+      ) : null}
+      <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
+        Verlauf …
+      </MenuItem>
+      <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
+        Informationen
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<Layers />} onSelect={createCard}>
+        Karteikarte erstellen
+      </MenuItem>
+      <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
+        Karteikarten aus Notiz …
+      </MenuItem>
+      {canQuiz(format) ? (
+        <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
+          Abfragen
+        </MenuItem>
+      ) : null}
+      {linkedCards > 0 ? (
+        <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
+          {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
+        In den Papierkorb
+      </MenuItem>
+    </>
+  )
+
   const titleInput = (
     <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
   )
@@ -620,7 +722,19 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     )
 
   return (
-    <div ref={rootRef} className="@container flex h-full flex-col">
+    <div
+      ref={rootRef}
+      className="@container flex h-full flex-col"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            {modeItems}
+            {actionItems}
+          </>,
+        )
+      }
+    >
       {/* Kopfzeile */}
       {/* Safe-Area-Abstand außen, Zeilenhöhe innen: sonst überschreibt pt-safe das obere Padding */}
       <header className="pt-safe border-b border-border">
@@ -711,62 +825,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Button>
             )}
           >
-            <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
-              {copyLabel}
-            </MenuItem>
-            {format === 'markdown' || format === 'mindmap' ? (
-              <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
-                Ohne Properties kopieren
-              </MenuItem>
-            ) : null}
-            <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
-              Als [[Wikilink]] kopieren
-            </MenuItem>
-            <MenuItem icon={<Download />} onSelect={download}>
-              Als {noteExtension(format)} herunterladen
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
-              {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
-            </MenuItem>
-            <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
-              Verschieben …
-            </MenuItem>
-            <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
-              Format …
-            </MenuItem>
-            {sharing && format !== 'canvas' ? (
-              <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
-                Teilen …
-              </MenuItem>
-            ) : null}
-            <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
-              Verlauf …
-            </MenuItem>
-            <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
-              Informationen
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={<Layers />} onSelect={createCard}>
-              Karteikarte erstellen
-            </MenuItem>
-            <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
-              Karteikarten aus Notiz …
-            </MenuItem>
-            {canQuiz(format) ? (
-              <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
-                Abfragen
-              </MenuItem>
-            ) : null}
-            {linkedCards > 0 ? (
-              <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
-                {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
-              </MenuItem>
-            ) : null}
-            <MenuSeparator />
-            <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
-              In den Papierkorb
-            </MenuItem>
+            {actionItems}
           </Menu>
         </div>
       </header>
@@ -812,7 +871,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           />
         ) : (
           <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper flex flex-col">
+            <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
               <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
                 {titleInput}
                 <div className="min-h-0 flex-1">
@@ -837,7 +896,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <div className="flex min-h-0 flex-col">{visualEditor}</div>
         ) : !visual && effectiveMode !== 'edit' ? (
           <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper" data-mode={effectiveMode}>
+            <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
               {effectiveMode === 'read' ? (
                 <h1
                   className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"

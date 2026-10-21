@@ -112,6 +112,51 @@ test('Dialoge: Eingabefeld hat beim Öffnen den Fokus, Markieren über den Rand 
   await expect(dialog).toHaveCount(0)
 })
 
+test('Kontextmenüs: Notiz in der Seitenleiste, Editor, freie Fläche und Tastatur', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Kontextnotiz', 'wichtig')
+  await page.goto('/')
+  const menu = page.getByRole('menu', { name: 'Kontextmenü' })
+  const sidebarNote = page.getByRole('complementary').getByRole('button', { name: 'Kontextnotiz', exact: true })
+
+  // Rechtsklick auf eine Notiz: dieselben Aktionen wie im Menü „…“, dazu Öffnen
+  await sidebarNote.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: 'In neuem Tab öffnen' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'In den Papierkorb' })).toBeVisible()
+  await menu.getByRole('menuitem', { name: 'Anheften' }).click()
+  await expect(menu).toHaveCount(0)
+  await sidebarNote.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: 'Lösen' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // Mit der Tastatur: Fokus auf den ersten Eintrag, Pfeiltasten wandern weiter
+  await sidebarNote.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem', { name: 'Öffnen', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(menu.getByRole('menuitem', { name: 'In neuem Tab öffnen' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(sidebarNote).toBeFocused()
+
+  // Freie Fläche im Hauptbereich (hier die Begrüßung): neu anlegen
+  await page.getByRole('main').getByRole('heading', { level: 1 }).click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Neue Notiz …' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Im Editor: markierten Text fett machen
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${id}`)
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await editor.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: 'Ausschneiden' })).toBeEnabled()
+  await menu.getByRole('menuitem', { name: 'Fett' }).click()
+  await expect(editor).toContainText('**wichtig**')
+})
+
 test('Papierkorb: endgültig löschen erst nach Rückfrage', async ({ page }) => {
   await login(page)
   const id = await createNote(page, 'Wegwerfnotiz', 'Kann weg.')

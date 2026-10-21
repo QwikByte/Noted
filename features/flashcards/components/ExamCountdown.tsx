@@ -6,6 +6,7 @@ import { useEvents } from '@/features/calendar/client/calendar'
 import { dateOf, daysBetween, localDate, shortDate, timeOf, weekdayName } from '@/features/calendar/dates'
 import type { CalendarEvent } from '@/features/calendar/types'
 import { Button } from '@/shared/ui/button'
+import { MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { Panel } from '@/shared/ui/panel'
 import { useNow } from '@/shared/client/now'
 import { useFlashcards, type Flashcards } from '../client/flashcards'
@@ -40,6 +41,7 @@ export function ExamCountdown() {
 
 function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number; data: Flashcards | null; now: number }) {
   const app = useApp()
+  const openContextMenu = useContextMenu()
   const date = dateOf(exam.start)
   const deckIds = new Set(exam.exam?.deckIds)
   const decks = data?.decks.filter((d) => deckIds.has(d.id)) ?? []
@@ -49,9 +51,33 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
   const due = data
     ? decks.reduce((sum, d) => sum + deckCounts(d, data.cards.filter((c) => c.deckId === d.id), data.states, now).due, 0)
     : 0
+  const canStudy = decks.length > 0 && total > 0
+  const learn = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'learn' })
+  const practice = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'practice' })
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 first:pt-0 last:pb-0" data-testid="exam">
+    <li
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 first:pt-0 last:pb-0"
+      data-testid="exam"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          canStudy ? (
+            <>
+              {due > 0 ? (
+                <MenuItem icon={<GraduationCap />} onSelect={learn}>
+                  Lernen
+                </MenuItem>
+              ) : null}
+              <MenuItem icon={<Dumbbell />} onSelect={practice}>
+                Üben
+              </MenuItem>
+            </>
+          ) : null,
+          { copy: true },
+        )
+      }
+    >
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span className="truncate font-medium">{exam.title}</span>
@@ -75,14 +101,14 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
           </>
         )}
       </div>
-      {decks.length > 0 && total > 0 ? (
+      {canStudy ? (
         <div className="flex shrink-0 gap-1">
           {due > 0 ? (
-            <Button size="sm" variant="primary" onClick={() => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'learn' })}>
+            <Button size="sm" variant="primary" onClick={learn}>
               <GraduationCap className="size-4" /> Lernen
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onClick={() => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'practice' })}>
+          <Button size="sm" variant="ghost" onClick={practice}>
             <Dumbbell className="size-4" /> Üben
           </Button>
         </div>

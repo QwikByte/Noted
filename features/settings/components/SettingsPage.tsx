@@ -12,6 +12,7 @@ import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
 import { ConfirmModal, Modal } from '@/shared/ui/modal'
+import { MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { ErrorText, useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { Section, SubPageHeader } from '@/shared/ui/sub-page'
@@ -228,6 +229,7 @@ function SessionsSection() {
   const others = sessions.filter((s) => !s.current)
   const [confirmAll, setConfirmAll] = useState(false)
   const [busy, setBusy] = useState(false)
+  const openContextMenu = useContextMenu()
 
   async function revoke(id?: string) {
     try {
@@ -248,7 +250,22 @@ function SessionsSection() {
       ) : (
         <ul className="divide-y divide-border">
           {sessions.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 py-3 first:pt-0">
+            <li
+              key={s.id}
+              className="flex items-center gap-3 py-3 first:pt-0"
+              onContextMenu={(e) =>
+                openContextMenu(
+                  e,
+                  // Dieses Gerät meldet der Abschnitt „Abmelden“ ab
+                  s.current ? null : (
+                    <MenuItem icon={<LogOut />} onSelect={() => void revoke(s.id)}>
+                      Abmelden
+                    </MenuItem>
+                  ),
+                  { copy: true },
+                )
+              }
+            >
               <Monitor className="size-5 shrink-0 text-faint" />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-medium">

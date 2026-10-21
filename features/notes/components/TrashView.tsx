@@ -6,6 +6,7 @@ import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
 import { ConfirmModal } from '@/shared/ui/modal'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { api, errorMessage } from '@/shared/client/api'
 import { keys, useTrash } from '../client/queries'
@@ -20,6 +21,7 @@ export function TrashView() {
   const [busy, setBusy] = useState<string | null>(null)
   // Endgültig löschen lässt sich nicht rückgängig machen – daher wie beim Leeren erst nachfragen
   const [removeTarget, setRemoveTarget] = useState<{ id: string; title: string } | null>(null)
+  const openContextMenu = useContextMenu()
 
   async function restore(id: string) {
     setBusy(id)
@@ -67,7 +69,24 @@ export function TrashView() {
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
           {notes.map((n) => (
-            <li key={n.id} className="flex items-center gap-3 px-4 py-3">
+            <li
+              key={n.id}
+              className="flex items-center gap-3 px-4 py-3"
+              onContextMenu={(e) =>
+                openContextMenu(
+                  e,
+                  <>
+                    <MenuItem icon={<RotateCcw />} onSelect={() => void restore(n.id)} disabled={busy === n.id}>
+                      Wiederherstellen
+                    </MenuItem>
+                    <MenuSeparator />
+                    <MenuItem icon={<Trash2 />} danger onSelect={() => setRemoveTarget({ id: n.id, title: n.title })} disabled={busy === n.id}>
+                      Endgültig löschen …
+                    </MenuItem>
+                  </>,
+                )
+              }
+            >
               <FileText className="size-4 shrink-0 text-faint" />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{n.title}</p>
