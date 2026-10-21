@@ -47,6 +47,18 @@ import {
   type CanvasNode,
   type CanvasSide,
 } from '../canvas'
+import {
+  DIRECTION_WORD,
+  arrowCommand,
+  cardLabel,
+  moveNodes,
+  nextCard,
+  nextTarget,
+  readingIndex,
+  resizeNode,
+  toBoxes,
+  type ArrowCommand,
+} from '../keyboard'
 import { CanvasContext, canvasColor, edgeTypes, nodeTypes, safeUrl, type ArrowEdge, type CardNode, type ResolvedFile } from './CanvasCards'
 import { FilePicker, LinkDialog, type PickedFile } from './InsertDialogs'
 import { AttachButtons, Divider, ToolButton } from '@/features/notes/components/toolbar'
@@ -57,6 +69,7 @@ import { useAttachments } from '@/features/attachments/client/queries'
 import type { Attachment } from '@/features/attachments/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
 import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import type { Box } from '@/shared/lib/spatial'
 
 /** Werkzeug der Leiste: Ein offenes Textfeld verliert beim Klicken den Fokus und speichert, bevor das Werkzeug wirkt */
 const Tool = (props: React.ComponentProps<typeof ToolButton>) => <ToolButton keepFocus={false} {...props} />
@@ -89,6 +102,7 @@ const drawOrder = (nodes: CanvasNode[]) =>
   [...nodes.filter((n) => n.type === 'group').sort((a, b) => area(b) - area(a)), ...nodes.filter((n) => n.type !== 'group')]
 
 const isTyping = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input, textarea, [contenteditable]')
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta'])
 
 function sizeForAttachment(att: Pick<Attachment, 'mime'>) {
   return att.mime.startsWith('image/') ? CANVAS_NODE_SIZE.file : { width: 300, height: 64 }
@@ -160,6 +174,13 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
   const history = useRef<{ past: CanvasData[]; future: CanvasData[] }>({ past: [], future: [] })
   // Abgelegte Dateien landen an der Stelle, an der sie losgelassen wurden
   const dropAt = useRef<{ at: XY; remaining: number } | null>(null)
+  // Verbinden mit der Tastatur: von der ausgewählten Karte zu dem Ziel, das die Pfeiltasten wählen
+  const [connectState, setConnect] = useState<{ from: string; to: string | null } | null>(null)
+  // Wechselt die Ansicht mitten im Verbinden zum Lesen, endet es
+  const connect = readOnly ? null : connectState
+  const [announcement, setAnnouncement] = useState('')
+  // Ergebnis des letzten Schritts per Pfeiltaste – daran erkennt onArrow eine gehaltene Taste
+  const lastNudge = useRef<CanvasData | null>(null)
 
   const { data: attachments = [] } = useAttachments()
   const attachmentByName = useMemo(() => new Map(attachments.map((a) => [a.filename.toLowerCase(), a])), [attachments])
@@ -307,7 +328,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
     return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }
   }
 
-  /** Neue Karte ins Bild holen, wenn sie nicht ganz zu sehen ist (z. B. auf dem Handy) */
+  /** Karte ins Bild holen, wenn sie nicht ganz zu sehen ist (neue Karte z. B. auf dem Handy, per Taste gewählte) */
   function reveal(rect: Rect) {
     const view = visibleArea()
     if (!view) return
@@ -526,8 +547,106 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
 
   // ---- Tastatur, Einfügen, Ablegen ----
 
+  /** Ansage für Bildschirmleser; eine gleichlautende bekommt ein Leerzeichen, sonst würde sie nicht erneut vorgelesen */
+  function announce(message: string) {
+    setAnnouncement((prev) => (prev === message ? `${message}\u00a0` : message))
+  }
+
+  const nodeLabel = (id: string) => {
+    const node = data.nodes.find((n) => n.id === id)
+    return node ? cardLabel(node) : 'Karte'
+  }
+  /** Name und Stelle einer Karte, z. B. Textkarte „Wärme“, 2 von 5 */
+  const cardInfo = (id: string, boxes: Box[]) => `${nodeLabel(id)}, ${readingIndex(boxes, id)} von ${boxes.length}`
+
+  /** Pfeiltasten: Karte wählen, Auswahl verschieben oder die Größe einer Karte ändern */
+  function onArrow({ action, dir, step }: ArrowCommand, repeat: boolean) {
+    if (action === 'select') {
+      const boxes = toBoxes(nodes)
+      // Von der ausgewählten Karte aus – nach dem Verbinden vom Ziel des neuen Pfeils
+      const from = [...selectedNodes][0] ?? data.edges.find((e) => selectedEdges.has(e.id))?.toNode ?? null
+      const next = nextCard(boxes, from, dir, viewportCenter())
+      if (!next) return announce(boxes.length ? `Keine Karte weiter ${DIRECTION_WORD[dir]}` : 'Das Canvas ist leer')
+      selectOnly([next.id])
+      reveal(next)
+      return announce(cardInfo(next.id, boxes))
+    }
+    const selected = data.nodes.filter((n) => selectedNodes.has(n.id))
+    const first = selected[0]
+    if (!first) return announce('Keine Karte ausgewählt')
+    if (action === 'resize' && selected.length > 1) return announce('Die Größe lässt sich nur bei einer Karte ändern')
+    const changed =
+      action === 'move'
+        ? moveNodes(data.nodes, selectedNodes, dir, step)
+        : data.nodes.map((n) => (n === first ? resizeNode(n, dir, step) : n))
+    if (changed.some((n, i) => n !== data.nodes[i])) {
+      const next = { ...data, nodes: changed }
+      // Wie beim Ziehen mit der Maus: Eine gehaltene Taste ist ein Schritt im Verlauf
+      const record = !(repeat && lastNudge.current === data)
+      lastNudge.current = next
+      commit(next, record)
+    }
+    const moved = changed.find((n) => n.id === first.id) ?? first
+    reveal(moved)
+    const what = selected.length > 1 ? `${selected.length} Karten` : cardLabel(first)
+    announce(
+      action === 'move'
+        ? `${what} nach ${DIRECTION_WORD[dir]} verschoben (x ${moved.x}, y ${moved.y})`
+        : `Breite ${moved.width}, Höhe ${moved.height}`,
+    )
+  }
+
+  function startConnect(node: CanvasNode) {
+    if (data.nodes.length < 2) return announce('Zum Verbinden fehlt eine zweite Karte')
+    setConnect({ from: node.id, to: null })
+    announce(`Verbinden von ${cardLabel(node)} mit …: Pfeiltasten wählen, Enter verbindet, Escape bricht ab`)
+  }
+
+  /** Tasten beim Verbinden; false, wenn die Taste das Verbinden beendet und wie sonst wirken soll */
+  function connectKey(e: React.KeyboardEvent, { from, to }: { from: string; to: string | null }): boolean {
+    const arrow = arrowCommand(e)
+    if (arrow?.action === 'select') {
+      e.preventDefault()
+      const boxes = toBoxes(nodes)
+      const target = nextTarget(boxes, from, to, arrow.dir)
+      if (!target) announce(`Keine Karte weiter ${DIRECTION_WORD[arrow.dir]}`)
+      else {
+        setConnect({ from, to: target.id })
+        reveal(target)
+        announce(`Ziel: ${cardInfo(target.id, boxes)}`)
+      }
+      return true
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (!to || !data.nodes.some((n) => n.id === to)) {
+        announce('Erst mit den Pfeiltasten ein Ziel wählen')
+        return true
+      }
+      setConnect(null)
+      // Ohne Seiten: Der Pfeil setzt dann an den einander zugewandten Seiten an, auch wenn die Karten später wandern
+      onConnect({ source: from, target: to, sourceHandle: null, targetHandle: null })
+      announce(`${nodeLabel(from)} mit ${nodeLabel(to)} verbunden – Enter beschriftet den Pfeil`)
+      return true
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setConnect(null)
+      announce('Verbinden abgebrochen')
+      return true
+    }
+    return false
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
     if (editing || isTyping(e.target)) return
+    // Die Tasten für Karten nur auf der Fläche selbst – nicht auf Knöpfen in Karten oder der Ansichtsleiste
+    const onSurface = e.target === e.currentTarget
+    if (connect) {
+      if (MODIFIER_KEYS.has(e.key)) return
+      if (onSurface && data.nodes.some((n) => n.id === connect.from) && connectKey(e, connect)) return
+      setConnect(null)
+    }
     const mod = e.ctrlKey || e.metaKey
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault()
@@ -541,11 +660,30 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
       e.preventDefault()
       return selectOnly(data.nodes.map((n) => n.id))
     }
-    if (e.key === 'Escape') return selectOnly([])
+    if (e.key === 'Escape') {
+      if (selectedNodes.size + selectedEdges.size > 0) announce('Auswahl aufgehoben')
+      return selectOnly([])
+    }
+    const arrow = onSurface ? arrowCommand(e) : null
+    if (arrow && (arrow.action === 'select' || !readOnly)) {
+      e.preventDefault()
+      return onArrow(arrow, e.repeat)
+    }
+    const one = selectedNodes.size === 1 && selectedEdges.size === 0 ? data.nodes.find((n) => selectedNodes.has(n.id)) : undefined
+    // Notiz-, Datei- und Link-Karten öffnet Enter wie ein Doppelklick – auch zum Lesen
+    const opener = onSurface && e.key === 'Enter' && one ? openerFor(one) : null
+    if (opener) {
+      e.preventDefault()
+      return opener.open()
+    }
     if (readOnly) return
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       return removeSelection()
+    }
+    if (onSurface && one && !mod && !e.altKey && e.key.toLowerCase() === 'v') {
+      e.preventDefault()
+      return startConnect(one)
     }
     const single = selectedNodes.size + selectedEdges.size === 1 ? ([...selectedNodes][0] ?? [...selectedEdges][0]) : null
     if ((e.key === 'Enter' || e.key === 'F2') && single) {
@@ -614,7 +752,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
   function cardMenu(node: CanvasNode) {
     const opener = openerFor(node)
     const open = opener ? (
-      <MenuItem icon={node.type === 'link' ? <ExternalLink /> : <FileText />} onSelect={opener.open}>
+      <MenuItem icon={node.type === 'link' ? <ExternalLink /> : <FileText />} onSelect={opener.open} hint="Enter">
         {opener.label}
       </MenuItem>
     ) : null
@@ -715,7 +853,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
     )
   }
 
-  const ctx = { readOnly, editingId: editing?.id ?? null, links, resolveFile, commitText }
+  const ctx = { readOnly, editingId: editing?.id ?? null, connectTarget: connect?.to ?? null, links, resolveFile, commitText }
   const hasSelection = selectedNodes.size + selectedEdges.size > 0
   const single = selectedNodes.size + selectedEdges.size === 1
   const editable =
@@ -789,14 +927,23 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
           className="canvas-flow flow-surface relative min-h-0 flex-1 outline-none focus-visible:after:pointer-events-none focus-visible:after:absolute focus-visible:after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
           tabIndex={0}
           role="application"
-          aria-label="Canvas – Doppelklick legt eine Textkarte an, Entf löscht die Auswahl"
+          aria-label={
+            readOnly
+              ? 'Canvas – Pfeiltasten wählen eine Karte, Enter öffnet sie'
+              : 'Canvas – Pfeiltasten wählen eine Karte, Alt+Pfeiltasten verschieben sie, Strg+Pfeiltasten ändern ihre Größe, ' +
+                'V verbindet sie, Enter bearbeitet oder öffnet, Entf löscht, Doppelklick legt eine Textkarte an'
+          }
           onKeyDown={onKeyDown}
+          onBlur={(e) => {
+            if (e.target === e.currentTarget) setConnect(null)
+          }}
           onPaste={onPaste}
           onDragOver={(e) => {
             if (!readOnly && e.dataTransfer.types.includes('Files')) e.preventDefault()
           }}
           onDrop={onDrop}
           onPointerDown={(e) => {
+            setConnect(null)
             // React Flow verhindert den Fokus beim Klicken – Tastenbefehle sollen trotzdem hier ankommen
             if (!isTyping(e.target) && !(e.target as HTMLElement).closest('button, a')) focusFlow()
           }}
@@ -809,10 +956,22 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
             // der Fläche selbst) wie über die Leiste
             if ((e.target as HTMLElement).classList.contains('react-flow__pane')) {
               openContextMenu(e, paneMenu(flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })))
-            } else if (e.target === e.currentTarget) openContextMenu(e, paneMenu())
+            } else if (e.target === e.currentTarget) {
+              // Kontextmenütaste mit einer per Pfeiltaste gewählten Karte oder Verbindung: deren Menü
+              const [nodeId] = selectedNodes
+              const [edgeId] = selectedEdges
+              const node = selectedNodes.size === 1 ? data.nodes.find((n) => n.id === nodeId) : undefined
+              const at = node ? e.currentTarget.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`) : null
+              if (node) openContextMenu(e, cardMenu(node), { at })
+              else if (selectedNodes.size === 0 && selectedEdges.size === 1) openContextMenu(e, edgeMenu(edgeId))
+              else openContextMenu(e, paneMenu())
+            }
           }}
           data-testid="canvas"
         >
+          <p className="sr-only" role="status" aria-live="polite">
+            {announcement}
+          </p>
           <svg className="absolute size-0" aria-hidden="true">
             <defs>
               {edgeColors.map((color, i) => (
@@ -888,6 +1047,11 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
               <Panel position="top-center" className="canvas-hint">
                 Doppelklick auf die Fläche oder <StickyNote className="inline size-3.5" /> legt eine Karte an. Ziehe von einem Rand
                 zum nächsten, um Karten zu verbinden.
+              </Panel>
+            ) : null}
+            {connect ? (
+              <Panel position="top-center" className="canvas-hint">
+                Verbinden: Ziel mit den Pfeiltasten wählen, Enter verbindet, Escape bricht ab
               </Panel>
             ) : null}
             <Panel position="bottom-right" className="flow-panel">

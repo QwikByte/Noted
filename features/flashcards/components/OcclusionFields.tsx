@@ -2,7 +2,7 @@
 // Karteneditor, Bildverdeckung: Bild wählen (Anhang, Upload oder PDF-Seite), Flächen ziehen und beschriften
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { FileImage, Upload, X } from 'lucide-react'
+import { FileImage, Plus, Upload, X } from 'lucide-react'
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { renderPdfPage } from '@/features/pdf/client/pdfjs'
@@ -11,8 +11,8 @@ import { Input, Select, Switch } from '@/shared/ui/input'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
 import { IMAGE_EXT } from '@/shared/markdown/syntax'
-import { MAX_MASK_LABEL } from '../limits'
-import { OcclusionEditor } from './Occlusion'
+import { MAX_MASK_LABEL, MAX_MASKS } from '../limits'
+import { OcclusionEditor, type OcclusionEditorHandle } from './Occlusion'
 import type { Occlusion } from '../types'
 
 const baseName = (file: string) => (file.split('/').pop() ?? file).replace(/\.[^.]+$/, '')
@@ -31,6 +31,7 @@ export function OcclusionFields({
   onImage: (title: string) => void
 }) {
   const [selected, setSelected] = useState<number | null>(null)
+  const editor = useRef<OcclusionEditorHandle>(null)
   if (!value) {
     return (
       <ImagePicker
@@ -42,6 +43,7 @@ export function OcclusionFields({
     )
   }
   const masks = value.masks
+  const full = masks.length >= MAX_MASKS
   const remove = (index: number) => {
     onChange({ ...value, masks: masks.filter((_, i) => i !== index) })
     setSelected(null)
@@ -49,17 +51,35 @@ export function OcclusionFields({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">
           Flächen <span className="text-muted tabular-nums">({masks.length})</span>
         </span>
-        <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
-          <FileImage className="size-4" /> Anderes Bild
-        </Button>
+        <div className="flex flex-wrap gap-1">
+          {/* Ohne Ziehen – mit der Tastatur oder wenn das Ziehen auf dem Handy schwerfällt */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => editor.current?.addMask()}
+            disabled={full}
+            title={full ? `Höchstens ${MAX_MASKS} Flächen pro Karte.` : undefined}
+          >
+            <Plus className="size-4" /> Fläche hinzufügen
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
+            <FileImage className="size-4" /> Anderes Bild
+          </Button>
+        </div>
       </div>
       <p className="text-xs text-muted">Rechtecke über die Beschriftungen ziehen – jede Fläche wird einzeln abgefragt.</p>
       <div className="rounded-xl border border-border bg-subtle p-2">
-        <OcclusionEditor occlusion={value} onChange={(next) => onChange({ ...value, masks: next })} selected={selected} onSelect={setSelected} />
+        <OcclusionEditor
+          ref={editor}
+          occlusion={value}
+          onChange={(next) => onChange({ ...value, masks: next })}
+          selected={selected}
+          onSelect={setSelected}
+        />
       </div>
       {masks.length > 0 ? (
         <ol className="space-y-1.5" data-testid="occlusion-masks">

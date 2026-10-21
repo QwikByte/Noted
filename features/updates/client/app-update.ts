@@ -36,7 +36,8 @@ export const getServerUpdateState = () => NO_UPDATE
 
 async function check(force = false) {
   const now = Date.now()
-  if (reloading || (!force && now - lastCheck < MIN_GAP)) return
+  // Offline gar nicht erst fragen – das „online“-Ereignis holt die Prüfung nach
+  if (reloading || navigator.onLine === false || (!force && now - lastCheck < MIN_GAP)) return
   lastCheck = now
   let server: { buildId: string; version: string }
   try {

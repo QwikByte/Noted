@@ -36,6 +36,8 @@ type CanvasContextValue = {
   readOnly: boolean
   /** Karte oder Pfeil, deren Text gerade bearbeitet wird */
   editingId: string | null
+  /** Ziel beim Verbinden mit der Tastatur */
+  connectTarget: string | null
   links: PreviewLinks
   resolveFile: (file: string) => ResolvedFile
   commitText: (id: string, text: string) => void
@@ -255,7 +257,14 @@ function CardView({ id, data, selected }: NodeProps<CardNode>) {
   const editing = ctx.editingId === id
   return (
     <div
-      className={cn('canvas-card', `canvas-${n.type}`, selected && 'is-selected', color && 'has-color', editing && 'is-editing')}
+      className={cn(
+        'canvas-card',
+        `canvas-${n.type}`,
+        selected && 'is-selected',
+        color && 'has-color',
+        editing && 'is-editing',
+        ctx.connectTarget === id && 'is-connect-target outline-2 outline-offset-4 outline-accent outline-dashed',
+      )}
       style={color ? ({ '--card': color } as React.CSSProperties) : undefined}
       data-testid={`canvas-${n.type}`}
     >

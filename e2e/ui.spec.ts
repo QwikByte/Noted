@@ -197,6 +197,22 @@ test('Meldungen erscheinen über einem offenen Dialog und lassen sich bedienen',
   await expect(dialog).toBeVisible()
 })
 
+test('Offline: Die Editoren werden erst nachgeladen, wenn wieder Netz da ist', async ({ page, context }) => {
+  await page.clock.install()
+  await login(page)
+  const failed: string[] = []
+  page.on('requestfailed', (r) => failed.push(r.url()))
+  await context.setOffline(true)
+  // Nach 5 s lädt die App Editoren für den Offline-Betrieb nach – offline schlug das bisher fehl
+  await page.clock.runFor(6_000)
+  await page.waitForTimeout(500)
+  expect(failed).toEqual([])
+  await context.setOffline(false)
+  const chunk = page.waitForRequest(/\/_next\/static\/chunks\//)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await chunk
+})
+
 test('Papierkorb: endgültig löschen erst nach Rückfrage', async ({ page }) => {
   await login(page)
   const id = await createNote(page, 'Wegwerfnotiz', 'Kann weg.')

@@ -139,14 +139,22 @@ export default function NotesApp() {
   // Editoren für formatierten Text, Mindmap und Canvas sowie die Formatumwandlung im Hintergrund laden – so cacht
   // sie der Service Worker und sie funktionieren auch offline
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const preload = () => {
       void import('@/features/notes/components/RichTextEditor').catch(() => {})
       void import('@/features/mindmap/components/MindmapEditor').catch(() => {})
       void import('@/features/canvas/components/CanvasEditor').catch(() => {})
       void import('@/features/graph/components/GraphView').catch(() => {})
       void import('@/features/notes/client/convert').catch(() => {})
+    }
+    // Offline erst, wenn wieder Netz da ist – sonst schlagen die Anfragen nur fehl und es bleibt nichts im Cache
+    const timer = setTimeout(() => {
+      if (navigator.onLine) preload()
+      else window.addEventListener('online', preload, { once: true })
     }, 5_000)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('online', preload)
+    }
   }, [])
 
   const trashNote = useCallback<AppActions['trashNote']>(

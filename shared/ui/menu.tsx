@@ -245,10 +245,10 @@ const isTouch = (e: MouseEvent) => (e as PointerEvent).pointerType === 'touch'
 /** Umschalt + Rechtsklick: das Menü des Browsers (Umschalt+F10 ist dagegen die Tastatur für das eigene) */
 const wantsNative = (e: MouseEvent) => e.shiftKey && !byKeyboard(e)
 
-/** Position des Menüs: am Mauszeiger – mit der Tastatur am Element */
-function pointFor(e: MouseEvent): { x: number; y: number; keyboard: boolean } {
+/** Position des Menüs: am Mauszeiger – mit der Tastatur am Element (oder an `at`, z. B. der gewählten Karte) */
+function pointFor(e: MouseEvent, at?: Element | null): { x: number; y: number; keyboard: boolean } {
   if (!byKeyboard(e)) return { x: e.clientX, y: e.clientY, keyboard: false }
-  const rect = (e.target instanceof Element ? e.target : document.body).getBoundingClientRect()
+  const rect = (at ?? (e.target instanceof Element ? e.target : document.body)).getBoundingClientRect()
   return { x: rect.left + 8, y: rect.top + Math.min(rect.height, 32), keyboard: true }
 }
 
@@ -407,18 +407,20 @@ function CopySelectionItem({ text }: { text: string }) {
  * `onContextMenu={(e) => openContextMenu(e, <MenuItem …/>)}`. Mit `null` gilt das Menü des umgebenden Bereichs.
  * `text`: Der Bereich ist Text zum Markieren – auf dem Handy bleibt dort beim langen Drücken das Menü des Systems.
  * `copy`: Ist Text markiert, steht „Kopieren“ über den Einträgen (für Bereiche, die das nicht selbst anbieten).
+ * `at`: Wo das Menü bei Kontextmenütaste und Umschalt+F10 aufgeht, wenn nicht am fokussierten Element – auf Flächen
+ * wie Canvas und Graph an der mit den Pfeiltasten gewählten Karte.
  */
 export function useContextMenu() {
   const open = useContext(ContextMenuContext)
   return useCallback(
-    (e: React.MouseEvent, content: React.ReactNode, opts?: { text?: boolean; copy?: boolean }) => {
+    (e: React.MouseEvent, content: React.ReactNode, opts?: { text?: boolean; copy?: boolean; at?: Element | null }) => {
       const native = e.nativeEvent
       if (!open || !content || wantsNative(native) || keepNative(e.target) || (opts?.text && isTouch(native))) return
       e.preventDefault()
       e.stopPropagation()
       const selected = opts?.copy ? (document.getSelection()?.toString().trim() ?? '') : ''
       open(
-        pointFor(native),
+        pointFor(native, opts?.at),
         selected ? (
           <>
             <CopySelectionItem text={selected} />
