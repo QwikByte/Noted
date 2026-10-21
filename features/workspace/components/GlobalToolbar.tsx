@@ -1,8 +1,9 @@
 'use client'
-// Werkzeugleiste über der ganzen App: fest unten rechts, ausklappbar, öffnet Werkzeuge als kleine, verschiebbare Fenster.
-// Läuft ein Werkzeug bei geschlossenem Fenster weiter (Timer), steht es klein unten links neben der Navigation.
+// Werkzeuge über der ganzen App: Ein Griff mittig am rechten Bildschirmrand klappt die Leiste auf; jedes Werkzeug
+// öffnet als kleines, verschiebbares Fenster. Läuft ein Werkzeug bei geschlossenem Fenster weiter (Timer), steht es
+// klein unten links neben der Navigation.
 import { useSyncExternalStore } from 'react'
-import { Timer, Wrench, X, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Timer, type LucideIcon } from 'lucide-react'
 import { usePref } from '@/shared/client/prefs'
 import { cn } from '@/shared/ui/cn'
 import { FocusMiniTimer, FocusTimer, FocusTimerSettingsToggle } from '@/features/focus/components/FocusTimer'
@@ -26,11 +27,10 @@ const TOOLS: Tool[] = [
 
 // Abstand zum unteren Rand: über Leisten, die dort fest liegen (siehe useReservedSpace)
 const BOTTOM = 'calc(max(env(safe-area-inset-bottom), var(--bottom-bar-height, 0px)) + 0.5rem)'
-// Die Leiste zusätzlich über Knöpfen in der Ecke unten rechts („Neue Notiz“, Zoom in Mindmap und Canvas)
-const TOOLBAR_BOTTOM =
-  'calc(max(env(safe-area-inset-bottom), var(--bottom-bar-height, 0px), var(--bottom-right-height, 0px)) + 0.5rem)'
 // Der Mini-Timer rechts neben der Seitenleiste (auf dem Handy ist sie zu: ganz links)
 const MINI_LEFT = 'calc(max(env(safe-area-inset-left), var(--sidebar-width, 0px)) + 0.5rem)'
+// Fenster lassen am rechten Rand Platz für die aufgeklappte Leiste
+const WINDOWS_RIGHT = 'calc(env(safe-area-inset-right) + 3.25rem)'
 
 // Über „Neue Notiz“ (z-30), unter der Seitenleiste auf dem Handy (z-40) und unter Menüs (z-50)
 const LAYER = 'z-[35] print:hidden'
@@ -65,15 +65,15 @@ function Toolbar() {
       </div>
 
       <div
-        className={cn('fixed right-[calc(env(safe-area-inset-right)+0.5rem)]', LAYER)}
-        style={{ bottom: TOOLBAR_BOTTOM }}
+        className={cn('fixed top-1/2 right-[env(safe-area-inset-right)] -translate-y-1/2', LAYER)}
         data-testid="global-toolbar"
       >
         {expanded === '1' ? (
           <div
             role="toolbar"
             aria-label="Werkzeuge"
-            className="flex animate-pop-in items-center gap-0.5 rounded-xl border border-border bg-elevated p-1 shadow-pop"
+            aria-orientation="vertical"
+            className="flex animate-slide-in-right flex-col items-center gap-0.5 rounded-l-xl border border-r-0 border-border bg-elevated p-1 shadow-pop"
             onMouseDown={keepFocus}
           >
             {TOOLS.map((t) => (
@@ -85,7 +85,7 @@ function Toolbar() {
                 title={t.label}
                 onClick={() => setOpen(t.id, !open.includes(t.id))}
                 className={cn(
-                  'flex size-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg [&>svg]:size-[18px]',
+                  'flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg [&>svg]:size-[18px]',
                   open.includes(t.id) && 'bg-active text-fg',
                 )}
               >
@@ -95,11 +95,11 @@ function Toolbar() {
             <button
               type="button"
               aria-label="Werkzeugleiste schließen"
-              title="Schließen"
+              title="Einklappen"
               onClick={() => setExpanded('0')}
-              className="flex size-9 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-fg"
+              className="mt-0.5 flex h-7 w-10 items-center justify-center rounded-lg border-t border-border pt-0.5 text-faint hover:text-fg"
             >
-              <X className="size-4" />
+              <ChevronRight className="size-4" />
             </button>
           </div>
         ) : (
@@ -110,19 +110,20 @@ function Toolbar() {
             title="Werkzeuge"
             onMouseDown={keepFocus}
             onClick={() => setExpanded('1')}
-            className="flex size-11 animate-pop-in items-center justify-center rounded-full border border-border bg-elevated text-muted shadow-pop hover:text-fg"
+            // Schmaler Griff, aber eine breitere Trefffläche für den Finger
+            className="relative flex h-16 w-6 animate-slide-in-right items-center justify-center rounded-l-lg border border-r-0 border-border bg-elevated text-faint shadow-pop before:absolute before:inset-y-0 before:-left-3 before:right-0 hover:text-fg"
           >
-            <Wrench className="size-[18px]" />
+            <ChevronLeft className="size-4" />
           </button>
         )}
       </div>
 
       <div
         className={cn(
-          'pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.5rem)] right-[calc(env(safe-area-inset-right)+0.5rem)] left-[calc(env(safe-area-inset-left)+0.5rem)]',
+          'pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.5rem)] left-[calc(env(safe-area-inset-left)+0.5rem)]',
           LAYER,
         )}
-        style={{ bottom: BOTTOM }}
+        style={{ bottom: BOTTOM, right: WINDOWS_RIGHT }}
       >
         {TOOLS.filter((t) => open.includes(t.id)).map((t) => (
           <FloatingWindow

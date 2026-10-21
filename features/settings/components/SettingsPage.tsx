@@ -275,7 +275,7 @@ function SharesSection() {
 function SharesList() {
   const shares = useShares()
   return (
-    <Section title="Geteilte Links" description="Notizen, die du per Link zum Lesen freigegeben hast. Ein widerrufener Link führt sofort ins Leere.">
+    <Section title="Geteilte Links">
       <ShareList query={shares} empty="Du hast keine Notizen geteilt." withTitle />
     </Section>
   )
@@ -379,11 +379,7 @@ function DataSection() {
     >
       <div className="space-y-6">
         <div>
-          <p className="mb-1 text-sm font-medium">Alles exportieren</p>
-          <p className="mb-3 text-sm text-muted">
-            Alle Notizen in ihrer Ordnerstruktur, dazu Dateien (im Ordner „Anhänge“), Karteikarten (als Markdown und als
-            Stapel-Datei) und Termine (Kalender.ics). Formatierter Text liegt als .html darin, Canvas als .canvas.
-          </p>
+          <p className="mb-3 text-sm font-medium">Alles exportieren</p>
           <a
             href="/api/export"
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-on-accent shadow-sm hover:bg-accent-hover"
@@ -393,10 +389,7 @@ function DataSection() {
         </div>
         <div className="border-t border-border pt-5">
           <p className="mb-1 text-sm font-medium">Importieren</p>
-          <p className="mb-3 text-sm text-muted">
-            Markdown (.md), HTML, Canvas (.canvas), Kalender (.ics), Karteikarten-Stapel (.noted-deck.zip) oder ein
-            ZIP-Archiv, z. B. ein Export aus Noted. Andere Dateien kommen in den Bereich „Dateien“.
-          </p>
+          <p className="mb-3 text-sm text-muted">.md, .html, .canvas, .ics, .noted-deck.zip oder ein ZIP-Archiv (z. B. ein Export).</p>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Zielordner" className="min-w-56 flex-1">
               {(id) => (

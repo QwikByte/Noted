@@ -15,9 +15,9 @@ export function PageHeader({
   return (
     <div className="mb-7">
       {breadcrumb}
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[1.75rem] leading-tight font-bold tracking-tight">{title}</h1>
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+        <div className="min-w-0 flex-1 basis-48">
+          <h1 className="line-clamp-2 text-2xl leading-tight font-bold tracking-tight break-words sm:text-[1.75rem]">{title}</h1>
           {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 gap-2 pt-1">{actions}</div> : null}

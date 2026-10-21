@@ -25,7 +25,6 @@ import type { Folder } from '@/features/notes/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
 import { Select } from '@/shared/ui/input'
 import { cn } from '@/shared/ui/cn'
-import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
 import { useGraph } from '../client/queries'
@@ -71,7 +70,6 @@ function GraphCanvas({
   graph,
   query = '',
   centerId,
-  fullPage,
   onOpen,
 }: {
   graph: GraphData
@@ -79,12 +77,9 @@ function GraphCanvas({
   query?: string
   /** Notiz in der Mitte des lokalen Graphen */
   centerId?: string
-  /** Über die ganze Seite: Werkzeugleiste und Mini-Timer weichen den Zoom-Knöpfen aus */
-  fullPage?: boolean
   onOpen: (id: string) => void
 }) {
   const flow = useReactFlow()
-  const zoomSpace = useReservedSpace<HTMLDivElement>('--bottom-right-height')
   const scope = useId()
   const { data: folders = [] } = useFolders()
   const colorOf = useFolderColor(folders)
@@ -183,7 +178,7 @@ function GraphCanvas({
         proOptions={FLOW_PRO_OPTIONS}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} />
-        <Panel ref={fullPage ? zoomSpace : undefined} position="bottom-right" className="flow-panel">
+        <Panel position="bottom-right" className="flow-panel">
           <ToolButton label="Verkleinern" keepFocus={false} onClick={() => void flow.zoomOut({ duration: 150 })}>
             <ZoomOut />
           </ToolButton>
@@ -294,7 +289,7 @@ export default function GraphView() {
           </div>
         ) : (
           <ReactFlowProvider>
-            <GraphCanvas graph={graph} query={query} fullPage onOpen={(id) => app.go({ kind: 'note', id })} />
+            <GraphCanvas graph={graph} query={query} onOpen={(id) => app.go({ kind: 'note', id })} />
           </ReactFlowProvider>
         )}
       </div>

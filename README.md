@@ -88,9 +88,9 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
 **Werkzeugleiste und Fokus-Timer**
-- Eine kleine Werkzeugleiste sitzt fest unten rechts – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt sie auf, das Kreuz wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
+- Ein schmaler Griff sitzt mittig am rechten Bildschirmrand – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt die Werkzeugleiste auf, der Pfeil wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
 - Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
-- Leiste und Mini-Timer verdecken nichts: Sie setzen sich über die Bewertungsknöpfe beim Lernen, über „Neue Notiz“ auf dem Handy und über die Zoom-Knöpfe in Mindmap und Canvas.
+- Der Mini-Timer verdeckt nichts: Er setzt sich über die Bewertungsknöpfe beim Lernen und steht neben der Seitenleiste.
 - **Fokus-Timer:**
   - *Pomodoro*: 25 Minuten Fokus, 5 Minuten Pause, nach 4 Runden eine lange Pause von 15 Minuten. Alle Zeiten sind einstellbar, Fokus und Pausen wechseln automatisch.
   - *Countdown*: 5 bis 90 Minuten oder eine eigene Dauer – oder direkt aus einem Termin im Kalender mit dessen Dauer.

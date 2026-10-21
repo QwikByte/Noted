@@ -57,10 +57,7 @@ export function OcclusionFields({
           <FileImage className="size-4" /> Anderes Bild
         </Button>
       </div>
-      <p className="text-xs text-muted">
-        Zieh Rechtecke über die Beschriftungen – jede Fläche wird einzeln abgefragt. Ziehen verschiebt eine Fläche, die Ecke
-        ändert ihre Größe, Entf löscht sie.
-      </p>
+      <p className="text-xs text-muted">Rechtecke über die Beschriftungen ziehen – jede Fläche wird einzeln abgefragt.</p>
       <div className="rounded-xl border border-border bg-subtle p-2">
         <OcclusionEditor occlusion={value} onChange={(next) => onChange({ ...value, masks: next })} selected={selected} onSelect={setSelected} />
       </div>

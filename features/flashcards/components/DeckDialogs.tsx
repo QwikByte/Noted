@@ -115,7 +115,7 @@ export function DeckSettingsDialog({
           checked={typeAnswer}
           onChange={setTypeAnswer}
           label="Antwort eintippen"
-          description="Nur bei Grund- und beidseitigen Karten. Unterschiede zur richtigen Antwort werden markiert."
+          description="Nur bei Grund- und beidseitigen Karten."
         />
         <button type="submit" hidden />
       </form>

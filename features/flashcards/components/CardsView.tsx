@@ -105,9 +105,6 @@ export function CardsView() {
         <div className="flex flex-col items-center rounded-xl border border-dashed border-border-strong px-6 py-12 text-center">
           <Layers className="mb-3 size-9 stroke-[1.5] text-faint" />
           <p className="font-semibold">Noch keine Karteikarten</p>
-          <p className="mt-1 max-w-md text-sm text-muted">
-            Karten kannst du auch aus einer Notiz erstellen (Menü ⋮ in der Notiz → „Karteikarten aus Notiz“).
-          </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus className="size-4" /> Ersten Stapel anlegen

@@ -129,7 +129,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
       open
       onClose={onClose}
       title="Karteikarten aus Notiz"
-      description={`„${note.title}“ – die Karten bleiben mit der Notiz verknüpft.`}
+      description={`„${note.title}“`}
       size="lg"
       footer={
         <>
