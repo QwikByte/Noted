@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { apiHeaders } from './helpers'
+import { apiHeaders, makePdf } from './helpers'
 
 // Oberfläche: Notiz als Blatt Papier, Menüs in scrollenden Werkzeugleisten, Rückfrage vor dem endgültigen Löschen
 
@@ -230,4 +230,80 @@ test('Papierkorb: endgültig löschen erst nach Rückfrage', async ({ page }) =>
   await page.getByRole('button', { name: '„Wegwerfnotiz“ endgültig löschen' }).click()
   await page.getByRole('dialog', { name: 'Endgültig löschen?' }).getByRole('button', { name: 'Endgültig löschen' }).click()
   await expect(page.getByText('Der Papierkorb ist leer.')).toBeVisible()
+})
+
+test('Canvas: Rechtsklick und Doppelklick auf die Beschriftung wirken wie auf den Pfeil', async ({ page }) => {
+  await login(page)
+  const card = (id: string, x: number) => ({ id, type: 'text', text: id, x, y: 0, width: 260, height: 120 })
+  const res = await page.request.post('/api/notes', {
+    headers: await apiHeaders(page),
+    data: {
+      title: 'Beschriftetes Canvas',
+      format: 'canvas',
+      content: JSON.stringify({
+        nodes: [card('Vorlesung', 0), card('Übung', 600)],
+        edges: [{ id: 'pfeil', fromNode: 'Vorlesung', toNode: 'Übung', label: 'führt zu' }],
+      }),
+    },
+  })
+  expect(res.status()).toBe(201)
+  await page.goto(`/?n=${(await res.json()).note.id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  const canvas = page.getByTestId('canvas')
+  const label = canvas.locator('.canvas-edge-label')
+  const menu = page.getByRole('menu', { name: 'Kontextmenü' })
+
+  // Die Beschriftung liegt in einer eigenen Ebene außerhalb des Pfeils – Klicks erreichen ihn nur, weil React sie aus
+  // dem Portal an ihn weiterreicht
+  await label.click({ button: 'right' })
+  await expect(menu.getByText('Pfeilspitzen')).toBeVisible()
+  await expect(label).toHaveClass(/is-selected/)
+  await menu.getByRole('menuitem', { name: 'Bearbeiten' }).click()
+  const input = canvas.getByRole('textbox', { name: 'Beschriftung' })
+  await expect(input).toHaveValue('führt zu')
+  await input.fill('hängt ab von')
+  await page.keyboard.press('Enter')
+  await expect(label).toHaveText('hängt ab von')
+
+  await label.dblclick()
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Escape')
+
+  await label.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Löschen' }).click()
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(0)
+})
+
+test('Dateien: PDFs zeigen ihre erste Seite, Bilder sich selbst – auch nach dem Neuladen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  // 1×1-PNG
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+  const ids: string[] = []
+  for (const file of [
+    { name: 'Vorschau Skript.pdf', mimeType: 'application/pdf', buffer: makePdf([['Kapitel 1', 'Grundlagen'], ['Kapitel 2']]) },
+    { name: 'Vorschau Tafel.png', mimeType: 'image/png', buffer: png },
+  ]) {
+    const res = await page.request.post('/api/attachments', { headers, multipart: { file } })
+    expect(res.status()).toBe(201)
+    ids.push((await res.json()).attachment.id)
+  }
+  const [pdfId] = ids
+
+  await page.goto('/?v=files&in=unlinked')
+  const preview = (name: string) => page.getByTestId('file-card').filter({ hasText: name }).locator('img')
+  const naturalWidth = (name: string) => preview(name).evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)
+  // Bisher stand bei PDFs nur ein Symbol
+  await expect(preview('Vorschau Skript.pdf')).toHaveAttribute('src', /^blob:/, { timeout: 15_000 })
+  await expect.poll(() => naturalWidth('Vorschau Skript.pdf')).toBe(640)
+  await expect.poll(() => naturalWidth('Vorschau Tafel.png')).toBe(1)
+
+  // Beim nächsten Mal kommt die Vorschau aus dem Browser – das PDF wird dafür nicht noch einmal geladen
+  const loaded: string[] = []
+  page.on('request', (r) => {
+    if (r.url().includes(pdfId) || r.url().includes('Vorschau%20Skript.pdf')) loaded.push(r.url())
+  })
+  await page.reload()
+  await expect(preview('Vorschau Skript.pdf')).toHaveAttribute('src', /^blob:/)
+  expect(loaded).toEqual([])
 })

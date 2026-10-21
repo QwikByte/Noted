@@ -46,7 +46,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **Dateien**
 - Bilder (auch direkt mit der Handykamera), PDFs, Audio, Video und beliebige Dateien.
 - Eingebettet mit `![[Foto 2026-10-12.jpg]]`. Einfügen per Toolbar, Drag & Drop oder Strg+V.
-- Der Bereich **Dateien** zeigt sie in der Ordnerstruktur deiner Notizen: Jede Datei steht im Ordner der Notiz, die sie einbettet oder verlinkt – nutzen mehrere Notizen sie, in jedem dieser Ordner. Verschiebst du die Notiz, wandert die Datei mit. Ordner legst und verschiebst du nur bei den Notizen. Dateien, die in keiner Notiz vorkommen (z. B. aus dem Anki-Import), stehen unter **Ohne Notiz**.
+- Der Bereich **Dateien** zeigt sie in der Ordnerstruktur deiner Notizen: Jede Datei steht im Ordner der Notiz, die sie einbettet oder verlinkt – nutzen mehrere Notizen sie, in jedem dieser Ordner. Verschiebst du die Notiz, wandert die Datei mit. Ordner legst und verschiebst du nur bei den Notizen. Dateien, die in keiner Notiz vorkommen (z. B. aus dem Anki-Import), stehen unter **Ohne Notiz**. Bilder erscheinen als Vorschau, PDFs mit ihrer ersten Seite (einmal im Browser erzeugt und dort aufbewahrt).
 - **Durchsuchbar:** Die Volltextsuche findet auch Text in hochgeladenen PDFs (mit Seitenzahl – ein Klick öffnet das PDF auf der Seite) sowie in `.txt`-, `.md`- und `.csv`-Dateien. Der Text wird nach dem Hochladen im Hintergrund gelesen, bei PDFs höchstens 400 Seiten und 2 MB Text. Gescannte PDFs ohne Textebene lassen sich nicht durchsuchen (keine Texterkennung); unter **Dateien** steht bei jeder Datei, ob sie durchsuchbar ist.
 
 **PDF-Viewer neben der Notiz**
