@@ -15,7 +15,9 @@ export async function copyText(text: string): Promise<boolean> {
   ta.setAttribute('readonly', '')
   ta.style.position = 'fixed'
   ta.style.opacity = '0'
-  document.body.appendChild(ta)
+  // Bei offenem Dialog ist alles außerhalb unbedienbar – dort ließe sich das Feld nicht markieren
+  const host = [...document.querySelectorAll('dialog:modal')].at(-1) ?? document.body
+  host.appendChild(ta)
   ta.select()
   let ok = false
   try {

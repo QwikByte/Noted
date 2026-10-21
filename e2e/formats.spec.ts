@@ -111,7 +111,7 @@ test('Formatierter Text: schreiben wie in Word, Seitenlink aus dem PDF, Lesemodu
 
   // Suche findet den Text, nicht das HTML
   await page.goto('/?q=wichtig')
-  await expect(page.getByRole('main').getByRole('button', { name: /Protokoll.*wichtig/ })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('link', { name: /Protokoll.*wichtig/ })).toBeVisible()
 
   // Umwandeln in Markdown: Formatierung, die Markdown nicht kennt, entfällt
   await page.goto(`/?n=${id}`)

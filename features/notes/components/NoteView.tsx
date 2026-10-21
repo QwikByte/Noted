@@ -35,6 +35,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
+import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
@@ -751,9 +752,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
             {path.map((f) => (
               <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
-                <button type="button" onClick={() => app.go({ kind: 'folder', id: f.id })} className="truncate hover:text-fg">
+                <NavLink to={{ kind: 'folder', id: f.id }} className="truncate hover:text-fg">
                   {f.name}
-                </button>
+                </NavLink>
                 <ChevronRight className="size-3.5 shrink-0 text-faint" />
               </span>
             ))}
@@ -1047,7 +1048,6 @@ function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode
 }
 
 function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
-  const app = useApp()
   const { data = [] } = useBacklinks(id)
   if (data.length === 0) {
     return compact ? <p className="text-sm text-muted">Keine anderen Notizen verlinken hierher.</p> : null
@@ -1060,9 +1060,9 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
       <ul className="space-y-1">
         {data.map((b) => (
           <li key={b.id}>
-            <button type="button" onClick={() => app.go({ kind: 'note', id: b.id })} className="text-sm text-accent-text hover:underline">
+            <NavLink to={{ kind: 'note', id: b.id }} className="text-sm text-accent-text hover:underline">
               {b.title}
-            </button>
+            </NavLink>
           </li>
         ))}
       </ul>

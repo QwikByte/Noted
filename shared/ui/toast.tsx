@@ -1,5 +1,6 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { cn } from './cn'
 
@@ -16,9 +17,38 @@ const ToastContext = createContext<ToastApi | null>(null)
 
 let counter = 0
 
+/**
+ * Oberster offener modaler Dialog. Er liegt in der obersten Ebene und macht alles andere unbedienbar – Meldungen
+ * gehören deshalb in ihn hinein, sonst stehen sie gedimmt unter seinem Hintergrund und werden nicht vorgelesen.
+ */
+function useTopDialog(): HTMLDialogElement | null {
+  const [top, setTop] = useState<HTMLDialogElement | null>(null)
+  useEffect(() => {
+    // In der Reihenfolge des Öffnens: Eine Rückfrage aus einem Dialog liegt über ihm
+    const stack: HTMLDialogElement[] = []
+    const update = () => {
+      for (const d of document.querySelectorAll('dialog')) {
+        const modal = d.open && d.matches(':modal')
+        const i = stack.indexOf(d)
+        if (modal && i < 0) stack.push(d)
+        else if (!modal && i >= 0) stack.splice(i, 1)
+      }
+      for (let i = stack.length - 1; i >= 0; i--) if (!stack[i].isConnected) stack.splice(i, 1)
+      setTop(stack.at(-1) ?? null)
+    }
+    // childList: Ein Dialog kann samt seiner Ansicht verschwinden, ohne vorher geschlossen zu werden
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] })
+    update()
+    return () => observer.disconnect()
+  }, [])
+  return top
+}
+
 /** `sticky`: dauerhafter Hinweis über den Meldungen (z. B. „Neue Version verfügbar“) */
 export function ToastProvider({ children, sticky }: { children: React.ReactNode; sticky?: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const topDialog = useTopDialog()
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
 
@@ -38,19 +68,23 @@ export function ToastProvider({ children, sticky }: { children: React.ReactNode;
     [show],
   )
 
+  const region = (
+    <div
+      // Oben unter der Kopfzeile: unten lägen sie über Bewertungsknöpfen, Tastatur und Neu-Knopf
+      className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[100] flex flex-col items-center gap-2 px-3 sm:left-auto sm:right-4 sm:w-[24rem] sm:items-stretch sm:px-0"
+      aria-live="polite"
+    >
+      {sticky}
+      {toasts.map((t) => (
+        <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
+      ))}
+    </div>
+  )
+
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div
-        // Oben unter der Kopfzeile: unten lägen sie über Bewertungsknöpfen, Tastatur und Neu-Knopf
-        className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[100] flex flex-col items-center gap-2 px-3 sm:left-auto sm:right-4 sm:w-[24rem] sm:items-stretch sm:px-0"
-        aria-live="polite"
-      >
-        {sticky}
-        {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
-        ))}
-      </div>
+      {topDialog ? createPortal(region, topDialog) : region}
     </ToastContext.Provider>
   )
 }

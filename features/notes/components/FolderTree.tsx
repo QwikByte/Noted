@@ -10,6 +10,7 @@ import { useExpanded } from '../client/expanded'
 import { ROOT, startDrag, useDraggedId, useDropTarget } from '../client/drag'
 import type { NoteSummary } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
+import { NavLink } from '@/features/workspace/components/NavLink'
 
 /** Zugeklappter Ordner, über dem beim Ziehen so lange verweilt wird, klappt auf */
 const EXPAND_DELAY_MS = 600
@@ -52,9 +53,8 @@ export function FolderTree() {
         style={{ paddingLeft: 8 + depth * 14 }}
         onContextMenu={(e) => openContextMenu(e, <NoteMenuItems note={note} context />)}
       >
-        <button
-          type="button"
-          onClick={() => app.go({ kind: 'note', id: note.id })}
+        <NavLink
+          to={{ kind: 'note', id: note.id }}
           onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-[18px] text-left text-sm select-none [-webkit-touch-callout:none]"
           title={note.title}
@@ -63,7 +63,7 @@ export function FolderTree() {
           <FileText className="size-4 shrink-0 opacity-70" />
           <span className={cn('truncate', active && 'font-medium')}>{note.title}</span>
           {note.pinned ? <Pin className="size-3 shrink-0 text-accent-text" /> : null}
-        </button>
+        </NavLink>
         <NoteMenu note={note} />
       </div>
     )

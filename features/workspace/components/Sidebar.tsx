@@ -18,6 +18,7 @@ import { useApp } from '../client/context'
 import type { View } from '../client/nav'
 import { FolderTree } from '@/features/notes/components/FolderTree'
 import { UserMenu } from './UserMenu'
+import { NavLink } from './NavLink'
 import { SyncBadge } from '@/features/notes/components/SyncBadge'
 import { useDueTotal } from '@/features/flashcards/components/CardsView'
 import { Logo } from '@/shared/ui/logo'
@@ -41,12 +42,10 @@ function NavItem({
   to: View
   count?: number
 }) {
-  const app = useApp()
   const openContextMenu = useContextMenu()
   return (
-    <button
-      type="button"
-      onClick={() => app.go(to)}
+    <NavLink
+      to={to}
       onContextMenu={(e) => openContextMenu(e, <OpenViewItems view={to} />)}
       aria-current={active ? 'page' : undefined}
       className={cn(
@@ -59,7 +58,7 @@ function NavItem({
       {count ? (
         <span className="marker px-1.5 text-[11px] leading-[18px] font-semibold tabular-nums">{count}</span>
       ) : null}
-    </button>
+    </NavLink>
   )
 }
 
@@ -161,10 +160,9 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
             {tagsOpen === '1' ? (
               <div className="flex animate-fade-in flex-wrap gap-1.5 px-2 pt-1">
                 {tags.map((t) => (
-                  <button
+                  <NavLink
                     key={t.tag}
-                    type="button"
-                    onClick={() => app.go({ kind: 'tag', tag: t.tag })}
+                    to={{ kind: 'tag', tag: t.tag }}
                     onContextMenu={(e) => openContextMenu(e, <OpenViewItems view={{ kind: 'tag', tag: t.tag }} />)}
                     aria-current={view.kind === 'tag' && view.tag === t.tag ? 'page' : undefined}
                     className={cn(
@@ -177,7 +175,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
                     <Hash className="size-3" />
                     {t.tag}
                     <span className="opacity-60">{t.count}</span>
-                  </button>
+                  </NavLink>
                 ))}
               </div>
             ) : null}

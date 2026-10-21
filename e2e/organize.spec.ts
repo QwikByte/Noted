@@ -78,7 +78,7 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   const semesterRow = tree.getByRole('button', { name: /^Semester 3/ })
   const freizeitRow = tree.getByRole('button', { name: /^Freizeit/ })
   await freizeitRow.click()
-  await mouseDrag(page, tree.getByRole('button', { name: 'Simplex', exact: true }), semesterRow, '88-drag-note')
+  await mouseDrag(page, tree.getByRole('link', { name: 'Simplex', exact: true }), semesterRow, '88-drag-note')
   await expect(page.getByText('„Simplex“ nach „Semester 3“ verschoben.')).toBeVisible()
   await expect.poll(folderOf).toBe(semester.id)
   // Der Ordner ist aufgeklappt, die Notiz steht darin
@@ -108,7 +108,7 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   await expect(semesterRow).toBeVisible()
 
   // Dateien: in der Ordnerstruktur der Notizen, nicht eingebettete unter „Ohne Notiz“
-  await page.getByRole('navigation').getByRole('button', { name: 'Dateien' }).first().click()
+  await page.getByRole('navigation').getByRole('link', { name: 'Dateien' }).first().click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Dateien')
   const main = page.getByRole('main')
   await expect(main.getByRole('button', { name: /^Semester 3/ })).toContainText('1')
@@ -127,7 +127,7 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   // Ordneransicht: Notiz aus der Liste auf einen Unterordner ziehen – die Datei zieht mit
   await page.goto(`/?f=${semester.id}`)
   const list = page.getByRole('main')
-  await mouseDrag(page, list.getByRole('button', { name: /^Simplex/ }), list.getByRole('button', { name: /^Optimierung/ }))
+  await mouseDrag(page, list.getByRole('link', { name: /^Simplex/ }), list.getByRole('link', { name: /^Optimierung/ }))
   await expect.poll(folderOf).toBe(optimierung.id)
   await page.goto(`/?v=files&in=${optimierung.id}`)
   await expect(page.getByRole('main').getByTestId('file-card').filter({ hasText: pdf.filename })).toBeVisible()
@@ -142,8 +142,8 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   })
   const mobile = await context.newPage()
   await mobile.goto(`/?f=${optimierung.id}`)
-  const noteCard = mobile.getByRole('main').getByRole('button', { name: /^Simplex/ })
-  const crumb = mobile.getByRole('main').getByRole('button', { name: 'Semester 3', exact: true })
+  const noteCard = mobile.getByRole('main').getByRole('link', { name: /^Simplex/ })
+  const crumb = mobile.getByRole('main').getByRole('link', { name: 'Semester 3', exact: true })
   const a = (await noteCard.boundingBox())!
   const b = (await crumb.boundingBox())!
   const cdp = await context.newCDPSession(mobile)
@@ -222,7 +222,7 @@ test('Graph: verlinkte Notizen sehen und per Klick öffnen', async ({ page }) =>
   const waerme = await create('Graph Wärme', 'Zurück zu [[Graph Entropie]]')
   await page.reload()
 
-  await page.getByRole('navigation').getByRole('button', { name: 'Graph' }).click()
+  await page.getByRole('navigation').getByRole('link', { name: 'Graph' }).click()
   await expect(page).toHaveURL(/v=graph/)
   const graph = page.getByTestId('graph')
   await expect(graph.getByTestId(`rf__node-${entropie.id}`)).toBeVisible()

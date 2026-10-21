@@ -35,6 +35,7 @@ import { formatRelative } from '@/shared/lib/format'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
+import { NavLink } from '@/features/workspace/components/NavLink'
 
 /** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
 function NoteList({ children }: { children: React.ReactNode }) {
@@ -42,7 +43,6 @@ function NoteList({ children }: { children: React.ReactNode }) {
 }
 
 function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
-  const app = useApp()
   const { notes } = useNotes()
   const openContextMenu = useContextMenu()
   const dragged = useDraggedId() === note.id
@@ -51,9 +51,8 @@ function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
   return (
-    <button
-      type="button"
-      onClick={() => app.go({ kind: 'note', id: note.id })}
+    <NavLink
+      to={{ kind: 'note', id: note.id }}
       onContextMenu={(e) => openContextMenu(e, summary ? <NoteMenuItems note={summary} context /> : null)}
       // In einen Ordner der Seitenleiste oder der Ordneransicht ziehen
       onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
@@ -89,7 +88,7 @@ function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult
           ))}
         </div>
       ) : null}
-    </button>
+    </NavLink>
   )
 }
 
@@ -219,17 +218,16 @@ export function FolderView({ id }: { id: string }) {
               <div className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted">
                 {path.slice(0, -1).map((f) => (
                   <span key={f.id} className="flex items-center gap-1">
-                    <button
-                      type="button"
+                    <NavLink
+                      to={{ kind: 'folder', id: f.id }}
                       data-drop-folder={f.id}
                       className={cn(
                         'rounded px-1 -mx-1 hover:text-fg',
                         dropTarget === f.id && 'bg-accent-soft text-accent-text ring-2 ring-accent',
                       )}
-                      onClick={() => app.go({ kind: 'folder', id: f.id })}
                     >
                       {f.name}
-                    </button>
+                    </NavLink>
                     <ChevronRight className="size-3.5" />
                   </span>
                 ))}
@@ -271,11 +269,10 @@ export function FolderView({ id }: { id: string }) {
         {children.length > 0 ? (
           <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {children.map((f) => (
-              <button
+              <NavLink
                 key={f.id}
-                type="button"
+                to={{ kind: 'folder', id: f.id }}
                 data-drop-folder={f.id}
-                onClick={() => app.go({ kind: 'folder', id: f.id })}
                 onContextMenu={(e) => openContextMenu(e, <FolderMenuItems folder={f} context />)}
                 onPointerDown={(e) => startDrag(e, { kind: 'folder', id: f.id, name: f.name })}
                 className={cn(
@@ -287,7 +284,7 @@ export function FolderView({ id }: { id: string }) {
                 <FolderIcon className="size-4 text-muted" />
                 <span className="truncate">{f.name}</span>
                 <span className="ml-auto text-xs text-faint">{notes.filter((n) => n.folderId === f.id).length}</span>
-              </button>
+              </NavLink>
             ))}
           </div>
         ) : null}

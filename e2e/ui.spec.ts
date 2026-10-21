@@ -117,7 +117,7 @@ test('Kontextmenüs: Notiz in der Seitenleiste, Editor, freie Fläche und Tastat
   const id = await createNote(page, 'Kontextnotiz', 'wichtig')
   await page.goto('/')
   const menu = page.getByRole('menu', { name: 'Kontextmenü' })
-  const sidebarNote = page.getByRole('complementary').getByRole('button', { name: 'Kontextnotiz', exact: true })
+  const sidebarNote = page.getByRole('complementary').getByRole('link', { name: 'Kontextnotiz', exact: true })
 
   // Rechtsklick auf eine Notiz: dieselben Aktionen wie im Menü „…“, dazu Öffnen
   await sidebarNote.click({ button: 'right' })
@@ -155,6 +155,46 @@ test('Kontextmenüs: Notiz in der Seitenleiste, Editor, freie Fläche und Tastat
   await expect(menu.getByRole('menuitem', { name: 'Ausschneiden' })).toBeEnabled()
   await menu.getByRole('menuitem', { name: 'Fett' }).click()
   await expect(editor).toContainText('**wichtig**')
+})
+
+test('Navigation: Notizen und Ansichten sind echte Links – Strg-Klick öffnet einen neuen Tab', async ({ page, context }) => {
+  await login(page)
+  const id = await createNote(page, 'Verlinkte Notiz', 'Inhalt')
+  await page.goto('/')
+  const sidebar = page.getByRole('complementary')
+  const noteLink = sidebar.getByRole('link', { name: 'Verlinkte Notiz', exact: true })
+  await expect(noteLink).toHaveAttribute('href', `/?n=${id}`)
+  await expect(sidebar.getByRole('link', { name: 'Papierkorb' })).toHaveAttribute('href', '/?v=trash')
+
+  // Strg/⌘-Klick: neuer Tab, die Ansicht hier bleibt
+  const [tab] = await Promise.all([context.waitForEvent('page'), noteLink.click({ modifiers: ['ControlOrMeta'] })])
+  await tab.waitForLoadState()
+  expect(new URL(tab.url()).searchParams.get('n')).toBe(id)
+  await expect(page).toHaveURL(/\/$/)
+  await tab.close()
+
+  // Normaler Klick: Wechsel ohne Neuladen
+  await page.evaluate(() => ((window as { __noReload?: boolean }).__noReload = true))
+  await noteLink.click()
+  await expect(page.getByTestId('note-title').or(page.getByRole('heading', { name: 'Verlinkte Notiz' }))).toBeVisible()
+  expect(await page.evaluate(() => (window as { __noReload?: boolean }).__noReload)).toBe(true)
+})
+
+test('Meldungen erscheinen über einem offenen Dialog und lassen sich bedienen', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Zum Teilen', 'Für die Lerngruppe.')
+  await page.goto(`/?n=${id}`)
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Teilen …' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Link erstellen' }).click()
+  await dialog.getByRole('button', { name: 'Kopieren' }).click()
+  // Bisher lag die Meldung gedimmt unter dem Hintergrund des Dialogs und ließ sich nicht anklicken
+  const toast = dialog.getByRole('status').filter({ hasText: 'Link kopiert.' })
+  await expect(toast).toBeVisible()
+  await toast.getByRole('button', { name: 'Schließen' }).click()
+  await expect(toast).toHaveCount(0)
+  await expect(dialog).toBeVisible()
 })
 
 test('Papierkorb: endgültig löschen erst nach Rückfrage', async ({ page }) => {
