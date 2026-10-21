@@ -496,7 +496,8 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
     }
     if (e.key === 'Escape') return select(null)
     if (readOnly || mod || e.altKey) return
-    if (e.key === 'Tab') {
+    // Nur Tab mit Auswahl legt an – Umschalt+Tab und Tab ohne Auswahl (nach Escape) verlassen die Fläche
+    if (e.key === 'Tab' && !e.shiftKey && selected) {
       e.preventDefault()
       return insert('child')
     }
@@ -649,12 +650,13 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
       )}
       {header}
       <MindContext.Provider value={ctx}>
+        {/* Fokusrahmen als ::after, weil die deckende React-Flow-Fläche Rahmen und Schatten der Hülle verdeckt */}
         <div
           ref={wrapperRef}
-          className="mindmap-flow flow-surface relative min-h-0 flex-1 outline-none"
+          className="mindmap-flow flow-surface relative min-h-0 flex-1 outline-none focus-visible:after:pointer-events-none focus-visible:after:absolute focus-visible:after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
           tabIndex={0}
           role="application"
-          aria-label="Mindmap – Pfeiltasten wählen Knoten, Tab legt einen Unterpunkt an, Enter einen weiteren Punkt"
+          aria-label="Mindmap – Pfeiltasten wählen Knoten, Tab legt einen Unterpunkt an, Enter einen weiteren Punkt, Escape hebt die Auswahl auf"
           onKeyDown={onKeyDown}
           onPointerDown={(e) => {
             // React Flow verhindert den Fokus beim Klicken – Tastenbefehle sollen trotzdem hier ankommen

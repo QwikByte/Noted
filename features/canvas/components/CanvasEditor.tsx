@@ -641,9 +641,10 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
       )}
       {header}
       <CanvasContext.Provider value={ctx}>
+        {/* Fokusrahmen als ::after, weil die deckende React-Flow-Fläche Rahmen und Schatten der Hülle verdeckt */}
         <div
           ref={wrapperRef}
-          className="canvas-flow flow-surface relative min-h-0 flex-1 outline-none"
+          className="canvas-flow flow-surface relative min-h-0 flex-1 outline-none focus-visible:after:pointer-events-none focus-visible:after:absolute focus-visible:after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
           tabIndex={0}
           role="application"
           aria-label="Canvas – Doppelklick legt eine Textkarte an, Entf löscht die Auswahl"

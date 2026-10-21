@@ -88,15 +88,45 @@ function useUsers() {
 
 type Credentials = { username: string; password: string; title: string }
 
+type ConfirmAction = 'mfa' | 'sessions' | 'deactivate'
+
+/** Texte der Rückfrage vor folgenreichen Aktionen aus dem Benutzermenü */
+function confirmTexts(user: AdminUser, action: ConfirmAction) {
+  switch (action) {
+    case 'mfa':
+      return {
+        title: 'MFA zurücksetzen?',
+        description: `@${user.username} kann sich danach ohne Code anmelden${user.mfaRequired ? ' und muss MFA neu einrichten' : ''}. Alle Sitzungen werden beendet.`,
+        confirmLabel: 'Zurücksetzen',
+        success: 'MFA zurückgesetzt.',
+      }
+    case 'sessions':
+      return {
+        title: 'Alle Sitzungen beenden?',
+        description: `@${user.username} wird auf allen Geräten abgemeldet.`,
+        confirmLabel: 'Beenden',
+        success: 'Sitzungen beendet.',
+      }
+    case 'deactivate':
+      return {
+        title: 'Konto deaktivieren?',
+        description: `@${user.username} kann sich danach nicht mehr anmelden und wird auf allen Geräten abgemeldet. Die Notizen bleiben erhalten.`,
+        confirmLabel: 'Deaktivieren',
+        success: 'Konto deaktiviert.',
+      }
+  }
+}
+
 function UsersTab() {
   const me = useUser()
   const qc = useQueryClient()
   const toast = useToast()
-  const { data: users = [], isLoading } = useUsers()
+  const { data: users, error } = useUsers()
   const [createOpen, setCreateOpen] = useState(false)
   const [edit, setEdit] = useState<AdminUser | null>(null)
   const [resetPw, setResetPw] = useState<AdminUser | null>(null)
-  const [confirm, setConfirm] = useState<{ user: AdminUser; action: 'mfa' | 'sessions' } | null>(null)
+  const [confirm, setConfirm] = useState<{ user: AdminUser; action: ConfirmAction } | null>(null)
+  const confirmText = confirm ? confirmTexts(confirm.user, confirm.action) : null
   const [del, setDel] = useState<AdminUser | null>(null)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [busy, setBusy] = useState(false)
@@ -116,16 +146,18 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted">
-          {users.length} {users.length === 1 ? 'Konto' : 'Konten'}
-        </p>
+        <p className="text-sm text-muted">{users ? `${users.length} ${users.length === 1 ? 'Konto' : 'Konten'}` : null}</p>
         <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
           <UserPlus className="size-4" /> Benutzer anlegen
         </Button>
       </div>
 
-      {isLoading ? (
-        <p className="py-8 text-center text-sm text-muted">Lädt …</p>
+      {!users ? (
+        error ? (
+          <ErrorText>{errorMessage(error)}</ErrorText>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted">Lädt …</p>
+        )
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
           {users.map((u) => {
@@ -196,7 +228,7 @@ function UsersTab() {
                       <MenuItem
                         icon={<Power />}
                         onSelect={() =>
-                          patch(u, { isActive: !u.isActive }, u.isActive ? 'Konto deaktiviert.' : 'Konto aktiviert.')
+                          u.isActive ? setConfirm({ user: u, action: 'deactivate' }) : patch(u, { isActive: true }, 'Konto aktiviert.')
                         }
                       >
                         {u.isActive ? 'Deaktivieren' : 'Aktivieren'}
@@ -239,22 +271,22 @@ function UsersTab() {
       <ConfirmModal
         open={!!confirm}
         onClose={() => setConfirm(null)}
-        title={confirm?.action === 'mfa' ? 'MFA zurücksetzen?' : 'Alle Sitzungen beenden?'}
-        description={
-          confirm?.action === 'mfa'
-            ? `@${confirm.user.username} kann sich danach ohne Code anmelden${confirm.user.mfaRequired ? ' und muss MFA neu einrichten' : ''}. Alle Sitzungen werden beendet.`
-            : `@${confirm?.user.username} wird auf allen Geräten abgemeldet.`
-        }
-        confirmLabel={confirm?.action === 'mfa' ? 'Zurücksetzen' : 'Beenden'}
+        title={confirmText?.title ?? ''}
+        description={confirmText?.description}
+        confirmLabel={confirmText?.confirmLabel}
         danger
         loading={busy}
         onConfirm={async () => {
-          if (!confirm) return
+          if (!confirm || !confirmText) return
           setBusy(true)
           try {
-            await api(`/api/admin/users/${confirm.user.id}/${confirm.action === 'mfa' ? 'mfa' : 'sessions'}`, { method: 'DELETE' })
+            if (confirm.action === 'deactivate') {
+              await api(`/api/admin/users/${confirm.user.id}`, { method: 'PATCH', body: { isActive: false } })
+            } else {
+              await api(`/api/admin/users/${confirm.user.id}/${confirm.action}`, { method: 'DELETE' })
+            }
             await refresh()
-            toast.success(confirm.action === 'mfa' ? 'MFA zurückgesetzt.' : 'Sitzungen beendet.')
+            toast.success(confirmText.success)
             setConfirm(null)
           } catch (err) {
             toast.error(errorMessage(err))
@@ -551,6 +583,7 @@ function ResetPasswordDialog({
 }
 
 function CredentialsDialog({ credentials, onClose }: { credentials: Credentials | null; onClose: () => void }) {
+  const toast = useToast()
   const [copied, setCopied] = useState(false)
   const text = credentials
     ? `Noted-Zugang\nAdresse: ${typeof location !== 'undefined' ? location.origin : ''}\nBenutzername: ${credentials.username}\nStartpasswort: ${credentials.password}\n(Bitte bei der ersten Anmeldung ändern.)`
@@ -580,9 +613,10 @@ function CredentialsDialog({ credentials, onClose }: { credentials: Credentials 
         <Button
           className="w-full"
           onClick={async () => {
-            await copyText(text)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
+            if (await copyText(text)) {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            } else toast.error('Kopieren nicht möglich.')
           }}
         >
           {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />} Zugangsdaten kopieren
@@ -602,12 +636,13 @@ function DeleteUserDialog({ user, onClose, onDeleted }: { user: AdminUser | null
     setConfirmName('')
     setError(null)
   }
+  const contents = user?.noteCount === 1 ? 'seiner Notiz und allen Dateien' : `allen ${user?.noteCount ?? 0} Notizen und Dateien`
   return (
     <Modal
       open={!!user}
       onClose={onClose}
       title="Benutzer löschen?"
-      description={`Das Konto @${user?.username} wird mit allen ${user?.noteCount ?? 0} Notizen und Dateien endgültig gelöscht.`}
+      description={`Das Konto @${user?.username} wird mit ${contents} endgültig gelöscht.`}
       size="sm"
       footer={
         <>
@@ -740,40 +775,48 @@ function AuditTab() {
       api<{ entries: AuditEntry[] }>(`/api/admin/audit?limit=100${pageParam ? `&before=${pageParam}` : ''}`).then((r) => r.entries),
     getNextPageParam: (last) => (last.length === 100 ? last[last.length - 1].id : undefined),
   })
-  const entries = query.data?.pages.flat() ?? []
+  const entries = query.data?.pages.flat()
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">Letzte 180 Tage</p>
-      <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
-        {entries.map((e) => {
-          const ev = EVENTS[e.event] ?? { label: e.event, tone: 'neutral' as const }
-          let details = ''
-          try {
-            const d = e.details ? JSON.parse(e.details) : null
-            if (d && typeof d === 'object') {
-              details = Object.entries(d)
-                .filter(([k]) => k !== 'failed')
-                .map(([k, v]) => `${k}: ${String(v)}`)
-                .join(', ')
+      {!entries ? (
+        query.error ? (
+          <ErrorText>{errorMessage(query.error)}</ErrorText>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted">Lädt …</p>
+        )
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
+          {entries.map((e) => {
+            const ev = EVENTS[e.event] ?? { label: e.event, tone: 'neutral' as const }
+            let details = ''
+            try {
+              const d = e.details ? JSON.parse(e.details) : null
+              if (d && typeof d === 'object') {
+                details = Object.entries(d)
+                  .filter(([k]) => k !== 'failed')
+                  .map(([k, v]) => `${k}: ${String(v)}`)
+                  .join(', ')
+              }
+            } catch {
+              details = e.details ?? ''
             }
-          } catch {
-            details = e.details ?? ''
-          }
-          return (
-            <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-              <span className="w-36 shrink-0 text-xs text-faint tabular-nums">{formatDateTime(e.createdAt)}</span>
-              <Badge tone={ev.tone}>{ev.label}</Badge>
-              <span className="min-w-0 flex-1 truncate">
-                {e.username ? <span className="font-medium">@{e.username}</span> : null}
-                {e.actorUsername && e.actorUsername !== e.username ? <span className="text-muted"> durch @{e.actorUsername}</span> : null}
-                {details ? <span className="text-faint"> · {details}</span> : null}
-              </span>
-              {e.ip ? <span className="text-xs text-faint tabular-nums">{e.ip}</span> : null}
-            </li>
-          )
-        })}
-        {entries.length === 0 && !query.isLoading ? <li className="px-4 py-8 text-center text-sm text-muted">Keine Einträge.</li> : null}
-      </ul>
+            return (
+              <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
+                <span className="w-36 shrink-0 text-xs text-faint tabular-nums">{formatDateTime(e.createdAt)}</span>
+                <Badge tone={ev.tone}>{ev.label}</Badge>
+                <span className="min-w-0 flex-1 truncate">
+                  {e.username ? <span className="font-medium">@{e.username}</span> : null}
+                  {e.actorUsername && e.actorUsername !== e.username ? <span className="text-muted"> durch @{e.actorUsername}</span> : null}
+                  {details ? <span className="text-faint"> · {details}</span> : null}
+                </span>
+                {e.ip ? <span className="text-xs text-faint tabular-nums">{e.ip}</span> : null}
+              </li>
+            )
+          })}
+          {entries.length === 0 ? <li className="px-4 py-8 text-center text-sm text-muted">Keine Einträge.</li> : null}
+        </ul>
+      )}
       {query.hasNextPage ? (
         <Button onClick={() => query.fetchNextPage()} loading={query.isFetchingNextPage}>
           Ältere laden

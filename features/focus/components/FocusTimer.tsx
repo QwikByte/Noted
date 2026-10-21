@@ -68,7 +68,13 @@ export function FocusTimer() {
       </div>
 
       <div className="text-center">
-        <p className={cn('text-sm font-medium', isBreak(state.phase) ? 'text-success' : 'text-accent-text')} data-testid="focus-phase">
+        {/* Phasenwechsel ansagen – die Uhr selbst nicht, sie ändert sich jede Sekunde */}
+        <p
+          className={cn('text-sm font-medium', isBreak(state.phase) ? 'text-success' : 'text-accent-text')}
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="focus-phase"
+        >
           {PHASE_LABELS[state.phase]}
           {state.mode === 'pomodoro' ? (
             <span className="font-normal text-muted">
@@ -160,6 +166,7 @@ function SubjectFields() {
   const { subjects } = useFocusSessions()
   const { data: flashcards } = useFlashcards()
   const suggestions = [...new Set([...subjects, ...(flashcards?.decks.map((d) => d.name) ?? [])])]
+  // Kompakte Felder mit ! – cn führt Klassen nicht zusammen, sonst gewinnen Höhe, Abstand und Schrift von Input
   return (
     <div className="grid grid-cols-2 gap-2">
       <Input
@@ -169,7 +176,7 @@ function SubjectFields() {
         placeholder="Fach"
         aria-label="Fach"
         maxLength={MAX_SUBJECT}
-        className="h-9 px-2.5 text-sm"
+        className="h-9! px-2.5! text-sm!"
       />
       <Input
         value={goal}
@@ -177,7 +184,7 @@ function SubjectFields() {
         placeholder="Ziel (optional)"
         aria-label="Ziel"
         maxLength={MAX_GOAL}
-        className="h-9 px-2.5 text-sm"
+        className="h-9! px-2.5! text-sm!"
       />
       <datalist id={listId}>
         {suggestions.map((s) => (
@@ -247,7 +254,7 @@ function NumberSetting({
         inputMode="numeric"
         min={min}
         max={max}
-        className="h-9 px-2.5 text-sm"
+        className="h-9! px-2.5! text-sm!"
         value={draft ?? String(settings[field])}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -292,7 +299,8 @@ export function FocusTimerSettingsToggle() {
       aria-expanded={open === '1'}
       aria-controls="focus-settings"
       onClick={() => setOpen(open === '1' ? '0' : '1')}
-      className={cn(open === '1' && 'bg-active text-fg')}
+      // text-fg! – sonst gewinnt die graue Textfarbe der ghost-Variante
+      className={cn(open === '1' && 'bg-active text-fg!')}
     >
       <Settings2 className="size-4" />
     </Button>
@@ -303,20 +311,23 @@ export function FocusTimerSettingsToggle() {
 export function FocusMiniTimer({ onOpen }: { onOpen: () => void }) {
   const { state, now } = useFocusTimer()
   if (!isRunning(state)) return null
+  const phase = PHASE_LABELS[state.phase]
+  const clock = formatClock(remainingMs(state, now))
   return (
     <button
       type="button"
       onClick={onOpen}
       // Fokus bleibt im Editor
       onMouseDown={(e) => e.preventDefault()}
-      aria-label="Fokus-Timer öffnen"
+      // Der sichtbare Text (Phase und Zeit) gehört in den Namen – Sprachsteuerung nennt, was sie sieht
+      aria-label={`Fokus-Timer öffnen – ${phase}, ${clock}`}
       title="Fokus-Timer öffnen"
       data-testid="focus-mini"
       className="pointer-events-auto flex h-8 animate-pop-in items-center gap-2 rounded-full border border-border bg-elevated px-3 text-xs shadow-pop hover:bg-hover"
     >
       <span className={cn('size-2 rounded-full', isBreak(state.phase) ? 'bg-success' : 'bg-accent')} />
-      <span className="text-muted">{PHASE_LABELS[state.phase]}</span>
-      <span className="font-semibold text-fg tabular-nums">{formatClock(remainingMs(state, now))}</span>
+      <span className="text-muted">{phase}</span>
+      <span className="font-semibold text-fg tabular-nums">{clock}</span>
     </button>
   )
 }

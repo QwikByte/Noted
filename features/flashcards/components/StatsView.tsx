@@ -346,7 +346,12 @@ function FocusTime({ today }: { today: string }) {
             <tbody className="divide-y divide-border tabular-nums">
               {rows.map((r) => (
                 <tr key={r.subject || '–'}>
-                  <td className="max-w-48 truncate py-1.5 pr-3">{r.subject || <span className="text-muted">ohne Fach</span>}</td>
+                  {/* max-w-* wirkt auf Tabellenzellen nicht – daher kürzt ein Block in der Zelle */}
+                  <td className="py-1.5 pr-3">
+                    <div className="max-w-48 truncate" title={r.subject || undefined}>
+                      {r.subject || <span className="text-muted">ohne Fach</span>}
+                    </div>
+                  </td>
                   {r.weeks.map((ms, i) => (
                     <td key={weeks[i]} className="py-1.5 pr-3 text-right whitespace-nowrap">
                       {ms ? formatStudyTime(ms) : '–'}
@@ -386,7 +391,11 @@ function DeckTable({ stats }: { stats: StudyStats }) {
           <tbody className="divide-y divide-border tabular-nums">
             {rows.map(({ deck, s }) => (
               <tr key={deck.id}>
-                <td className="max-w-48 truncate py-1.5 pr-3">{deck.name}</td>
+                <td className="py-1.5 pr-3">
+                  <div className="max-w-48 truncate" title={deck.name}>
+                    {deck.name}
+                  </div>
+                </td>
                 <td className="py-1.5 pr-3 text-right">{s?.reviews ?? 0}</td>
                 <td className="py-1.5 pr-3 text-right">{s?.matureReviews ? `${Math.round((s.matureCorrect / s.matureReviews) * 100)} %` : '–'}</td>
                 <td className="py-1.5 text-right">{s?.reviews ? formatDuration(s.ms / s.reviews) : '–'}</td>

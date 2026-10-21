@@ -86,8 +86,9 @@ export function DeckSettingsDialog({
         <Field label="Beschreibung (optional)">
           {(id) => <AutoTextarea id={id} value={description} onChange={(e) => setDescription(e.target.value)} minRows={2} />}
         </Field>
+        {/* w-32! hier und bei der Behaltensrate – cn führt Klassen nicht zusammen, sonst gewinnt w-full von Input */}
         <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
-          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />}
+          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32!" />}
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
@@ -106,7 +107,7 @@ export function DeckSettingsDialog({
           {scheduler === 'fsrs' ? (
             <Field label="Gewünschte Behaltensrate (%)" hint="Höher heißt: mehr Wiederholungen, dafür seltener vergessen. 90 % ist ein guter Wert.">
               {(id) => (
-                <Input id={id} type="number" inputMode="numeric" min={70} max={99} value={retention} onChange={(e) => setRetention(e.target.value)} className="w-32" />
+                <Input id={id} type="number" inputMode="numeric" min={70} max={99} value={retention} onChange={(e) => setRetention(e.target.value)} className="w-32!" />
               )}
             </Field>
           ) : null}
@@ -161,7 +162,11 @@ export function ImportCardsDialog({ deck, onClose }: { deck: Deck; onClose: () =
       size="lg"
       footer={
         <>
-          {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+          {error ? (
+            <p className="mr-auto self-center text-sm text-danger" role="alert">
+              {error}
+            </p>
+          ) : null}
           <Button onClick={onClose}>Abbrechen</Button>
           <Button variant="primary" onClick={() => void submit()} loading={saving} disabled={parsed.length === 0}>
             {parsed.length > 0 ? `${parsed.length} ${parsed.length === 1 ? 'Karte' : 'Karten'} importieren` : 'Importieren'}
@@ -239,7 +244,11 @@ export function AnkiImportDialog({ onClose }: { onClose: () => void }) {
           </Button>
         ) : (
           <>
-            {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+            {error ? (
+              <p className="mr-auto self-center text-sm text-danger" role="alert">
+                {error}
+              </p>
+            ) : null}
             <Button onClick={onClose}>Abbrechen</Button>
             <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!file} data-testid="anki-import">
               Importieren
@@ -342,7 +351,11 @@ export function DeckPackageImportDialog({
           </>
         ) : (
           <>
-            {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+            {error ? (
+              <p className="mr-auto self-center text-sm text-danger" role="alert">
+                {error}
+              </p>
+            ) : null}
             <Button onClick={onClose}>Abbrechen</Button>
             <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!file} data-testid="deck-import">
               Importieren

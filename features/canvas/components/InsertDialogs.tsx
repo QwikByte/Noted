@@ -60,6 +60,7 @@ export function FilePicker({
   return (
     <Modal open={open} onClose={onClose} title="Notiz oder Datei einfügen" size="md">
       <Input
+        autoFocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Suchen …"
@@ -135,6 +136,7 @@ export function LinkDialog({ open, onClose, onSubmit }: { open: boolean; onClose
         <Field label="Adresse" error={error}>
           {(id) => (
             <Input
+              autoFocus
               id={id}
               value={value}
               onChange={(e) => setValue(e.target.value)}

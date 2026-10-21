@@ -19,11 +19,27 @@ const place = (m: OcclusionMask) => ({
  * Bild mit verdeckten Flächen: Die abgefragte Fläche (`side`) ist hervorgehoben verdeckt und wird beim Aufdecken
  * sichtbar; die übrigen sind je nach Karte ebenfalls verdeckt oder frei.
  */
-export function OcclusionImage({ occlusion, side, revealed }: { occlusion: Occlusion; side: number; revealed: boolean }) {
+export function OcclusionImage({
+  occlusion,
+  side,
+  revealed,
+  alt,
+}: {
+  occlusion: Occlusion
+  side: number
+  revealed: boolean
+  /** Beschreibung des Bilds, z. B. der Titel der Karte – ohne: „Bild der Karteikarte“ */
+  alt?: string
+}) {
   return (
     <div className="relative mx-auto w-fit max-w-full" data-testid="occlusion-image">
       {/* eslint-disable-next-line @next/next/no-img-element -- Anhänge kommen von der eigenen API, nicht aus next/image */}
-      <img src={defaultFileUrl(occlusion.image)} alt="" draggable={false} className="block max-h-[60vh] max-w-full select-none" />
+      <img
+        src={defaultFileUrl(occlusion.image)}
+        alt={alt || 'Bild der Karteikarte'}
+        draggable={false}
+        className="block max-h-[60vh] max-w-full select-none"
+      />
       {occlusion.masks.map((m, i) =>
         i === side ? (
           <div

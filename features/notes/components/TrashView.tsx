@@ -18,6 +18,8 @@ export function TrashView() {
   const { data: notes = [], isLoading } = useTrash()
   const [confirmEmpty, setConfirmEmpty] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  // Endgültig löschen lässt sich nicht rückgängig machen – daher wie beim Leeren erst nachfragen
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; title: string } | null>(null)
 
   async function restore(id: string) {
     setBusy(id)
@@ -37,6 +39,7 @@ export function TrashView() {
     try {
       await api(`/api/notes/${id}?permanent=1`, { method: 'DELETE' })
       await qc.invalidateQueries({ queryKey: keys.trash })
+      setRemoveTarget(null)
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -70,10 +73,24 @@ export function TrashView() {
                 <p className="truncate font-medium">{n.title}</p>
                 <p className="text-xs text-faint">gelöscht {formatRelative(n.deletedAt)}</p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => restore(n.id)} disabled={busy === n.id} title="Wiederherstellen">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => restore(n.id)}
+                disabled={busy === n.id}
+                title="Wiederherstellen"
+                aria-label={`„${n.title}“ wiederherstellen`}
+              >
                 <RotateCcw className="size-4" /> <span className="max-sm:hidden">Wiederherstellen</span>
               </Button>
-              <Button size="icon-sm" variant="ghost" onClick={() => remove(n.id)} disabled={busy === n.id} aria-label="Endgültig löschen" title="Endgültig löschen">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setRemoveTarget({ id: n.id, title: n.title })}
+                disabled={busy === n.id}
+                aria-label={`„${n.title}“ endgültig löschen`}
+                title="Endgültig löschen"
+              >
                 <Trash2 className="size-4 text-danger" />
               </Button>
             </li>
@@ -97,6 +114,16 @@ export function TrashView() {
           }
           setConfirmEmpty(false)
         }}
+      />
+      <ConfirmModal
+        open={!!removeTarget}
+        onClose={() => setRemoveTarget(null)}
+        title="Endgültig löschen?"
+        description={removeTarget ? `„${removeTarget.title}“ wird endgültig gelöscht. Das kann nicht rückgängig gemacht werden.` : null}
+        confirmLabel="Endgültig löschen"
+        danger
+        loading={!!removeTarget && busy === removeTarget.id}
+        onConfirm={() => removeTarget && void remove(removeTarget.id)}
       />
     </Page>
   )

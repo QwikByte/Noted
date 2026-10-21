@@ -46,6 +46,11 @@ export function usePref<T extends string>(key: string, fallback: T): [T, (v: T) 
 export function applyTheme(theme: Theme) {
   const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
   document.documentElement.classList.toggle('dark', dark)
+  // Statusleiste der installierten App: folgt sonst nur der Systemeinstellung, nicht der Wahl in Noted
+  // (Farben wie themeColor in app/layout.tsx)
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    meta.content = dark ? '#151821' : '#ffffff'
+  }
 }
 
 export function useTheme(): [Theme, (t: Theme) => void] {

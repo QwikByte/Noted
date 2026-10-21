@@ -42,8 +42,9 @@ export function SyncBadge() {
       <button
         type="button"
         onClick={() => sync.flushAll()}
-        className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 text-xs text-muted"
+        className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 text-xs text-muted transition-colors hover:bg-hover hover:text-fg"
         title="Änderungen werden synchronisiert"
+        aria-label={`${drafts.length} ${drafts.length === 1 ? 'Änderung' : 'Änderungen'} jetzt synchronisieren`}
       >
         <RefreshCw className="size-3 animate-spin [animation-duration:2s]" /> {drafts.length}
       </button>

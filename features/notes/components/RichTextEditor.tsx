@@ -40,6 +40,8 @@ export default function RichTextEditor(props: Props) {
     editorProps: {
       attributes: {
         class: 'markdown-body rich-text',
+        'aria-label': 'Notiztext',
+        'aria-multiline': 'true',
         spellcheck: String(props.spellcheck !== false),
         lang: 'de',
         'data-testid': 'rich-editor',
@@ -105,9 +107,11 @@ export default function RichTextEditor(props: Props) {
           <div className="h-11" />
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[44rem]">{props.header}</div>
-        <EditorContent editor={editor} />
+      <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+        <div className="note-paper">
+          <div className="mx-auto w-full max-w-[44rem]">{props.header}</div>
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   )

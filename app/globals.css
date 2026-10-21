@@ -13,7 +13,9 @@
 /* Design-Tokens                                                       */
 /* Papier, Königsblau (Tinte), Textmarker, Rotstift der Karteikarte    */
 /* ------------------------------------------------------------------ */
-:root {
+/* Das Blatt einer Notiz (.note-paper) bekommt immer die hellen Tokens – auch im Dark Mode */
+:root,
+.note-paper {
   --bg: #ffffff;
   --bg-subtle: #f5f6f9;
   --bg-sidebar: #f1f2f6;
@@ -24,7 +26,8 @@
   --border-strong: #c8cdd9;
   --text: #1a2030;
   --text-muted: #5a6175;
-  --text-faint: #858b9e;
+  /* Mindestens 4,5:1 auf Weiß – auch Nebentext (Zeitangaben, Hinweise) muss lesbar bleiben */
+  --text-faint: #6e7487;
   --accent: #2b44c2;
   --accent-hover: #2236a3;
   --accent-text: #2b44c2;
@@ -49,6 +52,16 @@
   --swatch-5: #178ea3;
   --swatch-6: #8550cc;
   --edge: #8a90a3;
+  /* Schreibtisch unter dem Blatt einer Notiz */
+  --bg-desk: #eceef3;
+  /* Code-Hervorhebung (highlight.js) */
+  --hl-keyword: #8250df;
+  --hl-string: #0a7f45;
+  --hl-number: #b35c00;
+  --hl-title: #0758c9;
+  --hl-variable: #c2410c;
+  --hl-comment: #676c7c;
+  --hl-deletion: #c4122f;
   --shadow: 0 1px 2px rgb(26 32 48 / 0.05), 0 2px 8px rgb(26 32 48 / 0.05);
   --shadow-lg: 0 2px 6px rgb(26 32 48 / 0.06), 0 14px 40px rgb(26 32 48 / 0.16);
   color-scheme: light;
@@ -65,7 +78,7 @@
   --border-strong: #3b4252;
   --text: #e3e6ee;
   --text-muted: #a0a6b8;
-  --text-faint: #717789;
+  --text-faint: #80869a;
   --accent: #4a60dc;
   --accent-hover: #5b70e6;
   --accent-text: #a1aefe;
@@ -89,6 +102,14 @@
   --swatch-5: #57c4d6;
   --swatch-6: #b892f2;
   --edge: #6f768a;
+  --bg-desk: #0f1117;
+  --hl-keyword: #c4a5ff;
+  --hl-string: #7ee2a8;
+  --hl-number: #ffb86b;
+  --hl-title: #7cb7ff;
+  --hl-variable: #ff9e7a;
+  --hl-comment: #8b8b99;
+  --hl-deletion: #ff7b8a;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 10px rgb(0 0 0 / 0.25);
   --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.3), 0 14px 40px rgb(0 0 0 / 0.5);
   color-scheme: dark;
@@ -127,6 +148,62 @@
   /* Radien nach Rang: Bedienelemente 6–8 px, Flächen 10 px, Dialoge 14 px */
   --radius-xl: 0.625rem;
   --radius-2xl: 0.875rem;
+}
+
+/*
+ * Bewegungen als Theme-Werte statt als eigene Klassen: Nur so erzeugt Tailwind Varianten wie open:animate-pop-in
+ * (Dialog) oder backdrop:animate-fade-in. Kurz und nur dort, wo sie zeigen, was sich geändert hat.
+ */
+@theme {
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-pop-in: pop-in 0.18s var(--ease-out-soft);
+  --animate-menu-in: menu-in 0.14s var(--ease-out-soft);
+  --animate-drop-in: drop-in 0.18s var(--ease-out-soft);
+  --animate-rise-in: rise-in 0.24s var(--ease-out-soft);
+  --animate-slide-in-left: slide-in-left 0.22s var(--ease-out-soft);
+  --animate-slide-in-right: slide-in-right 0.22s var(--ease-out-soft);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+  }
+  /* Menüs wachsen aus ihrer Ecke am Auslöser (transform-origin setzt das Menü) */
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  @keyframes drop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes slide-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
 }
 
 /* In @layer base, damit Utilities (z. B. outline-none bei Eingabefeldern) Vorrang haben */
@@ -179,6 +256,8 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* Sonst springen endlose Animationen (Ladekreise) in jedem Bild an eine zufällige Stelle */
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
@@ -220,64 +299,51 @@ html.dragging * {
   background-position: -1px -1px;
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
+/* ------------------------------------------------------------------ */
+/* Notiz als Blatt Papier                                               */
+/* ------------------------------------------------------------------ */
+/*
+ * Markdown, formatierter und einfacher Text liegen als Blatt auf dem Schreibtisch – im Dark Mode als helles Blatt
+ * (wie die Seiten im PDF-Viewer), weil sich längere Texte darauf besser lesen und Skripte so gestaltet sind.
+ * Auf schmalen Flächen füllt das Blatt die Breite, ab 48rem liegt es mit Rand und Schatten auf dem Tisch.
+ */
+.note-desk {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-desk);
+  overscroll-behavior: contain;
+}
+.note-paper {
+  flex: 1 0 auto;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  animation: var(--animate-rise-in);
+}
+@container (min-width: 48rem) {
+  .note-desk {
+    padding: 28px 24px 48px;
   }
-  to {
-    opacity: 1;
+  .note-paper {
+    max-width: 50rem;
+    margin: 0 auto;
+    padding: 12px 28px 0;
+    border: 1px solid #d3d8e2;
+    border-radius: 6px;
+    box-shadow:
+      0 1px 2px rgb(26 32 48 / 0.06),
+      0 10px 28px -14px rgb(26 32 48 / 0.22);
+  }
+  .dark .note-paper {
+    border-color: transparent;
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.4),
+      0 22px 48px -20px rgb(0 0 0 / 0.75);
   }
 }
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes drop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes slide-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: none;
-  }
-}
-@keyframes slide-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-.animate-fade-in {
-  animation: fade-in 0.15s ease-out;
-}
-.animate-pop-in {
-  animation: pop-in 0.16s ease-out;
-}
-.animate-drop-in {
-  animation: drop-in 0.16s ease-out;
-}
-.animate-slide-in-left {
-  animation: slide-in-left 0.2s ease-out;
-}
-.animate-slide-in-right {
-  animation: slide-in-right 0.2s ease-out;
+/* Lesemodus: kein leerer Streifen zum Weiterschreiben am Ende des Blatts */
+.note-paper[data-mode='read'] :is(.markdown-body, .plain-text) {
+  padding-bottom: 3rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,6 +500,12 @@ html.dragging * {
   letter-spacing: -0.005em;
   margin: 1.5em 0 0.5em;
   scroll-margin-top: 80px;
+  /* Keine einzelnen Wörter in der letzten Zeile */
+  text-wrap: balance;
+}
+.markdown-body p,
+.markdown-body li {
+  text-wrap: pretty;
 }
 .markdown-body h1 {
   font-size: 1.65em;
@@ -718,7 +790,8 @@ html.dragging * {
   gap: 8px;
   font-family: var(--font-sans);
   font-weight: 650;
-  color: rgb(var(--callout));
+  /* Mit der Textfarbe gemischt: Die reinen Callout-Farben (z. B. Türkis) sind als Schrift auf Weiß zu blass */
+  color: color-mix(in srgb, rgb(var(--callout)) 55%, var(--text));
 }
 .markdown-body summary.callout-title {
   cursor: pointer;
@@ -779,65 +852,39 @@ html.dragging * {
 /* Code-Hervorhebung (highlight.js) */
 .hljs-comment,
 .hljs-quote {
-  color: #8b8b99;
+  color: var(--hl-comment);
   font-style: italic;
 }
+/* Farben aus den Tokens: Auf dem hellen Blatt einer Notiz gelten auch im Dark Mode die hellen */
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-built_in,
 .hljs-type {
-  color: #8250df;
+  color: var(--hl-keyword);
 }
 .hljs-string,
 .hljs-attr,
 .hljs-regexp,
 .hljs-addition {
-  color: #0a7f45;
+  color: var(--hl-string);
 }
 .hljs-number,
 .hljs-literal,
 .hljs-symbol {
-  color: #b35c00;
+  color: var(--hl-number);
 }
 .hljs-title,
 .hljs-section,
 .hljs-function .hljs-title {
-  color: #0758c9;
+  color: var(--hl-title);
 }
 .hljs-variable,
 .hljs-template-variable,
 .hljs-params {
-  color: #c2410c;
+  color: var(--hl-variable);
 }
 .hljs-deletion {
-  color: #c4122f;
-}
-.dark .hljs-keyword,
-.dark .hljs-selector-tag,
-.dark .hljs-built_in,
-.dark .hljs-type {
-  color: #c4a5ff;
-}
-.dark .hljs-string,
-.dark .hljs-attr,
-.dark .hljs-regexp,
-.dark .hljs-addition {
-  color: #7ee2a8;
-}
-.dark .hljs-number,
-.dark .hljs-literal,
-.dark .hljs-symbol {
-  color: #ffb86b;
-}
-.dark .hljs-title,
-.dark .hljs-section,
-.dark .hljs-function .hljs-title {
-  color: #7cb7ff;
-}
-.dark .hljs-variable,
-.dark .hljs-template-variable,
-.dark .hljs-params {
-  color: #ff9e7a;
+  color: var(--hl-deletion);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1000,6 +1047,11 @@ html.dragging * {
   background: var(--bg-subtle);
   outline: none;
   overscroll-behavior: contain;
+}
+/* Der Bereich ist per Tab erreichbar (Blättern mit den Pfeiltasten) – dann auch sichtbar */
+.pdf-container:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .pdf-container .pdfViewer {
   padding: 8px 0 24px;

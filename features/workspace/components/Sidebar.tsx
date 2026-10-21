@@ -3,7 +3,6 @@ import { useState } from 'react'
 import {
   BookA,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Files,
   FolderPlus,
@@ -43,6 +42,7 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
         active ? 'bg-active font-semibold text-fg' : 'text-muted hover:bg-hover hover:text-fg',
@@ -141,18 +141,20 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
             <button
               type="button"
               onClick={() => setTagsOpen(tagsOpen === '1' ? '0' : '1')}
+              aria-expanded={tagsOpen === '1'}
               className="flex w-full items-center gap-1 px-2.5 pb-1 text-xs font-semibold text-faint hover:text-muted"
             >
-              {tagsOpen === '1' ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              <ChevronRight className={cn('size-3.5 transition-transform', tagsOpen === '1' && 'rotate-90')} />
               Tags
             </button>
             {tagsOpen === '1' ? (
-              <div className="flex flex-wrap gap-1.5 px-2 pt-1">
+              <div className="flex animate-fade-in flex-wrap gap-1.5 px-2 pt-1">
                 {tags.map((t) => (
                   <button
                     key={t.tag}
                     type="button"
                     onClick={() => app.go({ kind: 'tag', tag: t.tag })}
+                    aria-current={view.kind === 'tag' && view.tag === t.tag ? 'page' : undefined}
                     className={cn(
                       'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs transition-colors',
                       view.kind === 'tag' && view.tag === t.tag

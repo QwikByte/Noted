@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CornerDownLeft, FileText, Plus, Search } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { cn } from '@/shared/ui/cn'
+import { useBackdropPress } from '@/shared/ui/modal'
 import { useFolders, useNotes } from '../client/queries'
 import { folderPath, fuzzyScore } from '../tree'
 import { validateName } from '@/shared/lib/names'
@@ -21,6 +22,8 @@ export function QuickSwitcher({ open, onClose }: { open: boolean; onClose: () =>
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLUListElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const listId = useId()
+  const backdropPress = useBackdropPress(dialogRef)
 
   useEffect(() => {
     const d = dialogRef.current
@@ -72,8 +75,8 @@ export function QuickSwitcher({ open, onClose }: { open: boolean; onClose: () =>
         e.preventDefault()
         onClose()
       }}
-      onClick={(e) => e.target === dialogRef.current && onClose()}
-      className="mx-auto mt-[10vh] w-[calc(100%-1.5rem)] max-w-xl overflow-hidden rounded-2xl border border-border bg-elevated p-0 text-fg shadow-pop backdrop:bg-black/40 open:animate-pop-in"
+      {...backdropPress(onClose)}
+      className="mx-auto mt-[10vh] w-[calc(100%-1.5rem)] max-w-xl overflow-hidden rounded-2xl border border-border bg-elevated p-0 text-fg shadow-pop backdrop:bg-black/40 open:animate-pop-in open:backdrop:animate-fade-in"
       aria-label="Schnellwechsler"
     >
       {open ? (
@@ -103,15 +106,22 @@ export function QuickSwitcher({ open, onClose }: { open: boolean; onClose: () =>
               placeholder="Notiz suchen oder neu anlegen …"
               className="h-14 flex-1 bg-transparent text-base outline-none placeholder:text-faint"
               aria-label="Suchbegriff"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={items.length > 0}
+              aria-controls={listId}
+              aria-activedescendant={items[active] ? `${listId}-${active}` : undefined}
             />
             <kbd className="hidden rounded border border-border px-1.5 text-[11px] text-faint sm:block">Esc</kbd>
           </div>
-          <ul ref={listRef} className="max-h-[50vh] overflow-y-auto p-1.5" role="listbox">
+          <ul ref={listRef} id={listId} className="max-h-[50vh] overflow-y-auto overscroll-contain p-1.5" role="listbox" aria-label="Notizen">
             {items.length === 0 ? <li className="px-3 py-6 text-center text-sm text-muted">Keine Notizen gefunden.</li> : null}
             {items.map((item, i) => (
-              <li key={item.kind === 'note' ? item.id : `${item.kind}-${i}`} data-index={i} role="option" aria-selected={i === active}>
+              <li key={item.kind === 'note' ? item.id : `${item.kind}-${i}`} data-index={i} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
+                {/* Ausgewählt wird mit den Pfeiltasten im Suchfeld – die Einträge selbst sind kein eigener Tab-Halt */}
                 <button
                   type="button"
+                  tabIndex={-1}
                   onMouseMove={() => setActive(i)}
                   onClick={() => choose(item)}
                   className={cn(

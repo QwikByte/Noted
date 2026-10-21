@@ -50,6 +50,7 @@ export function AppProviders({
     const mq = matchMedia('(prefers-color-scheme: dark)')
     const onChange = () => applyTheme((localStorage.getItem('noted:theme') as Theme | null) ?? 'system')
     mq.addEventListener('change', onChange)
+    onChange()
     return () => mq.removeEventListener('change', onChange)
   }, [user.id, client])
 

@@ -81,8 +81,13 @@ function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpe
                 const title = noteTitleFor(o)
                 const note = byTitle.get(title.toLowerCase())
                 return (
-                  <li key={`${day.date}-${o.event.id}-${o.date}`} className="flex items-center gap-3 py-1.5" data-testid="agenda-event">
-                    <button type="button" onClick={() => onOpen(o)} className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-0.5 text-left">
+                  <li key={`${day.date}-${o.event.id}-${o.date}`} className="flex items-center gap-3 py-1" data-testid="agenda-event">
+                    {/* -ml-2 px-2: Hover-Fläche wie bei den Stapeln, der Inhalt bleibt bündig mit der Tagesüberschrift */}
+                    <button
+                      type="button"
+                      onClick={() => onOpen(o)}
+                      className="-ml-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left hover:bg-hover"
+                    >
                       <span className="size-2.5 shrink-0 rounded-full" style={{ background: eventColor(o.event.color) }} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline gap-x-2">

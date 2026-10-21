@@ -297,8 +297,16 @@ test('Notiz per Link teilen: Gäste lesen ohne Konto, nach dem Widerruf ist der 
   expect(await g.evaluate(() => (window as { __xss?: number }).__xss)).toBeUndefined()
   await shot(g, '96-shared-note')
 
-  // Widerrufen: Der Link führt ins Leere
+  // Widerrufen erst nach Rückfrage – Escape schließt nur die Rückfrage, nicht den Teilen-Dialog dahinter
   await page.getByTestId('share-list').getByRole('button', { name: 'Widerrufen' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Link widerrufen?' })
+  await expect(confirm).toContainText('„Für Kommilitonen“')
+  await page.keyboard.press('Escape')
+  await expect(confirm).toHaveCount(0)
+  await expect(page.getByTestId('share-list')).toBeVisible()
+  // Danach: Der Link führt ins Leere
+  await page.getByTestId('share-list').getByRole('button', { name: 'Widerrufen' }).click()
+  await confirm.getByRole('button', { name: 'Widerrufen' }).click()
   await expect(page.getByText('Link widerrufen')).toBeVisible()
   const gone = await g.goto(url)
   expect(gone?.status()).toBe(404)

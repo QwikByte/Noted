@@ -1,10 +1,10 @@
 'use client'
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { cn } from './cn'
 
 type Tone = 'success' | 'error' | 'info'
-type Toast = { id: number; tone: Tone; message: string; action?: { label: string; onClick: () => void } }
+type Toast = { id: number; tone: Tone; message: string; duration: number; action?: { label: string; onClick: () => void } }
 
 type ToastApi = {
   show: (message: string, opts?: { tone?: Tone; action?: Toast['action']; duration?: number }) => void
@@ -22,14 +22,12 @@ export function ToastProvider({ children, sticky }: { children: React.ReactNode;
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
 
-  const show = useCallback<ToastApi['show']>(
-    (message, opts = {}) => {
-      const id = ++counter
-      setToasts((t) => [...t.slice(-3), { id, message, tone: opts.tone ?? 'info', action: opts.action }])
-      setTimeout(() => dismiss(id), opts.duration ?? (opts.tone === 'error' ? 6000 : 3500))
-    },
-    [dismiss],
-  )
+  const show = useCallback<ToastApi['show']>((message, opts = {}) => {
+    const id = ++counter
+    // Mit „Rückgängig“ länger stehen lassen – sonst ist die Meldung weg, bevor man sie (per Tastatur) erreicht
+    const duration = opts.duration ?? (opts.action ? 8000 : opts.tone === 'error' ? 6000 : 3500)
+    setToasts((t) => [...t.slice(-3), { id, message, tone: opts.tone ?? 'info', action: opts.action, duration }])
+  }, [])
 
   const api = useMemo<ToastApi>(
     () => ({
@@ -50,38 +48,67 @@ export function ToastProvider({ children, sticky }: { children: React.ReactNode;
       >
         {sticky}
         {toasts.map((t) => (
-          <div
-            key={t.id}
-            className="pointer-events-auto flex w-full max-w-md animate-drop-in items-center gap-3 rounded-lg border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
-            role={t.tone === 'error' ? 'alert' : 'status'}
-          >
-            {t.tone === 'success' ? (
-              <CheckCircle2 className="size-4.5 shrink-0 text-success" />
-            ) : t.tone === 'error' ? (
-              <AlertCircle className="size-4.5 shrink-0 text-danger" />
-            ) : (
-              <Info className="size-4.5 shrink-0 text-accent" />
-            )}
-            <span className="flex-1">{t.message}</span>
-            {t.action ? (
-              <button
-                type="button"
-                className="font-medium text-accent-text hover:underline"
-                onClick={() => {
-                  t.action!.onClick()
-                  dismiss(t.id)
-                }}
-              >
-                {t.action.label}
-              </button>
-            ) : null}
-            <button type="button" onClick={() => dismiss(t.id)} className="text-faint hover:text-fg" aria-label="Schließen">
-              <X className="size-4" />
-            </button>
-          </div>
+          <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
         ))}
       </div>
     </ToastContext.Provider>
+  )
+}
+
+/** Eine Meldung. Solange Maus oder Fokus darauf liegen, läuft ihre Zeit nicht ab. */
+function ToastItem({ toast: t, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const [paused, setPaused] = useState(false)
+  const remaining = useRef(t.duration)
+  const latest = useRef(onDismiss)
+  useEffect(() => {
+    latest.current = onDismiss
+  })
+
+  useEffect(() => {
+    if (paused) return
+    const started = Date.now()
+    const timer = setTimeout(() => latest.current(), remaining.current)
+    return () => {
+      clearTimeout(timer)
+      remaining.current = Math.max(1000, remaining.current - (Date.now() - started))
+    }
+  }, [paused])
+
+  return (
+    <div
+      className="pointer-events-auto flex w-full max-w-md animate-drop-in items-center gap-3 rounded-lg border border-border bg-elevated px-4 py-3 text-sm shadow-pop"
+      role={t.tone === 'error' ? 'alert' : 'status'}
+      onPointerEnter={() => setPaused(true)}
+      onPointerLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(false)
+      }}
+    >
+      {t.tone === 'success' ? (
+        <CheckCircle2 className="size-4.5 shrink-0 text-success" />
+      ) : t.tone === 'error' ? (
+        <AlertCircle className="size-4.5 shrink-0 text-danger" />
+      ) : (
+        <Info className="size-4.5 shrink-0 text-accent" />
+      )}
+      <span className="min-w-0 flex-1 break-words">{t.message}</span>
+      {t.action ? (
+        <button
+          type="button"
+          className="shrink-0 font-medium text-accent-text hover:underline"
+          onClick={() => {
+            t.action!.onClick()
+            onDismiss()
+          }}
+        >
+          {t.action.label}
+        </button>
+      ) : null}
+      <button type="button" onClick={onDismiss} className="shrink-0 text-faint hover:text-fg" aria-label="Schließen">
+        <X className="size-4" />
+      </button>
+    </div>
   )
 }
 

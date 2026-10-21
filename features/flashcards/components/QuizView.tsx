@@ -181,7 +181,7 @@ function QuizSession({ noteId, quiz, onClose }: { noteId: string; quiz: Quiz; on
                         className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-hover"
                         title="In der Notiz zeigen"
                       >
-                        <span className="min-w-0 flex-1">{trail(quiz.sections[i])}</span>
+                        <span className="min-w-0 flex-1 break-words">{trail(quiz.sections[i])}</span>
                         <FileText className="size-4 shrink-0 text-faint" />
                       </button>
                     </li>
@@ -226,7 +226,8 @@ function QuizSession({ noteId, quiz, onClose }: { noteId: string; quiz: Quiz; on
                   <CardMarkdown text={current.heading} className="study-question" />
                 </div>
                 <div className="index-card-rule" />
-                <div className={cn('px-5 py-5 text-[1.0625rem] sm:px-7 sm:py-6', !revealed && 'index-card-lines min-h-36')}>
+                {/* Live-Region bleibt stehen, damit die aufgedeckte Antwort vorgelesen wird */}
+                <div className={cn('px-5 py-5 text-[1.0625rem] sm:px-7 sm:py-6', !revealed && 'index-card-lines min-h-36')} aria-live="polite">
                   {revealed ? (
                     <div data-testid="quiz-answer">
                       <CardMarkdown text={current.body} />

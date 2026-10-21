@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { EditorView } from '@codemirror/view'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
-  ChevronDown,
   ChevronRight,
   Cloud,
   CloudOff,
@@ -126,9 +125,15 @@ function StatusIndicator({ status }: { status: NoteSyncStatus }) {
     error: { icon: <AlertTriangle className="size-3.5" />, label: 'Fehler', cls: 'text-danger' },
   }[status.state]
   return (
-    <span className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)} title={status.error ?? map.label} data-testid="save-status">
+    <span
+      className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)}
+      title={status.error ?? map.label}
+      data-testid="save-status"
+    >
       {map.icon}
-      <span className="hidden sm:inline">{map.label}</span>
+      {/* Auf dem Handy nur das Symbol – vorlesbar bleibt der Zustand trotzdem. Bewusst keine Live-Region: Beim Tippen
+          würde sonst jedes Speichern angesagt */}
+      <span className="sr-only sm:not-sr-only">{map.label}</span>
     </span>
   )
 }
@@ -768,7 +773,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
 
       {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} onResolved={applyRemote} /> : null}
       {status.state === 'error' ? (
-        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger">
+        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
           <AlertTriangle className="size-4 shrink-0" />
           <span className="flex-1">{status.error}</span>
           <Button size="sm" onClick={() => void sync.flush(note.id)}>
@@ -806,22 +811,24 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             header={titleInput}
           />
         ) : (
-          <div className="flex min-h-0 flex-col overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
-              {titleInput}
-              <div className="min-h-0 flex-1">
-                <Editor
-                  key={format}
-                  ref={cmRef}
-                  initialDoc={content}
-                  onChange={onChange}
-                  onSave={() => void sync.flush(note.id)}
-                  onPasteFiles={upload}
-                  data={completionData}
-                  autoFocus={autoFocus}
-                  spellcheck={spellcheck === '1'}
-                  plain={format === 'text'}
-                />
+          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+            <div className="note-paper flex flex-col">
+              <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
+                {titleInput}
+                <div className="min-h-0 flex-1">
+                  <Editor
+                    key={format}
+                    ref={cmRef}
+                    initialDoc={content}
+                    onChange={onChange}
+                    onSave={() => void sync.flush(note.id)}
+                    onPasteFiles={upload}
+                    data={completionData}
+                    autoFocus={autoFocus}
+                    spellcheck={spellcheck === '1'}
+                    plain={format === 'text'}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -829,20 +836,23 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         {visual && effectiveMode === 'split' ? (
           <div className="flex min-h-0 flex-col">{visualEditor}</div>
         ) : !visual && effectiveMode !== 'edit' ? (
-          <div className="min-h-0 overflow-y-auto">
+          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+            <div className="note-paper" data-mode={effectiveMode}>
+              {effectiveMode === 'read' ? (
+                <h1
+                  className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
+                  style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+                >
+                  {title}
+                </h1>
+              ) : (
+                <div className="pt-6" />
+              )}
+              {readView}
+            </div>
             {effectiveMode === 'read' ? (
-              <h1
-                className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
-                style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
-              >
-                {title}
-              </h1>
-            ) : (
-              <div className="pt-6" />
-            )}
-            {readView}
-            {effectiveMode === 'read' ? (
-              <>
+              // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
+              <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
                 {linkedCards > 0 || cardsInNote ? (
                   <NoteCards
                     count={linkedCards}
@@ -850,11 +860,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                     onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                   />
                 ) : null}
-                <div className="mx-auto max-w-[44rem] space-y-4 px-5 pb-16">
-                  <Backlinks id={note.id} />
-                  {hasLinks ? <NoteGraph id={note.id} /> : null}
-                </div>
-              </>
+                <Backlinks id={note.id} />
+                {hasLinks ? <NoteGraph id={note.id} /> : null}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -922,6 +930,7 @@ function TitleInput({
   /** Kleine Zeile über Mindmap und Canvas */
   compact?: boolean
 }) {
+  const errorId = useId()
   return (
     <div className={cn('w-full', compact ? 'border-b border-border px-4 py-1.5' : 'px-5 pt-6 pb-1')}>
       <input
@@ -936,6 +945,7 @@ function TitleInput({
         placeholder="Titel"
         aria-label="Titel"
         aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
         className={cn(
           'w-full bg-transparent leading-tight font-bold tracking-tight outline-none placeholder:text-faint',
           compact && 'text-lg',
@@ -943,7 +953,11 @@ function TitleInput({
         style={compact ? undefined : { fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
         data-testid="note-title"
       />
-      {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <p id={errorId} className="mt-1 text-sm text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -951,26 +965,24 @@ function TitleInput({
 /** Lesemodus: Karteikarten aus dieser Notiz */
 function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
   return (
-    <div className="mx-auto max-w-[44rem] px-5 pb-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
-        <Layers className="size-4 text-muted" />
-        <span className="flex-1 text-muted">
-          {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
-        </span>
-        {count > 0 ? (
-          <>
-            <Button size="sm" variant="ghost" onClick={() => onLearn('learn')}>
-              <GraduationCap className="size-4" /> Lernen
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onLearn('practice')}>
-              <Dumbbell className="size-4" /> Üben
-            </Button>
-          </>
-        ) : null}
-        <Button size="sm" variant="ghost" onClick={onCreate}>
-          <Layers className="size-4" /> Karten erstellen
-        </Button>
-      </div>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
+      <Layers className="size-4 text-muted" />
+      <span className="flex-1 text-muted">
+        {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
+      </span>
+      {count > 0 ? (
+        <>
+          <Button size="sm" variant="ghost" onClick={() => onLearn('learn')}>
+            <GraduationCap className="size-4" /> Lernen
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onLearn('practice')}>
+            <Dumbbell className="size-4" /> Üben
+          </Button>
+        </>
+      ) : null}
+      <Button size="sm" variant="ghost" onClick={onCreate}>
+        <Layers className="size-4" /> Karten erstellen
+      </Button>
     </div>
   )
 }
@@ -1010,10 +1022,14 @@ function NoteGraph({ id }: { id: string }) {
         aria-expanded={open === '1'}
         className="flex w-full items-center gap-1 p-4 text-sm font-semibold text-muted hover:text-fg"
       >
-        {open === '1' ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        <ChevronRight className={cn('size-4 transition-transform', open === '1' && 'rotate-90')} />
         Lokaler Graph
       </button>
-      {open === '1' ? <LocalGraph noteId={id} /> : null}
+      {open === '1' ? (
+        <div className="animate-fade-in">
+          <LocalGraph noteId={id} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1030,7 +1046,7 @@ function ConflictBanner({
 }) {
   const server = status.serverNote
   return (
-    <div className="border-b border-danger/30 bg-danger-soft px-4 py-3 text-sm">
+    <div className="border-b border-danger/30 bg-danger-soft px-4 py-3 text-sm" role="alert">
       <div className="flex items-start gap-2 text-danger">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <p>

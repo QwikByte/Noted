@@ -8,6 +8,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 
 **Notizen in Markdown**
 - Editor auf Basis von CodeMirror 6. Er hebt die Markdown-Syntax hervor.
+- Notizen in Markdown, formatiertem und einfachem Text liegen als Blatt Papier auf dem Schreibtisch – auch im dunklen Design als helles Blatt, das sich wie ein ausgedrucktes Skript liest.
 - Lesemodus mit:
   - `[[Wikilinks]]` mit Alias und Abschnitt (`[[Notiz#Abschnitt]]` springt zur Überschrift) sowie `![[Einbettungen]]`
   - `#Tags`, auch verschachtelt (`#uni/mathe`)

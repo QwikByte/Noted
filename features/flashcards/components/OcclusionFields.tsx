@@ -150,7 +150,8 @@ function ImagePicker({ onPick }: { onPick: (filename: string) => void }) {
             aria-label="Bild aus den Dateien"
             value=""
             onChange={(e) => e.target.value && onPick(e.target.value)}
-            className="h-9 w-auto min-w-0 flex-1 text-sm"
+            // Kompakt mit ! (auch unten) – cn führt Klassen nicht zusammen, sonst gewinnen Größe und Schrift von Select/Input
+            className="h-9! w-auto! min-w-0 flex-1 text-sm!"
             disabled={busy}
           >
             <option value="">Aus den Dateien …</option>
@@ -164,7 +165,7 @@ function ImagePicker({ onPick }: { onPick: (filename: string) => void }) {
       </div>
       {pdfs.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Select aria-label="PDF" value={pdf} onChange={(e) => setPdf(e.target.value)} className="h-9 w-auto min-w-0 flex-1 text-sm" disabled={busy}>
+          <Select aria-label="PDF" value={pdf} onChange={(e) => setPdf(e.target.value)} className="h-9! w-auto! min-w-0 flex-1 text-sm!" disabled={busy}>
             <option value="">PDF-Seite als Bild …</option>
             {pdfs.map((a) => (
               <option key={a.id} value={a.filename}>
@@ -181,7 +182,7 @@ function ImagePicker({ onPick }: { onPick: (filename: string) => void }) {
                 value={page}
                 onChange={(e) => setPage(e.target.value)}
                 aria-label="Seite"
-                className="h-9 w-20"
+                className="h-9! w-20!"
               />
               <Button size="sm" onClick={() => void fromPdf()} loading={busy}>
                 Seite übernehmen

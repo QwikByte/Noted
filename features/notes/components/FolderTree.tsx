@@ -69,6 +69,7 @@ export function FolderTree() {
           onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-[18px] text-left text-sm select-none [-webkit-touch-callout:none]"
           title={note.title}
+          aria-current={active ? 'page' : undefined}
         >
           <FileText className="size-4 shrink-0 opacity-70" />
           <span className={cn('truncate', active && 'font-medium')}>{note.title}</span>

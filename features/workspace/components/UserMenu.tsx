@@ -13,7 +13,7 @@ export function UserMenu() {
     <Menu
       align="left"
       side="top"
-      className="w-full min-w-64"
+      className="w-(--anchor-width) min-w-64"
       trigger={(p) => (
         <button
           type="button"

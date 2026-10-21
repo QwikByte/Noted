@@ -324,7 +324,7 @@ export function LocalGraph({ noteId }: { noteId: string }) {
             </button>
           ))}
         </div>
-        {graph ? (
+        {graph && graph.nodes.length > 0 ? (
           <span className="text-xs text-faint">
             {graph.nodes.length - 1} {graph.nodes.length === 2 ? 'Notiz' : 'Notizen'}
           </span>

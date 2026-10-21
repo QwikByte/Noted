@@ -62,6 +62,7 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const { data: folders = [], isLoading: foldersLoading } = useFolders()
   const [uploading, setUploading] = useState(false)
   const [toDelete, setToDelete] = useState<FileEntry | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const unlinked = level === UNLINKED
   const folder = level && !unlinked ? folders.find((f) => f.id === level) : undefined
@@ -218,13 +219,17 @@ export function FilesView({ folder: level }: { folder?: string }) {
         description={toDelete ? deleteDescription(toDelete) : undefined}
         confirmLabel="Löschen"
         danger
+        loading={deleting}
         onConfirm={async () => {
           if (!toDelete) return
+          setDeleting(true)
           try {
             await api(`/api/attachments/${toDelete.id}`, { method: 'DELETE' })
             await qc.invalidateQueries({ queryKey: attachmentsKey })
           } catch (err) {
             toast.error(errorMessage(err))
+          } finally {
+            setDeleting(false)
           }
           setToDelete(null)
         }}
@@ -281,7 +286,13 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
           <FileIcon mime={f.mime} />
         </button>
       ) : (
-        <a href={url} target="_blank" rel="noopener" className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener"
+          className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint"
+          aria-label={`${f.filename} öffnen`}
+        >
           {f.mime.startsWith('image/') && f.mime !== 'image/heic' ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={url} alt={f.filename} loading="lazy" className="size-full object-cover" />
@@ -321,8 +332,8 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
             title="Einbettung kopieren"
             aria-label="Einbettung kopieren"
             onClick={async () => {
-              await copyText(attachmentMarkdown(f))
-              toast.success('In die Zwischenablage kopiert.')
+              if (await copyText(attachmentMarkdown(f))) toast.success('In die Zwischenablage kopiert.')
+              else toast.error('Kopieren nicht möglich.')
             }}
           >
             <Copy className="size-4" />

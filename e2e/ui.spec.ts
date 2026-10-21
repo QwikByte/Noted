@@ -1,0 +1,132 @@
+import { expect, test, type Page } from '@playwright/test'
+import { apiHeaders } from './helpers'
+
+// Oberfläche: Notiz als Blatt Papier, Menüs in scrollenden Werkzeugleisten, Rückfrage vor dem endgültigen Löschen
+
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'E2E-Admin-Passwort-1'
+
+async function login(page: Page) {
+  await page.goto('/login')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
+}
+
+async function createNote(page: Page, title: string, content: string) {
+  const res = await page.request.post('/api/notes', { headers: await apiHeaders(page), data: { title, content } })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { note: { id: string } }).note.id
+}
+
+let consoleErrors: string[] = []
+test.beforeEach(({ page }) => {
+  consoleErrors = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && !/status of (401|403|404|409)/.test(msg.text())) consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+})
+test.afterEach(() => {
+  expect(consoleErrors, 'Fehler in der Browser-Konsole').toEqual([])
+})
+
+const paperStyle = (page: Page) =>
+  page.locator('.note-paper').first().evaluate((el) => {
+    const s = getComputedStyle(el)
+    const desk = getComputedStyle(el.closest('.note-desk')!)
+    return { bg: s.backgroundColor, color: s.color, border: s.borderTopColor, borderWidth: s.borderTopWidth, desk: desk.backgroundColor }
+  })
+
+test('Notiz liegt als Blatt auf dem Tisch – im dunklen Design hell, im hellen mit sichtbarem Rand', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Blatt Papier', 'Ein Absatz auf dem Blatt.\n\n```js\nconst a = 1 // Kommentar\n```\n')
+
+  await page.evaluate(() => {
+    localStorage.setItem('noted:theme', 'dark')
+    localStorage.setItem('noted:mode', 'read')
+  })
+  await page.goto(`/?n=${id}`)
+  await expect(page.getByRole('heading', { level: 1, name: 'Blatt Papier' })).toBeVisible()
+  const dark = await paperStyle(page)
+  expect(dark.bg).toBe('rgb(255, 255, 255)')
+  // Dunkle Schrift auf dem hellen Blatt, der Tisch drumherum bleibt dunkel
+  expect(dark.color).toBe('rgb(26, 32, 48)')
+  expect(dark.desk).not.toBe('rgb(255, 255, 255)')
+  // Die Statusleiste der App folgt dem gewählten Design, nicht dem System
+  await expect(page.locator('meta[name="theme-color"]').first()).toHaveAttribute('content', '#151821')
+
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(page.locator('.note-paper .cm-content')).toBeVisible()
+  expect((await paperStyle(page)).bg).toBe('rgb(255, 255, 255)')
+
+  await page.evaluate(() => localStorage.setItem('noted:theme', 'light'))
+  await page.reload()
+  await expect(page.locator('.note-paper .cm-content')).toBeVisible()
+  const light = await paperStyle(page)
+  expect(light.bg).toBe('rgb(255, 255, 255)')
+  expect(light.borderWidth).toBe('1px')
+  expect(light.border).not.toBe('rgba(0, 0, 0, 0)')
+  expect(light.desk).not.toBe(light.bg)
+})
+
+test('Menüs der Werkzeugleiste werden nicht abgeschnitten – auch auf dem Handy', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  const page = await context.newPage()
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+  await login(page)
+  const id = await createNote(page, 'Menü im Editor', 'Abschnitt')
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${id}`)
+  await page.locator('.cm-content').click()
+
+  // Die Leiste scrollt waagerecht – ein Menü darin lag bisher unsichtbar in ihrem Ausschnitt
+  await page.getByRole('toolbar', { name: 'Formatierung' }).getByRole('button', { name: 'Überschrift' }).click()
+  const item = page.getByRole('menuitem', { name: 'Überschrift 2' })
+  await expect(item).toBeInViewport()
+  await item.click()
+  await expect(page.locator('.cm-content')).toContainText('## Abschnitt')
+  await context.close()
+})
+
+test('Dialoge: Eingabefeld hat beim Öffnen den Fokus, Markieren über den Rand schließt nicht', async ({ page }) => {
+  await login(page)
+  await page.getByRole('button', { name: 'Neuer Ordner' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Neuer Ordner' })
+  const name = dialog.getByLabel('Name')
+  // autoFocus griff bisher nicht, weil der Inhalt vor dem Öffnen des <dialog> eingehängt wurde
+  await expect(name).toBeFocused()
+  await page.keyboard.type('Lineare Algebra')
+
+  // Text markieren und die Maus außerhalb des Dialogs loslassen: Das ist kein Klick auf den Hintergrund
+  const box = (await name.boundingBox())!
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(5, 5)
+  await page.mouse.up()
+  await expect(dialog).toBeVisible()
+  await expect(name).toHaveValue('Lineare Algebra')
+
+  // Ein echter Klick auf den Hintergrund schließt weiterhin
+  await page.mouse.click(5, 5)
+  await expect(dialog).toHaveCount(0)
+})
+
+test('Papierkorb: endgültig löschen erst nach Rückfrage', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Wegwerfnotiz', 'Kann weg.')
+  const res = await page.request.delete(`/api/notes/${id}`, { headers: await apiHeaders(page) })
+  expect(res.ok()).toBeTruthy()
+
+  await page.goto('/?v=trash')
+  await page.getByRole('button', { name: '„Wegwerfnotiz“ endgültig löschen' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Endgültig löschen?' })
+  await expect(dialog).toContainText('„Wegwerfnotiz“ wird endgültig gelöscht.')
+  // Abbrechen lässt die Notiz liegen
+  await dialog.getByRole('button', { name: 'Abbrechen' }).click()
+  await expect(page.getByText('Wegwerfnotiz', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '„Wegwerfnotiz“ endgültig löschen' }).click()
+  await page.getByRole('dialog', { name: 'Endgültig löschen?' }).getByRole('button', { name: 'Endgültig löschen' }).click()
+  await expect(page.getByText('Der Papierkorb ist leer.')).toBeVisible()
+})

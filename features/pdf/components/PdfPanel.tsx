@@ -114,6 +114,7 @@ export default function PdfPanel({
   const pendingPage = useRef<number | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
+  const findButtonRef = useRef<HTMLButtonElement>(null)
 
   const [status, setStatus] = useState<{ state: 'loading' | 'ready' | 'error'; message?: string }>({ state: 'loading' })
   const [numPages, setNumPages] = useState(0)
@@ -367,6 +368,8 @@ export default function PdfPanel({
     setQuery('')
     setMatches(null)
     busRef.current?.dispatch('find', { source: null, type: '', query: '', highlightAll: false })
+    // Die Suchleiste verschwindet samt Fokus – zurück zum Knopf, der sie geöffnet hat
+    findButtonRef.current?.focus()
   }
 
   const goTo = (n: number) => {
@@ -552,6 +555,7 @@ export default function PdfPanel({
             disabled={!ready}
             className="h-7 rounded-md px-1 text-xs text-muted tabular-nums hover:bg-hover hover:text-fg @max-xl:hidden"
             title="Auf Seitenbreite einpassen"
+            aria-label={`Auf Seitenbreite einpassen (${Math.round(scale * 100)} %)`}
           >
             {Math.round(scale * 100)} %
           </button>
@@ -575,6 +579,7 @@ export default function PdfPanel({
             ) : null}
           </Button>
           <Button
+            ref={findButtonRef}
             variant="ghost"
             size="icon-sm"
             onClick={() => {
@@ -684,7 +689,7 @@ export default function PdfPanel({
             aria-label="Im PDF suchen"
             className="h-7 min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
-          <span className="w-16 text-center text-xs text-muted tabular-nums">
+          <span className="w-16 text-center text-xs text-muted tabular-nums" role="status">
             {query && matches ? (matches.total ? `${matches.current} / ${matches.total}` : 'Keine') : ''}
           </span>
           <Button variant="ghost" size="icon-sm" onClick={() => find('again', true)} aria-label="Vorheriger Treffer">

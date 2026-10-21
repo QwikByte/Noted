@@ -133,7 +133,11 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
       size="lg"
       footer={
         <>
-          {error ? <p className="mr-auto self-center text-sm text-danger">{error}</p> : null}
+          {error ? (
+            <p className="mr-auto self-center text-sm text-danger" role="alert">
+              {error}
+            </p>
+          ) : null}
           <Button onClick={onClose}>Abbrechen</Button>
           {candidates.length > 0 ? (
             <Button variant="primary" onClick={() => void submit()} loading={saving} disabled={effective.size === 0} data-testid="create-from-note">
@@ -205,7 +209,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
                       return n
                     })
                   }
-                  className="flex flex-1 items-center gap-1 text-left text-sm font-medium"
+                  className="flex flex-1 items-center gap-1 text-left text-sm font-medium hover:underline"
                   aria-expanded={expanded}
                 >
                   {SOURCE_LABELS[source]}
@@ -244,7 +248,12 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
         })}
 
         <div>
-          <button type="button" onClick={() => setHelp((h) => !h)} className="flex items-center gap-1 text-sm font-medium text-accent-text">
+          <button
+            type="button"
+            onClick={() => setHelp((h) => !h)}
+            aria-expanded={help}
+            className="flex items-center gap-1 text-sm font-medium text-accent-text hover:underline"
+          >
             {help ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
             So schreibst du Karten in Notizen
           </button>

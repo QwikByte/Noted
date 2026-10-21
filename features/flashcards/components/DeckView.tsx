@@ -450,12 +450,16 @@ export function DeckView({ id }: { id: string }) {
         description="Die Karte und ihr Lernstand werden endgültig gelöscht."
         confirmLabel="Löschen"
         danger
+        loading={busy}
         onConfirm={async () => {
           if (!toDelete) return
+          setBusy(true)
           try {
             await deleteCard(qc, toDelete.id)
           } catch (err) {
             toast.error(errorMessage(err))
+          } finally {
+            setBusy(false)
           }
           setToDelete(null)
         }}
@@ -474,7 +478,7 @@ function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts;
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3 text-sm" data-testid="exam-plan">
       <CalendarClock className="size-4 shrink-0 text-accent-text" />
-      <p className="min-w-0 flex-1 text-muted">
+      <p className="min-w-0 flex-1 break-words text-muted">
         <span className="font-medium text-fg">{exam.title}</span> {days === 1 ? 'morgen' : `in ${days} Tagen`} ({longDate(exam.date)}):
         Bis dahin kommt jede gelernte Karte noch einmal dran.
         {counts.newTotal === 0

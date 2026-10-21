@@ -120,7 +120,8 @@ export function CalendarView() {
   return (
     <div className="flex h-full flex-col px-3 pt-4 pb-16 sm:px-6 sm:pt-6" data-testid="calendar">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto flex min-w-0 items-baseline gap-2.5 text-xl font-bold tracking-tight sm:text-2xl">
+        {/* Beim Blättern wird der neue Zeitraum vorgelesen – mit KW, die sich innerhalb eines Monats als Einziges ändert */}
+        <h1 className="mr-auto flex min-w-0 items-baseline gap-2.5 text-xl font-bold tracking-tight sm:text-2xl" aria-live="polite" aria-atomic="true">
           <span className="truncate" data-testid="calendar-label">
             {label}
           </span>
@@ -445,7 +446,8 @@ function MonthView({
                   e.stopPropagation()
                   showDay(d)
                 }}
-                aria-label={`${weekdayName(d)}, ${longDate(d)}`}
+                // Auf dem Handy stehen die Termine nur als Punkte da – die Anzahl gibt es so auch zum Vorlesen
+                aria-label={`${weekdayName(d)}, ${longDate(d)}${list.length ? `, ${plural(list.length, 'Termin', 'Termine')}` : ''}`}
                 className={cn(
                   'flex size-6 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
                   d === today ? 'bg-accent text-on-accent' : outside ? 'text-faint hover:bg-hover' : 'hover:bg-hover',

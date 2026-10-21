@@ -161,7 +161,8 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
         footer={
           <>
             {occurrence ? (
-              <Button variant="ghost" className="mr-auto text-danger hover:text-danger" onClick={() => setConfirmDelete(true)} disabled={busy}>
+              // text-danger! – cn führt Klassen nicht zusammen, ohne ! gewinnt die graue Textfarbe der ghost-Variante
+              <Button variant="ghost" className="mr-auto text-danger!" onClick={() => setConfirmDelete(true)} disabled={busy}>
                 <Trash2 className="size-4" /> Löschen
               </Button>
             ) : null}
@@ -231,7 +232,8 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
                   <Input
                     id={id}
                     type="time"
-                    className="w-32"
+                    // w-32! – sonst gewinnt w-full aus dem Eingabefeld
+                    className="w-32!"
                     value={draft.startTime}
                     onChange={(e) => setDraft(moveStart(draft, { startTime: e.target.value }))}
                   />
@@ -244,7 +246,7 @@ export function EventDialog({ target, onClose }: { target: DialogTarget; onClose
             {draft.allDay ? <div /> : (
               <Field label="Uhrzeit">
                 {(id) => (
-                  <Input id={id} type="time" className="w-32" value={draft.endTime} onChange={(e) => set({ endTime: e.target.value })} />
+                  <Input id={id} type="time" className="w-32!" value={draft.endTime} onChange={(e) => set({ endTime: e.target.value })} />
                 )}
               </Field>
             )}

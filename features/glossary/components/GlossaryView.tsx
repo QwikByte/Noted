@@ -247,7 +247,11 @@ function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; search
       {groups.map((g) => (
         <section key={g.noteId}>
           <h2 className="mb-2 border-b border-border pb-1">
-            <button type="button" onClick={() => app.go({ kind: 'note', id: g.noteId })} className="text-sm font-semibold hover:underline">
+            <button
+              type="button"
+              onClick={() => app.go({ kind: 'note', id: g.noteId })}
+              className="max-w-full text-left text-sm font-semibold break-words hover:underline"
+            >
               {g.title}
             </button>
           </h2>

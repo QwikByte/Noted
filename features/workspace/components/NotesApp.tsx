@@ -167,10 +167,14 @@ export default function NotesApp() {
           action: {
             label: 'Rückgängig',
             onClick: async () => {
-              await api(`/api/notes/${note.id}/restore`, { method: 'POST' })
-              qc.invalidateQueries({ queryKey: keys.notes })
-              qc.invalidateQueries({ queryKey: keys.trash })
-              qc.invalidateQueries({ queryKey: graphKey })
+              try {
+                await api(`/api/notes/${note.id}/restore`, { method: 'POST' })
+                qc.invalidateQueries({ queryKey: keys.notes })
+                qc.invalidateQueries({ queryKey: keys.trash })
+                qc.invalidateQueries({ queryKey: graphKey })
+              } catch (err) {
+                toast.error(`Wiederherstellen fehlgeschlagen: ${errorMessage(err)}`)
+              }
             },
           },
         })
@@ -246,6 +250,16 @@ export default function NotesApp() {
     if (new URLSearchParams(location.search).has('new')) window.history.replaceState(null, '', '/')
   }, [])
 
+  // Schublade mit der Seitenleiste (Handy): Escape schließt sie wie einen Dialog
+  useEffect(() => {
+    if (!sidebarOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sidebarOpen])
+
   const currentFolderId =
     view.kind === 'folder'
       ? view.id
@@ -309,6 +323,13 @@ export default function NotesApp() {
   return (
     <AppContext.Provider value={actions}>
       <div className="flex h-dvh overflow-hidden bg-bg">
+        {/* Für die Tastatur: an Suche, Navigation und Ordnerbaum vorbei direkt zum Inhalt */}
+        <a
+          href="#main"
+          className="sr-only z-50 rounded-lg bg-elevated px-3 py-2 text-sm font-medium shadow-pop focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+        >
+          Zum Inhalt springen
+        </a>
         {/* Seitenleiste: Desktop fest, mobil als Schublade */}
         <aside ref={sidebarSpace} className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col xl:w-80">
           <Sidebar currentFolderId={currentFolderId} />
@@ -316,17 +337,20 @@ export default function NotesApp() {
         {sidebarOpen ? (
           <div className="fixed inset-0 z-40 lg:hidden">
             <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setSidebarOpen(false)} />
-            <aside className="pt-safe absolute inset-y-0 left-0 flex w-[86%] max-w-80 animate-slide-in-left flex-col bg-sidebar shadow-pop">
+            <aside
+              className="pt-safe absolute inset-y-0 left-0 flex w-[86%] max-w-80 animate-slide-in-left flex-col overscroll-contain bg-sidebar shadow-pop"
+              aria-label="Navigation"
+            >
               <Sidebar currentFolderId={currentFolderId} />
             </aside>
           </div>
         ) : null}
 
-        <main className="relative flex min-w-0 flex-1 flex-col">
+        <main id="main" tabIndex={-1} className="relative flex min-w-0 flex-1 flex-col outline-none">
           {showTopBar ? (
             <header className="pt-safe border-b border-border lg:hidden">
               <div className="flex h-12 items-center gap-1 px-2">
-                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen">
+                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Menü öffnen" aria-expanded={sidebarOpen}>
                   <MenuIcon className="size-5" />
                 </Button>
                 <span className="flex-1 truncate px-1 font-semibold">Noted</span>

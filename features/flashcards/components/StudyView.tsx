@@ -347,15 +347,19 @@ function StudySession({
             <p className="text-xs text-muted">{mode === 'learn' ? 'Lernen' : 'Üben – ohne Einfluss auf den Lernplan'}</p>
           </div>
           {remaining ? (
-            <div className="flex items-center gap-2.5 text-sm font-semibold tabular-nums" aria-label="Verbleibend">
+            <div className="flex items-center gap-2.5 text-sm font-semibold tabular-nums" role="group" aria-label="Verbleibend">
+              {/* Die Art steht sonst nur in Farbe und title – Screenreader sollen keine nackten Zahlen hören */}
               <span className="text-accent-text" title="Neu">
                 {remaining.new}
+                <span className="sr-only"> neu</span>
               </span>
               <span className="text-warning" title="In der Lernphase">
                 {remaining.learning}
+                <span className="sr-only"> in der Lernphase</span>
               </span>
               <span className="text-success" title="Wiederholungen">
                 {remaining.review}
+                <span className="sr-only"> Wiederholungen</span>
               </span>
             </div>
           ) : session instanceof PracticeSession ? (
@@ -421,7 +425,7 @@ function StudySession({
                   <CardMarkdown text={question} className="study-question" />
                   {occlusion ? (
                     <div className="mt-4">
-                      <OcclusionImage occlusion={occlusion} side={side} revealed={revealed} />
+                      <OcclusionImage occlusion={occlusion} side={side} revealed={revealed} alt={card.front.trim()} />
                     </div>
                   ) : null}
                 </div>
@@ -445,8 +449,18 @@ function StudySession({
                             : selected
                               ? 'wrong'
                               : 'idle'
+                        // Ergebnis nach „Prüfen“ auch als Text – Farbe und Symbol allein erreichen nicht jeden
+                        const result =
+                          state === 'right'
+                            ? 'richtig'
+                            : state === 'wrong'
+                              ? 'falsch gewählt'
+                              : state === 'missed'
+                                ? 'richtige Antwort nicht gewählt'
+                                : null
                         return (
-                          <li key={optIndex}>
+                          // role="none": Die Liste ist hier eine (Radio-)Gruppe, die Einträge sind nur Hüllen der Antworten
+                          <li key={optIndex} role="none">
                             <button
                               type="button"
                               role={singleChoice ? 'radio' : 'checkbox'}
@@ -486,6 +500,7 @@ function StudySession({
                                 )}
                               </span>
                               <CardMarkdown text={option.text} className="min-w-0 flex-1" />
+                              {result ? <span className="sr-only">, {result}</span> : null}
                             </button>
                           </li>
                         )
@@ -513,27 +528,30 @@ function StudySession({
                     />
                   ) : null}
 
-                  {revealed ? (
-                    <div className={cn(isMc && 'mt-5 border-t border-border pt-5')} data-testid="study-answer">
-                      {answer.result ? <TypedDiff result={answer.result} /> : null}
-                      {isMc ? (
-                        <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
-                          {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
-                          {correct ? 'Richtig!' : 'Leider falsch.'}
-                        </p>
-                      ) : null}
-                      {solution.trim() ? <CardMarkdown text={solution} /> : null}
-                      {note ? (
-                        <button
-                          type="button"
-                          onClick={() => app.go({ kind: 'note', id: note.id })}
-                          className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"
-                        >
-                          <FileText className="size-4" /> {note.title}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {/* Die Live-Region steht schon vor dem Aufdecken – nur dann wird die eingefügte Antwort vorgelesen */}
+                  <div aria-live="polite">
+                    {revealed ? (
+                      <div className={cn(isMc && 'mt-5 border-t border-border pt-5')} data-testid="study-answer">
+                        {answer.result ? <TypedDiff result={answer.result} /> : null}
+                        {isMc ? (
+                          <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
+                            {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
+                            {correct ? 'Richtig!' : 'Leider falsch.'}
+                          </p>
+                        ) : null}
+                        {solution.trim() ? <CardMarkdown text={solution} /> : null}
+                        {note ? (
+                          <button
+                            type="button"
+                            onClick={() => app.go({ kind: 'note', id: note.id })}
+                            className="mt-4 inline-flex max-w-full items-center gap-1.5 text-left text-sm text-muted hover:text-fg"
+                          >
+                            <FileText className="size-4 shrink-0" /> <span className="min-w-0 break-words">{note.title}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
@@ -587,8 +605,11 @@ function StudySession({
   )
 }
 
-/** Vorausgewählte Bewertung nach einer eingetippten Antwort (Leertaste/Enter wählt sie) */
-const PREFERRED = 'border-accent ring-3 ring-accent/20'
+/**
+ * Vorausgewählte Bewertung nach einer eingetippten Antwort (Leertaste/Enter wählt sie). border-accent! – cn führt
+ * Klassen nicht zusammen, ohne ! gewinnt border-border der Knöpfe.
+ */
+const PREFERRED = 'border-accent! ring-3 ring-accent/20'
 
 /** Eingetippte Antwort mit markierten Unterschieden: durchgestrichen = zu viel, unterstrichen = fehlt */
 function TypedDiff({ result }: { result: TypedResult }) {
