@@ -303,9 +303,8 @@ export default function NotesApp() {
 
   const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz'
   const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats', 'graph'].includes(view.kind)
-  // Werkzeugleiste und Mini-Timer weichen der Seitenleiste und dem Knopf „Neue Notiz“ aus
+  // Der Mini-Timer steht rechts neben der Seitenleiste
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')
-  const fabSpace = useReservedSpace<HTMLButtonElement>('--bottom-right-height')
 
   return (
     <AppContext.Provider value={actions}>
@@ -361,7 +360,6 @@ export default function NotesApp() {
           />
           {showFab ? (
             <button
-              ref={fabSpace}
               type="button"
               onClick={() => setNewNote({ folderId: currentFolderId })}
               className={cn(

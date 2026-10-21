@@ -19,7 +19,7 @@ export function FloatingWindow({
   onClose: () => void
   children: React.ReactNode
 }) {
-  const { style, dragHandlers } = useFloating(`noted:window:${id}:pos`, { x: 1, y: 0.15 })
+  const { style, dragHandlers } = useFloating(`noted:window:${id}:pos`, { x: 1, y: 0.5 })
   const titleId = useId()
   return (
     <div data-floating className="pointer-events-auto absolute w-72 max-w-full" style={style}>

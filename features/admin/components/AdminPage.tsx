@@ -670,7 +670,7 @@ function SecurityTab() {
             }
           }}
           label="Für alle Benutzer verpflichtend"
-          description="Wer noch keine Authenticator-App eingerichtet hat, muss das beim nächsten Seitenaufruf tun. Einzelne Benutzer verpflichtest du unter „Benutzer → Bearbeiten“."
+          description="Wer noch keine Authenticator-App eingerichtet hat, muss das beim nächsten Seitenaufruf tun."
         />
       </Section>
       <Section title="Schutzmechanismen">

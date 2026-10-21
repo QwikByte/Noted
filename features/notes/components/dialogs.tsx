@@ -460,7 +460,6 @@ export function HistoryDialog({
       open={open}
       onClose={onClose}
       title="Verlauf"
-      description="Ältere Stände der Notiz – gesichert beim Weiterschreiben (höchstens alle 10 Minuten) und vor Formatwechsel, Konflikt oder Wiederherstellen."
       size="xl"
     >
       {list.isLoading ? (

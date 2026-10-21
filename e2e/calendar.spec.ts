@@ -160,7 +160,7 @@ test('.ics importieren – ohne Doppelte beim zweiten Mal – und exportieren', 
   await page.clock.install({ time: NOW })
   await login(page)
   await page.goto('/?v=calendar')
-  await expect(page.getByTestId('calendar')).toContainText('Trag deinen Stundenplan ein')
+  await expect(page.getByTestId('calendar-event')).toHaveCount(0)
   const file = { name: 'Stundenplan.ics', mimeType: 'text/calendar', buffer: Buffer.from(ICS) }
   await page.getByTestId('ics-input').setInputFiles(file)
   await expect(page.getByText('3 Termine importiert.')).toBeVisible()

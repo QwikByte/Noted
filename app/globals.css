@@ -256,6 +256,14 @@ html.dragging * {
     transform: none;
   }
 }
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
 .animate-fade-in {
   animation: fade-in 0.15s ease-out;
 }
@@ -267,6 +275,9 @@ html.dragging * {
 }
 .animate-slide-in-left {
   animation: slide-in-left 0.2s ease-out;
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
 }
 
 /* ------------------------------------------------------------------ */

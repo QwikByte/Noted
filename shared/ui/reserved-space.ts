@@ -5,8 +5,6 @@ import { useCallback } from 'react'
 type ReservedSpace =
   /** Leiste über die ganze Breite am unteren Rand (z. B. Bewertungsknöpfe beim Lernen) */
   | '--bottom-bar-height'
-  /** Knöpfe in der Ecke unten rechts (z. B. „Neue Notiz“ auf dem Handy, Zoom in Mindmap und Canvas) */
-  | '--bottom-right-height'
   /** Seitenleiste am linken Rand */
   | '--sidebar-width'
 

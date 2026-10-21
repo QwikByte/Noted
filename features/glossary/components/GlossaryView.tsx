@@ -188,8 +188,7 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
       <Empty searching={searching}>
         <p className="font-medium text-fg">Noch keine Definitionen</p>
         <p className="mx-auto mt-1 max-w-md">
-          Schreib Begriffe als Info-Callout (<code>&gt; [!info] Begriff</code>) oder fett mit Erklärung (
-          <code>**Begriff**: Erklärung</code>) in deine Notizen.
+          Aus <code>&gt; [!info] Begriff</code> und <code>**Begriff**: Erklärung</code> in deinen Notizen.
         </p>
       </Empty>
     )

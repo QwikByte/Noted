@@ -48,7 +48,7 @@ export function TrashView() {
     <Page>
       <PageHeader
         title="Papierkorb"
-        subtitle="Gelöschte Notizen werden nach 30 Tagen endgültig entfernt."
+        subtitle="Nach 30 Tagen endgültig gelöscht."
         actions={
           notes.length > 0 ? (
             <Button variant="danger" size="sm" onClick={() => setConfirmEmpty(true)}>

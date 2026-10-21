@@ -37,16 +37,23 @@ async function gaps(page: Page, locator: Locator) {
   return { left: Math.round(b.x), right: Math.round(width - b.x - b.width), bottom: Math.round(height - b.y - b.height) }
 }
 
-test('Werkzeugleiste fest unten rechts, Fokus-Timer über Neuladen hinweg bis zur Pause', async ({ page }) => {
+/** Die Leiste klebt am rechten Rand und sitzt auf halber Höhe */
+async function atRightEdge(page: Page, locator: Locator) {
+  const b = (await locator.boundingBox())!
+  const { width, height } = page.viewportSize()!
+  return { right: Math.round(width - b.x - b.width), offCenter: Math.round(Math.abs(b.y + b.height / 2 - height / 2)) }
+}
+
+test('Werkzeugleiste mittig am rechten Rand, Fokus-Timer über Neuladen hinweg bis zur Pause', async ({ page }) => {
   await page.clock.install()
   await login(page)
   const bar = page.getByTestId('global-toolbar')
 
-  // Eingeklappt ein Knopf in der Ecke unten rechts; ausgeklappt bleibt die Leiste dort, ohne Griff zum Verschieben
-  expect(await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
+  // Eingeklappt ein Griff mittig am rechten Rand; ausgeklappt bleibt die Leiste dort, ohne Griff zum Verschieben
+  await expect.poll(() => atRightEdge(page, bar)).toEqual({ right: 0, offCenter: 0 })
   await bar.getByRole('button', { name: 'Werkzeuge' }).click()
   await expect(page.getByRole('toolbar', { name: 'Werkzeuge' })).toBeVisible()
-  expect(await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
+  await expect.poll(() => atRightEdge(page, bar)).toEqual({ right: 0, offCenter: 0 })
   await expect(bar.getByRole('button', { name: /verschieben/ })).toHaveCount(0)
 
   // Fokus-Timer als Fenster öffnen und starten
@@ -121,7 +128,7 @@ async function startTimerAndClose(page: Page) {
   await expect(page.getByTestId('focus-mini')).toBeVisible()
 }
 
-test('Beim Lernen bleiben Leiste und Mini-Timer über den Bewertungsknöpfen', async ({ page }) => {
+test('Beim Lernen bleibt der Mini-Timer über den Bewertungsknöpfen, die Leiste am Rand', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)
   const deck = (await (await page.request.post('/api/decks', { headers, data: { name: 'Fokus' } })).json()).deck
@@ -137,9 +144,11 @@ test('Beim Lernen bleiben Leiste und Mini-Timer über den Bewertungsknöpfen', a
   const barTop = (await reveal.boundingBox())!.y
 
   await startTimerAndClose(page)
-  for (const el of [page.getByTestId('focus-mini'), page.getByTestId('global-toolbar')]) {
-    await expect.poll(async () => (await gaps(page, el)).bottom).toBeGreaterThan(page.viewportSize()!.height - barTop + 8)
-  }
+  await expect.poll(async () => (await gaps(page, page.getByTestId('focus-mini'))).bottom).toBeGreaterThan(
+    page.viewportSize()!.height - barTop + 8,
+  )
+  const bar = (await page.getByTestId('global-toolbar').boundingBox())!
+  expect(bar.y + bar.height).toBeLessThan(barTop)
   await shot(page, '52-focus-study')
 
   // Nach dem Lernen gilt wieder der ganze Bildschirm
@@ -149,7 +158,7 @@ test('Beim Lernen bleiben Leiste und Mini-Timer über den Bewertungsknöpfen', a
   await expect.poll(async () => (await gaps(page, page.getByTestId('focus-mini'))).bottom).toBe(8)
 })
 
-test('Leiste über den Zoom-Knöpfen der Mindmap', async ({ page }) => {
+test('Leiste in der Mindmap über den Zoom-Knöpfen', async ({ page }) => {
   await login(page)
   const created = await page.request.post('/api/notes', {
     headers: await apiHeaders(page),
@@ -163,19 +172,20 @@ test('Leiste über den Zoom-Knöpfen der Mindmap', async ({ page }) => {
   expect(bar.y + bar.height).toBeLessThan((await zoom.boundingBox())!.y)
 })
 
-test('Auf dem Handy: Mini-Timer ganz unten links, Leiste über „Neue Notiz“', async ({ page }) => {
+test('Auf dem Handy: Mini-Timer ganz unten links, Leiste am rechten Rand über „Neue Notiz“', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 })
   await login(page)
   const bar = page.getByTestId('global-toolbar')
   const fab = page.getByRole('button', { name: 'Neue Notiz' })
   await expect(fab).toBeVisible()
+  await expect.poll(() => atRightEdge(page, bar)).toEqual({ right: 0, offCenter: 0 })
   expect((await bar.boundingBox())!.y + (await bar.boundingBox())!.height).toBeLessThan((await fab.boundingBox())!.y)
 
   await startTimerAndClose(page)
   await expect.poll(() => gaps(page, page.getByTestId('focus-mini'))).toMatchObject({ left: 8, bottom: 8 })
   await shot(page, '53-focus-mobile')
 
-  // Ohne „Neue Notiz“ (in einer Notiz) sitzt die Leiste wieder in der Ecke
+  // Auch in einer Notiz (ohne „Neue Notiz“) bleibt die Leiste mittig am Rand
   const created = await page.request.post('/api/notes', {
     headers: await apiHeaders(page),
     data: { title: 'Mitschrift', content: 'Text' },
@@ -183,7 +193,7 @@ test('Auf dem Handy: Mini-Timer ganz unten links, Leiste über „Neue Notiz“'
   await page.goto(`/?n=${(await created.json()).note.id}`)
   await expect(page.getByTestId('note-title')).toHaveValue('Mitschrift')
   await expect(fab).toHaveCount(0)
-  await expect.poll(async () => await gaps(page, bar)).toMatchObject({ right: 8, bottom: 8 })
+  await expect.poll(() => atRightEdge(page, bar)).toEqual({ right: 0, offCenter: 0 })
 })
 
 test('Fokus-Timer: Countdown mit eigener Dauer und Systembenachrichtigung', async ({ page }) => {

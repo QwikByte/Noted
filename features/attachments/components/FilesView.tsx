@@ -158,15 +158,6 @@ export function FilesView({ folder: level }: { folder?: string }) {
           if (list.length) void upload(list)
         }}
       />
-      {!level ? (
-        <p className="mb-4 text-sm text-muted">
-          Dateien stehen im Ordner der Notiz, die sie einbettet. Einbetten mit{' '}
-          <code className="rounded bg-subtle px-1.5 py-0.5 text-[13px]">![[Dateiname]]</code>.
-        </p>
-      ) : unlinked ? (
-        <p className="mb-4 text-sm text-muted">Diese Dateien kommen in keiner Notiz vor.</p>
-      ) : null}
-
       {content.folders.length > 0 || (!level && content.unlinked > 0) ? (
         <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {content.folders.map(({ folder: f, count }) => (

@@ -696,7 +696,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <Button variant="ghost" size="sm" onClick={() => copy('content')} className="ml-1 @max-xl:hidden" title={copyLabel}>
             <Copy className="size-4" /> Kopieren
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => copy('content')} className="@xl:hidden" aria-label={copyLabel}>
+          <Button variant="ghost" size="icon-sm" onClick={() => copy('content')} className="@max-md:hidden @xl:hidden" aria-label={copyLabel}>
             <Copy className="size-4" />
           </Button>
           <Menu
