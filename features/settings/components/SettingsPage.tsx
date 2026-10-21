@@ -11,7 +11,8 @@ import { MfaSetup } from '@/features/auth/components/MfaSetup'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Field, Input, Select, Switch } from '@/shared/ui/input'
-import { Modal } from '@/shared/ui/modal'
+import { ConfirmModal, Modal } from '@/shared/ui/modal'
+import { MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { ErrorText, useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { Section, SubPageHeader } from '@/shared/ui/sub-page'
@@ -156,6 +157,14 @@ function DisableMfaDialog({ open, onClose, onDone }: { open: boolean; onClose: (
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Beim Öffnen und Schließen leeren: Nach „Abbrechen“ sollen Passwort und Code nicht stehen bleiben
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    setPassword('')
+    setCode('')
+    setError(null)
+  }
   return (
     <Modal
       open={open}
@@ -180,8 +189,6 @@ function DisableMfaDialog({ open, onClose, onDone }: { open: boolean; onClose: (
           setLoading(true)
           try {
             await api('/api/account/mfa/disable', { method: 'POST', body: { password, code } })
-            setPassword('')
-            setCode('')
             onDone()
           } catch (err) {
             setError(errorMessage(err))
@@ -220,14 +227,19 @@ function SessionsSection() {
     queryFn: () => api<{ sessions: SessionInfo[] }>('/api/account/sessions').then((r) => r.sessions),
   })
   const others = sessions.filter((s) => !s.current)
+  const [confirmAll, setConfirmAll] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const openContextMenu = useContextMenu()
 
   async function revoke(id?: string) {
     try {
       await api(id ? `/api/account/sessions/${id}` : '/api/account/sessions', { method: 'DELETE' })
       await qc.invalidateQueries({ queryKey: ['sessions'] })
       toast.success(id ? 'Gerät abgemeldet.' : 'Alle anderen Geräte wurden abgemeldet.')
+      return true
     } catch (err) {
       toast.error(errorMessage(err))
+      return false
     }
   }
 
@@ -238,7 +250,22 @@ function SessionsSection() {
       ) : (
         <ul className="divide-y divide-border">
           {sessions.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 py-3 first:pt-0">
+            <li
+              key={s.id}
+              className="flex items-center gap-3 py-3 first:pt-0"
+              onContextMenu={(e) =>
+                openContextMenu(
+                  e,
+                  // Dieses Gerät meldet der Abschnitt „Abmelden“ ab
+                  s.current ? null : (
+                    <MenuItem icon={<LogOut />} onSelect={() => void revoke(s.id)}>
+                      Abmelden
+                    </MenuItem>
+                  ),
+                  { copy: true },
+                )
+              }
+            >
               <Monitor className="size-5 shrink-0 text-faint" />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-medium">
@@ -250,7 +277,12 @@ function SessionsSection() {
                 </p>
               </div>
               {!s.current ? (
-                <Button size="sm" variant="ghost" onClick={() => revoke(s.id)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => revoke(s.id)}
+                  aria-label={`${describeUserAgent(s.userAgent)} abmelden`}
+                >
                   Abmelden
                 </Button>
               ) : null}
@@ -259,10 +291,24 @@ function SessionsSection() {
         </ul>
       )}
       {others.length > 0 ? (
-        <Button className="mt-3" onClick={() => revoke()}>
+        <Button className="mt-3" onClick={() => setConfirmAll(true)}>
           Alle anderen Geräte abmelden
         </Button>
       ) : null}
+      <ConfirmModal
+        open={confirmAll}
+        onClose={() => setConfirmAll(false)}
+        title="Alle anderen Geräte abmelden?"
+        description={`${others.length === 1 ? 'Ein weiteres Gerät wird' : `${others.length} weitere Geräte werden`} abgemeldet. Dieses Gerät bleibt angemeldet.`}
+        confirmLabel="Abmelden"
+        loading={busy}
+        onConfirm={async () => {
+          setBusy(true)
+          const done = await revoke()
+          setBusy(false)
+          if (done) setConfirmAll(false)
+        }}
+      />
     </Section>
   )
 }
@@ -329,6 +375,9 @@ function AppearanceSection() {
     </Section>
   )
 }
+
+/** Anzahl mit Einzahl oder Mehrzahl, z. B. „1 Notiz“, „3 Notizen“ */
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 function DataSection() {
   const toast = useToast()
@@ -418,23 +467,30 @@ function DataSection() {
               if (files.length) void runImport(files)
             }}
           />
-          {result ? (
-            <div className="mt-4 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
-              Importiert: {result.notes} Notizen, {result.folders} Ordner, {result.attachments} Dateien
-              {result.events ? `, ${result.events} Termine` : ''}
-              {result.decks || result.cards ? `, ${result.decks} Stapel mit ${result.cards} Karteikarten` : ''}.
-              {result.skipped.length > 0 ? (
-                <details className="mt-2 text-muted">
-                  <summary className="cursor-pointer">{result.skipped.length} übersprungen</summary>
-                  <ul className="mt-1 list-disc pl-5">
-                    {result.skipped.map((s) => (
-                      <li key={s}>{s}</li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
+          {/* Die Statusregion steht schon vor dem Ergebnis im DOM, damit Screenreader es zuverlässig ansagen */}
+          <div role="status">
+            {result ? (
+              <div className="mt-4 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
+                Importiert: {plural(result.notes, 'Notiz', 'Notizen')}, {result.folders} Ordner,{' '}
+                {plural(result.attachments, 'Datei', 'Dateien')}
+                {result.events ? `, ${plural(result.events, 'Termin', 'Termine')}` : ''}
+                {result.decks || result.cards
+                  ? `, ${result.decks} Stapel mit ${plural(result.cards, 'Karteikarte', 'Karteikarten')}`
+                  : ''}
+                .
+                {result.skipped.length > 0 ? (
+                  <details className="mt-2 text-muted">
+                    <summary className="cursor-pointer">{result.skipped.length} übersprungen</summary>
+                    <ul className="mt-1 list-disc pl-5 [overflow-wrap:anywhere]">
+                      {result.skipped.map((s) => (
+                        <li key={s}>{s}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className="border-t border-border pt-5">
           <p className="mb-1 text-sm font-medium">Lokale Sicherung</p>

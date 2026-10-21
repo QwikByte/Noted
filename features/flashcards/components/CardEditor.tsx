@@ -205,6 +205,8 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
   }
 
   const correctCount = options.filter((o) => o.correct && o.text.trim()).length
+  const gapCount = type === 'cloze' ? clozeCount(normalizeCloze(front)) : 0
+  const maskCount = occlusion?.masks.length ?? 0
 
   /** Markierten Text der Vorderseite zur Lücke machen (==…==) */
   function markCloze() {
@@ -292,7 +294,8 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
             onClick={() => setPreview((p) => !p)}
             aria-pressed={preview}
             title={preview ? 'Bearbeiten' : 'Vorschau'}
-            aria-label={preview ? 'Bearbeiten' : 'Vorschau'}
+            // Fester Name: Der Zustand steckt in aria-pressed, ein wechselnder Name widerspräche ihm
+            aria-label="Vorschau"
           >
             {preview ? <PenLine className="size-4" /> : <Eye className="size-4" />}
           </Button>
@@ -305,9 +308,9 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                 {type === 'mc'
                   ? 'Frage'
                   : type === 'cloze'
-                    ? `Lückentext (${clozeCount(normalizeCloze(front))} Lücken)`
+                    ? `Lückentext (${gapCount} ${gapCount === 1 ? 'Lücke' : 'Lücken'})`
                     : type === 'occlusion'
-                      ? `Bildverdeckung (${occlusion?.masks.length ?? 0} Flächen)`
+                      ? `Bildverdeckung (${maskCount} ${maskCount === 1 ? 'Fläche' : 'Flächen'})`
                       : 'Vorderseite'}
               </p>
               {front.trim() ? (
@@ -426,7 +429,8 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                       }}
                       placeholder={`Antwort ${i + 1}`}
                       aria-label={`Antwort ${i + 1}`}
-                      className={cn('h-10', o.correct && 'border-success/50')}
+                      // h-10! – so hoch wie der Haken daneben; ohne ! gewinnt h-11 von Input (cn führt nicht zusammen)
+                      className={cn('h-10!', o.correct && 'border-success/50')}
                       maxLength={2000}
                     />
                     <Button

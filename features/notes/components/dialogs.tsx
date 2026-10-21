@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, FileText, Folder as FolderIcon, History, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react'
+import { Check, FileText, History, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react'
 import { useApp, type NewNoteOptions } from '@/features/workspace/client/context'
 import { ConfirmModal, Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
@@ -178,15 +178,19 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
         </div>
         {templates.length > 1 ? (
           <div>
-            <p className="mb-2 text-sm font-medium">Vorlage</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <p id="template-label" className="mb-2 text-sm font-medium">
+              Vorlage
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="template-label">
               {templates.map((t) => (
                 <button
                   key={t.id}
                   type="button"
+                  role="radio"
+                  aria-checked={t.id === templateId}
                   onClick={() => chooseTemplate(t)}
                   className={cn(
-                    'relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition',
+                    'relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition-colors',
                     t.id === templateId ? 'border-accent bg-accent-soft' : 'border-border hover:border-border-strong',
                   )}
                 >
@@ -284,12 +288,7 @@ export function MoveDialog({
         </>
       }
     >
-      <div className="flex items-center gap-2">
-        <FolderIcon className="size-4 text-accent-text" />
-        <div className="flex-1">
-          <FolderSelect value={dest} onChange={setDest} exclude={exclude} />
-        </div>
-      </div>
+      <Field label="Zielordner">{(id) => <FolderSelect id={id} value={dest} onChange={setDest} exclude={exclude} />}</Field>
     </Modal>
   )
 }
@@ -474,7 +473,7 @@ export function HistoryDialog({
       ) : (
         <div className="grid gap-4 md:h-[min(60vh,36rem)] md:grid-cols-[16rem_1fr]">
           <ul
-            className="max-h-48 space-y-1 overflow-y-auto md:max-h-none"
+            className="max-h-48 space-y-1 overflow-y-auto overscroll-contain md:max-h-none"
             aria-label="Gesicherte Stände"
             data-testid="history-list"
           >

@@ -38,7 +38,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors select-none disabled:cursor-not-allowed',
+        // Beim Drücken minimal kleiner: Rückmeldung auch auf dem Handy, wo es kein Hover gibt
+        'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-[color,background-color,border-color,opacity,scale] select-none enabled:active:scale-[0.97] disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],
         className,

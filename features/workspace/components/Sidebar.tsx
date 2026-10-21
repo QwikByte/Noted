@@ -3,7 +3,6 @@ import { useState } from 'react'
 import {
   BookA,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Files,
   FolderPlus,
@@ -16,13 +15,17 @@ import {
   Waypoints,
 } from 'lucide-react'
 import { useApp } from '../client/context'
+import type { View } from '../client/nav'
 import { FolderTree } from '@/features/notes/components/FolderTree'
 import { UserMenu } from './UserMenu'
+import { NavLink } from './NavLink'
 import { SyncBadge } from '@/features/notes/components/SyncBadge'
 import { useDueTotal } from '@/features/flashcards/components/CardsView'
 import { Logo } from '@/shared/ui/logo'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
+import { useContextMenu } from '@/shared/ui/menu'
+import { CreateMenuItems, OpenViewItems, isEmptySpot } from '@/features/notes/components/ItemMenus'
 import { useTags } from '@/features/notes/client/queries'
 import { usePref } from '@/shared/client/prefs'
 
@@ -30,19 +33,21 @@ function NavItem({
   icon,
   label,
   active,
-  onClick,
+  to,
   count,
 }: {
   icon: React.ReactNode
   label: string
   active?: boolean
-  onClick: () => void
+  to: View
   count?: number
 }) {
+  const openContextMenu = useContextMenu()
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <NavLink
+      to={to}
+      onContextMenu={(e) => openContextMenu(e, <OpenViewItems view={to} />)}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
         active ? 'bg-active font-semibold text-fg' : 'text-muted hover:bg-hover hover:text-fg',
@@ -53,7 +58,7 @@ function NavItem({
       {count ? (
         <span className="marker px-1.5 text-[11px] leading-[18px] font-semibold tabular-nums">{count}</span>
       ) : null}
-    </button>
+    </NavLink>
   )
 }
 
@@ -63,6 +68,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
   const { data: tags = [] } = useTags()
   const due = useDueTotal()
   const [tagsOpen, setTagsOpen] = usePref<'1' | '0'>('noted:tagsOpen', '1')
+  const openContextMenu = useContextMenu()
   const [query, setQuery] = useState(view.kind === 'search' ? view.q : '')
   // Suchfeld leeren, sobald die Suche verlassen wird
   const [prevKind, setPrevKind] = useState(view.kind)
@@ -72,7 +78,11 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      // Rechtsklick auf freie Fläche: neu anlegen und suchen (Notizen und Ordner haben eigene Menüs)
+      onContextMenu={(e) => openContextMenu(e, isEmptySpot(e.target) ? <CreateMenuItems folderId={null} /> : null)}
+    >
       {/* Gleiche Höhe wie die Kopfzeile daneben, damit die Linien durchlaufen */}
       <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
         <Logo className="size-6" />
@@ -112,24 +122,24 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
       </div>
 
       <nav className="mt-3 space-y-px px-2">
-        <NavItem icon={<Home />} label="Start" active={view.kind === 'home'} onClick={() => app.go({ kind: 'home' })} />
+        <NavItem icon={<Home />} label="Start" active={view.kind === 'home'} to={{ kind: 'home' }} />
         <NavItem
           icon={<CalendarDays />}
           label="Kalender"
           active={view.kind === 'calendar'}
-          onClick={() => app.go({ kind: 'calendar' })}
+          to={{ kind: 'calendar' }}
         />
         <NavItem
           icon={<Layers />}
           label="Karteikarten"
           active={view.kind === 'cards' || view.kind === 'deck' || view.kind === 'study' || view.kind === 'stats'}
-          onClick={() => app.go({ kind: 'cards' })}
+          to={{ kind: 'cards' }}
           count={due}
         />
-        <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} onClick={() => app.go({ kind: 'glossary' })} />
-        <NavItem icon={<Waypoints />} label="Graph" active={view.kind === 'graph'} onClick={() => app.go({ kind: 'graph' })} />
-        <NavItem icon={<Files />} label="Dateien" active={view.kind === 'files'} onClick={() => app.go({ kind: 'files' })} />
-        <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} onClick={() => app.go({ kind: 'trash' })} />
+        <NavItem icon={<BookA />} label="Glossar" active={view.kind === 'glossary'} to={{ kind: 'glossary' }} />
+        <NavItem icon={<Waypoints />} label="Graph" active={view.kind === 'graph'} to={{ kind: 'graph' }} />
+        <NavItem icon={<Files />} label="Dateien" active={view.kind === 'files'} to={{ kind: 'files' }} />
+        <NavItem icon={<Trash2 />} label="Papierkorb" active={view.kind === 'trash'} to={{ kind: 'trash' }} />
       </nav>
 
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
@@ -141,18 +151,20 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
             <button
               type="button"
               onClick={() => setTagsOpen(tagsOpen === '1' ? '0' : '1')}
+              aria-expanded={tagsOpen === '1'}
               className="flex w-full items-center gap-1 px-2.5 pb-1 text-xs font-semibold text-faint hover:text-muted"
             >
-              {tagsOpen === '1' ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              <ChevronRight className={cn('size-3.5 transition-transform', tagsOpen === '1' && 'rotate-90')} />
               Tags
             </button>
             {tagsOpen === '1' ? (
-              <div className="flex flex-wrap gap-1.5 px-2 pt-1">
+              <div className="flex animate-fade-in flex-wrap gap-1.5 px-2 pt-1">
                 {tags.map((t) => (
-                  <button
+                  <NavLink
                     key={t.tag}
-                    type="button"
-                    onClick={() => app.go({ kind: 'tag', tag: t.tag })}
+                    to={{ kind: 'tag', tag: t.tag }}
+                    onContextMenu={(e) => openContextMenu(e, <OpenViewItems view={{ kind: 'tag', tag: t.tag }} />)}
+                    aria-current={view.kind === 'tag' && view.tag === t.tag ? 'page' : undefined}
                     className={cn(
                       'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs transition-colors',
                       view.kind === 'tag' && view.tag === t.tag
@@ -163,7 +175,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
                     <Hash className="size-3" />
                     {t.tag}
                     <span className="opacity-60">{t.count}</span>
-                  </button>
+                  </NavLink>
                 ))}
               </div>
             ) : null}

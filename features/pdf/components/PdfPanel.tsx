@@ -22,6 +22,7 @@ import {
   MoveHorizontal,
   Quote,
   Search,
+  Trash2,
   Upload,
   X,
   ZoomIn,
@@ -31,7 +32,7 @@ import type { PDFDocumentLoadingTask } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { EventBus, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
@@ -47,7 +48,7 @@ import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } fr
 import { cleanQuote, sortAnnotations } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
 import type { AnnotationColor, PdfAnnotation, PdfRect } from '../types'
-import AnnotationBar from './AnnotationBar'
+import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
 
 // Zuletzt gelesene Seite je PDF merken
@@ -80,6 +81,20 @@ const LIST_BESIDE_WIDTH = 672
 
 type Matches = { current: number; total: number }
 
+// Außerhalb der Komponente: Die Prüfung der Hooks hielte Date.now() in einem Eintrag des Kontextmenüs sonst für einen
+// Aufruf beim Rendern
+const saveColor = (a: PdfAnnotation, color: AnnotationColor) =>
+  pdfAnnotations.save({ ...a, color, updatedAt: Date.now() })
+
+/** Seite unter dem Mauszeiger und die Markierung dort – pdf.js zeichnet die Seiten, die Markierungen liegen darüber */
+function pointedAt(viewer: PDFViewer | null, annotations: PdfAnnotation[], e: MouseEvent | React.MouseEvent) {
+  const pageEl = e.target instanceof Element ? e.target.closest<HTMLElement>('.page') : null
+  const page = Number(pageEl?.dataset.pageNumber) || null
+  const view = page ? (viewer?.getPageView(page - 1) as PageView | undefined) : undefined
+  const onPage = annotations.filter((a) => a.page === page)
+  return { page, annotation: view ? annotationAtPoint(view, onPage, e.clientX, e.clientY) : null }
+}
+
 export default function PdfPanel({
   file,
   page,
@@ -100,6 +115,7 @@ export default function PdfPanel({
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
+  const openContextMenu = useContextMenu()
   const { data: attachments = [] } = useAttachments()
   const pdfs = attachments.filter((a) => a.mime === 'application/pdf')
   const fileName = file.split('/').pop()!.toLowerCase()
@@ -114,6 +130,7 @@ export default function PdfPanel({
   const pendingPage = useRef<number | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
+  const findButtonRef = useRef<HTMLButtonElement>(null)
 
   const [status, setStatus] = useState<{ state: 'loading' | 'ready' | 'error'; message?: string }>({ state: 'loading' })
   const [numPages, setNumPages] = useState(0)
@@ -247,10 +264,7 @@ export default function PdfPanel({
     const onClick = (e: MouseEvent) => {
       if (!(e.target instanceof Element) || e.target.closest('a, button, input, textarea, select')) return
       if (document.getSelection()?.isCollapsed === false) return
-      const n = Number(e.target.closest<HTMLElement>('.page')?.dataset.pageNumber)
-      const view = n ? (viewerRef.current?.getPageView(n - 1) as PageView | undefined) : undefined
-      const onPage = overlay.current.annotations.filter((a) => a.page === n)
-      const hit = view ? annotationAtPoint(view, onPage, e.clientX, e.clientY) : null
+      const hit = pointedAt(viewerRef.current, overlay.current.annotations, e).annotation
       setActiveId(hit?.id ?? null)
       setFocusComment(false)
     }
@@ -367,6 +381,8 @@ export default function PdfPanel({
     setQuery('')
     setMatches(null)
     busRef.current?.dispatch('find', { source: null, type: '', query: '', highlightAll: false })
+    // Die Suchleiste verschwindet samt Fokus – zurück zum Knopf, der sie geöffnet hat
+    findButtonRef.current?.focus()
   }
 
   const goTo = (n: number) => {
@@ -412,6 +428,23 @@ export default function PdfPanel({
     setFocusComment(withComment)
   }
 
+  function quoteSelection() {
+    if (selection) insert({ kind: 'quote', text: selection.text, ref: { file, page: selection.page } }, 'Zitat')
+  }
+
+  function selectionToCard() {
+    if (!selection) return
+    app.openCardEditor({
+      back: `${selection.text}\n\n${pageLink(selection.page, `${baseName(file)}, S. ${selection.page}`)}`,
+      noteId: getActiveEditor()?.noteId ?? null,
+      deckName: baseName(file),
+    })
+  }
+
+  async function copySelection() {
+    if (selection && (await copyText(selection.text))) toast.success('Kopiert.')
+  }
+
   /** Zur Markierung blättern und sie kurz aufleuchten lassen */
   function showAnnotation(a: PdfAnnotation) {
     const v = viewerRef.current
@@ -440,6 +473,16 @@ export default function PdfPanel({
   }
 
   const quoteOf = (a: PdfAnnotation) => ({ text: a.quote, ref: { file, page: a.page } })
+  const insertQuote = (a: PdfAnnotation) => insert({ kind: 'quote', ...quoteOf(a) }, 'Zitat')
+
+  /** Gewählte Farbe auch für neue Markierungen übernehmen */
+  const rememberColor = (color: AnnotationColor) => setColorPref(String(color))
+
+  /** Farbe einer Markierung aus dem Kontextmenü ändern – wie in ihrer Leiste */
+  function recolor(a: PdfAnnotation, color: AnnotationColor) {
+    saveColor(a, color)
+    rememberColor(color)
+  }
 
   async function upload(files: File[]) {
     const f = files[0]
@@ -472,6 +515,148 @@ export default function PdfPanel({
     } catch (err) {
       toast.error(errorMessage(err))
     }
+  }
+
+  // ---- Kontextmenü ----
+
+  // Eine neue Auswahl meldet der Browser erst nach dem Rechtsklick (z. B. das Wort, das der Mac dabei markiert) –
+  // die Einträge wirken daher auf die Auswahl, die gilt, wenn sie gewählt werden
+  const latest = useRef({ markSelection, quoteSelection, selectionToCard, copySelection })
+  useEffect(() => {
+    latest.current = { markSelection, quoteSelection, selectionToCard, copySelection }
+  })
+
+  /** Weitere Aktionen: im Menü der Leiste für die aktuelle Seite, im Kontextmenü für die angeklickte */
+  const pdfActions = (page: number) => (
+    <>
+      <MenuItem icon={<ZoomIn />} onSelect={() => viewerRef.current?.increaseScale()} disabled={!ready}>
+        Vergrößern
+      </MenuItem>
+      <MenuItem icon={<ZoomOut />} onSelect={() => viewerRef.current?.decreaseScale()} disabled={!ready}>
+        Verkleinern
+      </MenuItem>
+      <MenuItem
+        icon={<MoveHorizontal />}
+        onSelect={() => {
+          if (viewerRef.current) viewerRef.current.currentScaleValue = 'page-width'
+        }}
+        disabled={!ready}
+      >
+        Seitenbreite
+      </MenuItem>
+      <MenuItem
+        icon={<Maximize2 />}
+        onSelect={() => {
+          if (viewerRef.current) viewerRef.current.currentScaleValue = 'page-fit'
+        }}
+        disabled={!ready}
+      >
+        Ganze Seite
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        icon={<Link2 />}
+        onSelect={() => insert({ kind: 'page-link', ref: { file, page } }, `Link auf Seite ${page}`)}
+        disabled={!ready}
+      >
+        Seite {page} in Notiz verlinken
+      </MenuItem>
+      <MenuItem icon={<ImageIcon />} onSelect={() => void pageToOcclusion(page)} disabled={!ready}>
+        Seite {page} als Bildverdeckung …
+      </MenuItem>
+      <MenuItem
+        icon={<Copy />}
+        onSelect={async () => {
+          if (await copyText(pageLink(page))) toast.success('Link kopiert.')
+        }}
+        disabled={!ready}
+      >
+        Link auf Seite kopieren
+      </MenuItem>
+      <MenuItem
+        icon={<Download />}
+        onSelect={() => {
+          const a = document.createElement('a')
+          a.href = `${defaultFileUrl(file)}?download=1`
+          a.click()
+        }}
+      >
+        Herunterladen
+      </MenuItem>
+    </>
+  )
+
+  /** Ausgewählter Text: dieselben Aktionen wie die Leiste unter den Seiten */
+  function selectionMenu(canMark: boolean) {
+    return (
+      <>
+        <MenuItem icon={<Copy />} onSelect={() => void latest.current.copySelection()} hint="Strg+C">
+          Kopieren
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<Highlighter />} onSelect={() => latest.current.markSelection(false)} disabled={!canMark}>
+          Markieren
+        </MenuItem>
+        <MenuItem icon={<MessageSquare />} onSelect={() => latest.current.markSelection(true)} disabled={!canMark}>
+          Markieren und kommentieren
+        </MenuItem>
+        <MenuItem icon={<Quote />} onSelect={() => latest.current.quoteSelection()}>
+          Als Zitat einfügen
+        </MenuItem>
+        <MenuItem icon={<Layers />} onSelect={() => latest.current.selectionToCard()}>
+          Karteikarte anlegen
+        </MenuItem>
+      </>
+    )
+  }
+
+  /** Markierung (auf der Seite oder in der Liste): dieselben Aktionen wie ihre Leiste */
+  function annotationMenu(a: PdfAnnotation) {
+    return (
+      <>
+        {a.id === activeId ? null : (
+          <MenuItem
+            icon={<MessageSquare />}
+            onSelect={() => {
+              setActiveId(a.id)
+              setFocusComment(true)
+            }}
+          >
+            Kommentieren
+          </MenuItem>
+        )}
+        <MenuItem icon={<Quote />} onSelect={() => insertQuote(a)}>
+          Als Zitat einfügen
+        </MenuItem>
+        <MenuSeparator />
+        <MenuLabel>Farbe</MenuLabel>
+        {ANNOTATION_COLORS.map((c) => (
+          <MenuItem
+            key={c.id}
+            icon={<span className="size-3.5 rounded-full" style={{ background: `var(--swatch-${c.id})` }} />}
+            onSelect={() => recolor(a, c.id)}
+          >
+            {c.label}
+          </MenuItem>
+        ))}
+        <MenuSeparator />
+        <MenuItem icon={<Trash2 />} danger onSelect={() => deleteAnnotation(a)}>
+          Markierung löschen
+        </MenuItem>
+      </>
+    )
+  }
+
+  function onPagesContextMenu(e: React.MouseEvent) {
+    // Auf Links im PDF bleibt das allgemeine Menü (Link öffnen, Adresse kopieren)
+    if (!ready || (e.target instanceof Element && e.target.closest('a[href]'))) return
+    const live = document.getSelection()
+    if (selection && live && !live.isCollapsed) {
+      openContextMenu(e, selectionMenu(!!attachment && selection.rects.length > 0), { text: true })
+      return
+    }
+    const { page, annotation } = pointedAt(viewerRef.current, annotations, e)
+    openContextMenu(e, annotation ? annotationMenu(annotation) : pdfActions(page ?? current), { text: true })
   }
 
   return (
@@ -552,6 +737,7 @@ export default function PdfPanel({
             disabled={!ready}
             className="h-7 rounded-md px-1 text-xs text-muted tabular-nums hover:bg-hover hover:text-fg @max-xl:hidden"
             title="Auf Seitenbreite einpassen"
+            aria-label={`Auf Seitenbreite einpassen (${Math.round(scale * 100)} %)`}
           >
             {Math.round(scale * 100)} %
           </button>
@@ -575,6 +761,7 @@ export default function PdfPanel({
             ) : null}
           </Button>
           <Button
+            ref={findButtonRef}
             variant="ghost"
             size="icon-sm"
             onClick={() => {
@@ -605,56 +792,7 @@ export default function PdfPanel({
               </Button>
             )}
           >
-            <MenuItem icon={<ZoomIn />} onSelect={() => viewerRef.current?.increaseScale()} disabled={!ready}>
-              Vergrößern
-            </MenuItem>
-            <MenuItem icon={<ZoomOut />} onSelect={() => viewerRef.current?.decreaseScale()} disabled={!ready}>
-              Verkleinern
-            </MenuItem>
-            <MenuItem
-              icon={<MoveHorizontal />}
-              onSelect={() => {
-                if (viewerRef.current) viewerRef.current.currentScaleValue = 'page-width'
-              }}
-              disabled={!ready}
-            >
-              Seitenbreite
-            </MenuItem>
-            <MenuItem
-              icon={<Maximize2 />}
-              onSelect={() => {
-                if (viewerRef.current) viewerRef.current.currentScaleValue = 'page-fit'
-              }}
-              disabled={!ready}
-            >
-              Ganze Seite
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={<Link2 />} onSelect={() => insert({ kind: 'page-link', ref: { file, page: current } }, `Link auf Seite ${current}`)} disabled={!ready}>
-              Seite {current} in Notiz verlinken
-            </MenuItem>
-            <MenuItem icon={<ImageIcon />} onSelect={() => void pageToOcclusion(current)} disabled={!ready}>
-              Seite {current} als Bildverdeckung …
-            </MenuItem>
-            <MenuItem
-              icon={<Copy />}
-              onSelect={async () => {
-                if (await copyText(pageLink(current))) toast.success('Link kopiert.')
-              }}
-              disabled={!ready}
-            >
-              Link auf Seite kopieren
-            </MenuItem>
-            <MenuItem
-              icon={<Download />}
-              onSelect={() => {
-                const a = document.createElement('a')
-                a.href = `${defaultFileUrl(file)}?download=1`
-                a.click()
-              }}
-            >
-              Herunterladen
-            </MenuItem>
+            {pdfActions(current)}
           </Menu>
           <Button variant="ghost" size="icon-sm" onClick={onToggleFull} aria-label={full ? 'Neben der Notiz anzeigen' : 'Vollbild'} title={full ? 'Geteilte Ansicht' : 'Vollbild'}>
             {full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
@@ -684,7 +822,7 @@ export default function PdfPanel({
             aria-label="Im PDF suchen"
             className="h-7 min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
-          <span className="w-16 text-center text-xs text-muted tabular-nums">
+          <span className="w-16 text-center text-xs text-muted tabular-nums" role="status">
             {query && matches ? (matches.total ? `${matches.current} / ${matches.total}` : 'Keine') : ''}
           </span>
           <Button variant="ghost" size="icon-sm" onClick={() => find('again', true)} aria-label="Vorheriger Treffer">
@@ -702,7 +840,12 @@ export default function PdfPanel({
       {/* Seiten (pdf.js braucht einen absolut positionierten Container) und die Liste der Anmerkungen */}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          <div ref={containerRef} className="pdf-container absolute inset-0 overflow-auto" tabIndex={0}>
+          <div
+            ref={containerRef}
+            className="pdf-container absolute inset-0 overflow-auto"
+            tabIndex={0}
+            onContextMenu={onPagesContextMenu}
+          >
             <div ref={innerRef} className="pdfViewer" />
           </div>
         </div>
@@ -711,6 +854,7 @@ export default function PdfPanel({
             annotations={sorted}
             activeId={activeId}
             onSelect={showAnnotation}
+            onContextMenu={(e, a) => openContextMenu(e, annotationMenu(a))}
             onInsertAll={() =>
               insert(
                 { kind: 'quotes', quotes: sorted.map(quoteOf) },
@@ -769,7 +913,7 @@ export default function PdfPanel({
             size="sm"
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insert({ kind: 'quote', text: selection.text, ref: { file, page: selection.page } }, 'Zitat')}
+            onClick={quoteSelection}
             aria-label="Als Zitat einfügen"
             title="Als Zitat mit Seitenlink in die Notiz einfügen"
           >
@@ -779,13 +923,7 @@ export default function PdfPanel({
             size="icon-sm"
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() =>
-              app.openCardEditor({
-                back: `${selection.text}\n\n${pageLink(selection.page, `${baseName(file)}, S. ${selection.page}`)}`,
-                noteId: getActiveEditor()?.noteId ?? null,
-                deckName: baseName(file),
-              })
-            }
+            onClick={selectionToCard}
             aria-label="Karteikarte"
             title="Karteikarte anlegen"
           >
@@ -795,9 +933,7 @@ export default function PdfPanel({
             size="icon-sm"
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={async () => {
-              if (await copyText(selection.text)) toast.success('Kopiert.')
-            }}
+            onClick={() => void copySelection()}
             aria-label="Kopieren"
             title="Kopieren"
           >
@@ -809,8 +945,8 @@ export default function PdfPanel({
           key={active.id}
           annotation={active}
           focusComment={focusComment}
-          onInsert={() => insert({ kind: 'quote', ...quoteOf(active) }, 'Zitat')}
-          onColor={(color) => setColorPref(String(color))}
+          onInsert={() => insertQuote(active)}
+          onColor={rememberColor}
           onDelete={() => deleteAnnotation(active)}
           onClose={() => setActiveId(null)}
         />

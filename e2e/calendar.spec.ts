@@ -46,7 +46,7 @@ test.afterEach(async ({ page }) => {
 test('Serie anlegen, einzelnen Termin verschieben und ausfallen lassen, Monatsansicht', async ({ page }) => {
   await page.clock.install({ time: NOW })
   await login(page)
-  await page.getByRole('navigation').getByRole('button', { name: 'Kalender' }).click()
+  await page.getByRole('navigation').getByRole('link', { name: 'Kalender' }).click()
   await expect(page).toHaveURL(/\?v=calendar$/)
   const label = page.getByTestId('calendar-label')
   await expect(label).toHaveText('Oktober 2026')

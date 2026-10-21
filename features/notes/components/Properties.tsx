@@ -58,6 +58,8 @@ export function Properties({
                           href={`/?t=${encodeURIComponent(String(item).replace(/^#/, '').toLowerCase())}`}
                           className="tag"
                           onClick={(e) => {
+                            // Strg/⌘-Klick und Mittelklick öffnen den Tag wie jeder Link in einem neuen Tab
+                            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
                             e.preventDefault()
                             onOpenTag(String(item).replace(/^#/, '').toLowerCase())
                           }}

@@ -6,6 +6,9 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { richTextExtensions } from '../client/rich-text'
 import { attachmentHtml, insertionToHtml } from '../rich-html'
 import { RichTextToolbar } from './RichTextToolbar'
+import { EditMenuItems } from './EditorMenuItems'
+import { Bold, Italic, Layers, Strikethrough, Underline } from 'lucide-react'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import type { NoteEditorHandle } from '../client/editor-handle'
 
 type Props = {
@@ -40,6 +43,8 @@ export default function RichTextEditor(props: Props) {
     editorProps: {
       attributes: {
         class: 'markdown-body rich-text',
+        'aria-label': 'Notiztext',
+        'aria-multiline': 'true',
         spellcheck: String(props.spellcheck !== false),
         lang: 'de',
         'data-testid': 'rich-editor',
@@ -74,6 +79,51 @@ export default function RichTextEditor(props: Props) {
     },
   })
 
+  const openContextMenu = useContextMenu()
+  // Rechtsklick in den Text: Bearbeiten und Formatieren wie in der Werkzeugleiste
+  function onContextMenu(e: React.MouseEvent) {
+    if (!editor) return
+    const chain = () => editor.chain().focus()
+    const hasSelection = !editor.state.selection.empty
+    openContextMenu(
+      e,
+      <>
+        <EditMenuItems
+          target={{
+            focus: () => editor.commands.focus(),
+            hasSelection,
+            // Wie Strg+V: ProseMirror wandelt den Text dabei in Absätze um
+            paste: (text) => {
+              editor.commands.focus()
+              editor.view.pasteText(text)
+            },
+            selectAll: () => chain().selectAll().run(),
+            undo: () => chain().undo().run(),
+            redo: () => chain().redo().run(),
+          }}
+        />
+        <MenuSeparator />
+        <MenuItem icon={<Bold />} onSelect={() => chain().toggleBold().run()} hint="Strg+B">
+          Fett
+        </MenuItem>
+        <MenuItem icon={<Italic />} onSelect={() => chain().toggleItalic().run()} hint="Strg+I">
+          Kursiv
+        </MenuItem>
+        <MenuItem icon={<Underline />} onSelect={() => chain().toggleUnderline().run()} hint="Strg+U">
+          Unterstrichen
+        </MenuItem>
+        <MenuItem icon={<Strikethrough />} onSelect={() => chain().toggleStrike().run()}>
+          Durchgestrichen
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<Layers />} onSelect={props.onCreateCard}>
+          {hasSelection ? 'Karteikarte aus Markierung' : 'Karteikarte erstellen'}
+        </MenuItem>
+      </>,
+      { text: true },
+    )
+  }
+
   useImperativeHandle(
     props.handleRef,
     () => ({
@@ -105,9 +155,11 @@ export default function RichTextEditor(props: Props) {
           <div className="h-11" />
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[44rem]">{props.header}</div>
-        <EditorContent editor={editor} />
+      <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+        <div className="note-paper" onContextMenu={onContextMenu}>
+          <div className="mx-auto w-full max-w-[44rem]">{props.header}</div>
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   )

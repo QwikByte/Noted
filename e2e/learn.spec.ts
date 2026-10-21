@@ -70,7 +70,7 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await expect(page.getByText('3 Karten erstellt.')).toBeVisible()
 
   // Übersicht: Stapel mit 3 fälligen (neuen) Karten
-  await page.getByRole('button', { name: /^Karteikarten/ }).first().click()
+  await page.getByRole('link', { name: /^Karteikarten/ }).first().click()
   const tile = page.getByTestId('deck-list').locator('> div').filter({ hasText: 'Folgen und Reihen' })
   await expect(tile).toContainText('3 fällig')
   await tile.getByRole('button', { name: /Folgen und Reihen/ }).click()

@@ -1,17 +1,18 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { FilePlus2, FileText, Loader2, Plus } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useNotes } from '@/features/notes/client/queries'
 import { Button } from '@/shared/ui/button'
+import { useContextMenu } from '@/shared/ui/menu'
 import { Panel } from '@/shared/ui/panel'
 import { useNow } from '@/shared/client/now'
-import { dayLabel, groupByDay, noteTitleFor, timeLabel, type AgendaDay } from '../agenda'
+import { dayLabel, groupByDay, timeLabel, type AgendaDay } from '../agenda'
 import { addMinutes, localDate } from '../dates'
 import { blankEvent } from '../event'
 import { useEvents } from '../client/calendar'
-import { EventDialog, ExamMark, eventColor, type DialogTarget } from './EventDialog'
-import type { Occurrence } from '../types'
+import { EventDialog, ExamMark, eventColor, lectureNote, type DialogTarget } from './EventDialog'
+import { EventMenuItems } from './EventMenuItems'
 
 const DAYS = 7
 
@@ -56,17 +57,17 @@ export function Agenda({ className }: { className?: string }) {
       ) : days.every((d) => d.items.length === 0) ? (
         <p className="text-sm text-muted">In den nächsten {DAYS} Tagen stehen keine Termine an.</p>
       ) : (
-        <Days days={days} today={today} onOpen={(occurrence) => setDialog({ kind: 'edit', occurrence })} />
+        <Days days={days} today={today} onDialog={setDialog} />
       )}
       {dialog ? <EventDialog target={dialog} onClose={() => setDialog(null)} /> : null}
     </Panel>
   )
 }
 
-function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpen: (o: Occurrence) => void }) {
+function Days({ days, today, onDialog }: { days: AgendaDay[]; today: string; onDialog: (target: DialogTarget) => void }) {
   const app = useApp()
   const { notes } = useNotes()
-  const byTitle = useMemo(() => new Map(notes.map((n) => [n.title.toLowerCase(), n])), [notes])
+  const openContextMenu = useContextMenu()
 
   return (
     <div className="space-y-4">
@@ -78,11 +79,22 @@ function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpe
           ) : (
             <ul className="divide-y divide-border">
               {day.items.map((o) => {
-                const title = noteTitleFor(o)
-                const note = byTitle.get(title.toLowerCase())
+                const { title, note, open } = lectureNote(o, notes, app)
                 return (
-                  <li key={`${day.date}-${o.event.id}-${o.date}`} className="flex items-center gap-3 py-1.5" data-testid="agenda-event">
-                    <button type="button" onClick={() => onOpen(o)} className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-0.5 text-left">
+                  <li
+                    key={`${day.date}-${o.event.id}-${o.date}`}
+                    className="flex items-center gap-3 py-1"
+                    data-testid="agenda-event"
+                    onContextMenu={(e) =>
+                      openContextMenu(e, <EventMenuItems occurrence={o} onDialog={onDialog} />, { copy: true })
+                    }
+                  >
+                    {/* -ml-2 px-2: Hover-Fläche wie bei den Stapeln, der Inhalt bleibt bündig mit der Tagesüberschrift */}
+                    <button
+                      type="button"
+                      onClick={() => onDialog({ kind: 'edit', occurrence: o })}
+                      className="-ml-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left hover:bg-hover"
+                    >
                       <span className="size-2.5 shrink-0 rounded-full" style={{ background: eventColor(o.event.color) }} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline gap-x-2">
@@ -97,11 +109,11 @@ function Days({ days, today, onOpen }: { days: AgendaDay[]; today: string; onOpe
                     </button>
                     {/* Mitschrift nur für Termine mit Uhrzeit – bei ganztägigen (Feiertag, Exkursion) passt sie selten */}
                     {o.event.allDay ? null : note ? (
-                      <Button size="sm" variant="ghost" onClick={() => app.go({ kind: 'note', id: note.id })} title={note.title}>
+                      <Button size="sm" variant="ghost" onClick={open} title={note.title}>
                         <FileText className="size-4" /> Öffnen
                       </Button>
                     ) : (
-                      <Button size="sm" variant="ghost" onClick={() => app.openNewNote({ templateId: 'lecture', title })} title={`Mitschrift „${title}“ anlegen`}>
+                      <Button size="sm" variant="ghost" onClick={open} title={`Mitschrift „${title}“ anlegen`}>
                         <FilePlus2 className="size-4" /> Mitschrift
                       </Button>
                     )}

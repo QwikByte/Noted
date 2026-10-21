@@ -89,9 +89,11 @@ export function MfaSetup({ onDone, onCancel }: { onDone: () => void; onCancel?: 
                   variant="ghost"
                   aria-label="Schlüssel kopieren"
                   onClick={async () => {
-                    await copyText(data.secret)
-                    setCopied(true)
-                    setTimeout(() => setCopied(false), 1500)
+                    // Kein Toast: Die Einrichtung läuft auch auf /setup ohne ToastProvider
+                    if (await copyText(data.secret)) {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1500)
+                    } else setError('Kopieren nicht möglich.')
                   }}
                 >
                   {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}

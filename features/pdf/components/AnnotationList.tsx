@@ -9,6 +9,7 @@ export default function AnnotationList({
   annotations,
   activeId,
   onSelect,
+  onContextMenu,
   onInsertAll,
   onClose,
 }: {
@@ -16,6 +17,8 @@ export default function AnnotationList({
   annotations: PdfAnnotation[]
   activeId: string | null
   onSelect: (annotation: PdfAnnotation) => void
+  /** Rechtsklick auf einen Eintrag: dieselben Aktionen wie auf der Markierung im PDF */
+  onContextMenu: (e: React.MouseEvent, annotation: PdfAnnotation) => void
   onInsertAll: () => void
   onClose: () => void
 }) {
@@ -50,6 +53,7 @@ export default function AnnotationList({
                       <button
                         type="button"
                         onClick={() => onSelect(a)}
+                        onContextMenu={(e) => onContextMenu(e, a)}
                         aria-current={a.id === activeId ? 'true' : undefined}
                         className={cn(
                           'flex w-full gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-hover',

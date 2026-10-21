@@ -15,7 +15,9 @@ export async function copyText(text: string): Promise<boolean> {
   ta.setAttribute('readonly', '')
   ta.style.position = 'fixed'
   ta.style.opacity = '0'
-  document.body.appendChild(ta)
+  // Bei offenem Dialog ist alles außerhalb unbedienbar – dort ließe sich das Feld nicht markieren
+  const host = [...document.querySelectorAll('dialog:modal')].at(-1) ?? document.body
+  host.appendChild(ta)
   ta.select()
   let ok = false
   try {
@@ -43,4 +45,17 @@ export async function copyHtml(html: string, text: string): Promise<boolean> {
     /* Fallback */
   }
   return copyText(text)
+}
+
+/**
+ * Text aus der Zwischenablage lesen (für „Einfügen“ im Kontextmenü). null, wenn der Browser es nicht erlaubt – z. B.
+ * über http im LAN oder ohne Zustimmung; dann bleibt Strg+V.
+ */
+export async function readText(): Promise<string | null> {
+  try {
+    if (navigator.clipboard?.readText && window.isSecureContext) return await navigator.clipboard.readText()
+  } catch {
+    /* nicht erlaubt */
+  }
+  return null
 }

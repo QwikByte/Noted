@@ -16,7 +16,8 @@ async function renderMermaid(root: HTMLElement) {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
-    theme: isDarkMode() ? 'dark' : 'neutral',
+    // Auf dem Blatt einer Notiz ist es auch im Dark Mode hell
+    theme: isDarkMode() && !root.closest('.note-paper') ? 'dark' : 'neutral',
     fontFamily: 'inherit',
   })
   for (const block of blocks) {
@@ -102,7 +103,8 @@ export function Preview({
     } else if (a.getAttribute('href')?.startsWith('#')) {
       e.preventDefault()
       const id = decodeURIComponent(a.getAttribute('href')!.slice(1))
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+      document.getElementById(id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
     }
   }
 

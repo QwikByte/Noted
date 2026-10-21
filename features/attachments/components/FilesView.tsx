@@ -23,6 +23,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { useFolders, useNotes } from '@/features/notes/client/queries'
 import { folderPath } from '@/features/notes/tree'
 import { Button } from '@/shared/ui/button'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { api, errorMessage } from '@/shared/client/api'
@@ -62,6 +63,8 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const { data: folders = [], isLoading: foldersLoading } = useFolders()
   const [uploading, setUploading] = useState(false)
   const [toDelete, setToDelete] = useState<FileEntry | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const openContextMenu = useContextMenu()
 
   const unlinked = level === UNLINKED
   const folder = level && !unlinked ? folders.find((f) => f.id === level) : undefined
@@ -123,7 +126,17 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const empty = content.folders.length === 0 && content.files.length === 0 && (level || content.unlinked === 0)
 
   return (
-    <Page>
+    <Page
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <MenuItem icon={<Upload />} onSelect={() => input.current?.click()} disabled={uploading}>
+            Hochladen …
+          </MenuItem>,
+          { text: true, copy: true },
+        )
+      }
+    >
       <PageHeader
         title={folder ? folder.name : unlinked ? 'Ohne Notiz' : 'Dateien'}
         subtitle={subtitle}
@@ -218,13 +231,17 @@ export function FilesView({ folder: level }: { folder?: string }) {
         description={toDelete ? deleteDescription(toDelete) : undefined}
         confirmLabel="Löschen"
         danger
+        loading={deleting}
         onConfirm={async () => {
           if (!toDelete) return
+          setDeleting(true)
           try {
             await api(`/api/attachments/${toDelete.id}`, { method: 'DELETE' })
             await qc.invalidateQueries({ queryKey: attachmentsKey })
           } catch (err) {
             toast.error(errorMessage(err))
+          } finally {
+            setDeleting(false)
           }
           setToDelete(null)
         }}
@@ -266,10 +283,58 @@ function searchLabel(search: SearchIndexInfo): string {
 function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () => void; onReindex: () => void }) {
   const app = useApp()
   const toast = useToast()
+  const openContextMenu = useContextMenu()
   const { file: f, notes } = item
   const url = `/api/attachments/${f.id}`
+
+  async function copyEmbed() {
+    if (await copyText(attachmentMarkdown(f))) toast.success('In die Zwischenablage kopiert.')
+    else toast.error('Kopieren nicht möglich.')
+  }
+
   return (
-    <div className="group overflow-hidden rounded-xl border border-border bg-elevated" data-testid="file-card">
+    <div
+      className="group overflow-hidden rounded-xl border border-border bg-elevated"
+      data-testid="file-card"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            {f.mime === 'application/pdf' ? (
+              <MenuItem icon={<BookOpenText />} onSelect={() => app.openPdf(f.filename)}>
+                Im PDF-Viewer öffnen
+              </MenuItem>
+            ) : (
+              // Wie der Link an der Datei: in einem neuen Tab
+              <MenuItem icon={<ExternalLink />} onSelect={() => window.open(url, '_blank', 'noopener')}>
+                Öffnen
+              </MenuItem>
+            )}
+            <MenuItem icon={<Download />} onSelect={() => window.location.assign(`${url}?download=1`)}>
+              Herunterladen
+            </MenuItem>
+            <MenuItem icon={<Copy />} onSelect={() => void copyEmbed()}>
+              Einbettung kopieren
+            </MenuItem>
+            {notes.length > 0 ? (
+              <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: notes[0].id })}>
+                Zur Notiz
+              </MenuItem>
+            ) : null}
+            {f.search && f.search.state !== 'pending' ? (
+              <MenuItem icon={<RefreshCw />} onSelect={onReindex}>
+                Erneut indizieren
+              </MenuItem>
+            ) : null}
+            <MenuSeparator />
+            <MenuItem icon={<Trash2 />} danger onSelect={onDelete}>
+              Löschen …
+            </MenuItem>
+          </>,
+          { copy: true },
+        )
+      }
+    >
       {f.mime === 'application/pdf' ? (
         // PDFs im eingebauten Viewer (neben der aktuellen Ansicht) statt in einem neuen Tab
         <button
@@ -281,7 +346,13 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
           <FileIcon mime={f.mime} />
         </button>
       ) : (
-        <a href={url} target="_blank" rel="noopener" className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener"
+          className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint"
+          aria-label={`${f.filename} öffnen`}
+        >
           {f.mime.startsWith('image/') && f.mime !== 'image/heic' ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={url} alt={f.filename} loading="lazy" className="size-full object-cover" />
@@ -320,10 +391,7 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
             variant="ghost"
             title="Einbettung kopieren"
             aria-label="Einbettung kopieren"
-            onClick={async () => {
-              await copyText(attachmentMarkdown(f))
-              toast.success('In die Zwischenablage kopiert.')
-            }}
+            onClick={() => void copyEmbed()}
           >
             <Copy className="size-4" />
           </Button>

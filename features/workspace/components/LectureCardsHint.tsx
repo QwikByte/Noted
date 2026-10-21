@@ -74,7 +74,7 @@ export function LectureCardsHint() {
       {visible.map((h) => (
         <div key={h.key} className="flex items-center gap-3 rounded-xl border border-border bg-elevated px-4 py-3">
           <Layers className="size-5 shrink-0 text-accent-text" />
-          <p className="min-w-0 flex-1 text-sm">
+          <p className="min-w-0 flex-1 text-sm break-words">
             <span className="font-medium">{h.title}</span> ist vorbei. Karteikarten aus der Mitschrift erstellen?
           </p>
           <Button size="sm" variant="primary" onClick={() => void createCards(h.note)}>

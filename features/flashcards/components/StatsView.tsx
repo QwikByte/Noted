@@ -7,7 +7,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Panel } from '@/shared/ui/panel'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem } from '@/shared/ui/menu'
+import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
 import { useNow } from '@/shared/client/now'
@@ -51,9 +51,17 @@ export function StatsView() {
     queryFn: () => api<StudyStats>(`/api/stats?tz=${encodeURIComponent(timeZone())}`),
     staleTime: 0,
   })
+  const openContextMenu = useContextMenu()
+
+  // Derselbe Eintrag im Menü „…“ und beim Rechtsklick auf die freie Fläche
+  const exportItem = (
+    <MenuItem icon={<Download />} onSelect={() => window.location.assign('/api/stats/export')} disabled={!data?.total}>
+      Bewertungsprotokoll als CSV
+    </MenuItem>
+  )
 
   return (
-    <Page className="max-w-4xl">
+    <Page className="max-w-4xl" onContextMenu={(e) => openContextMenu(e, exportItem, { text: true, copy: true })}>
       <PageHeader
         breadcrumb={
           <button type="button" onClick={() => app.go({ kind: 'cards' })} className="mb-2 flex items-center gap-1 text-sm text-muted hover:text-fg">
@@ -74,9 +82,7 @@ export function StatsView() {
               </Button>
             )}
           >
-            <MenuItem icon={<Download />} onSelect={() => window.location.assign('/api/stats/export')} disabled={!data?.total}>
-              Bewertungsprotokoll als CSV
-            </MenuItem>
+            {exportItem}
           </Menu>
         }
       />
@@ -346,7 +352,12 @@ function FocusTime({ today }: { today: string }) {
             <tbody className="divide-y divide-border tabular-nums">
               {rows.map((r) => (
                 <tr key={r.subject || '–'}>
-                  <td className="max-w-48 truncate py-1.5 pr-3">{r.subject || <span className="text-muted">ohne Fach</span>}</td>
+                  {/* max-w-* wirkt auf Tabellenzellen nicht – daher kürzt ein Block in der Zelle */}
+                  <td className="py-1.5 pr-3">
+                    <div className="max-w-48 truncate" title={r.subject || undefined}>
+                      {r.subject || <span className="text-muted">ohne Fach</span>}
+                    </div>
+                  </td>
                   {r.weeks.map((ms, i) => (
                     <td key={weeks[i]} className="py-1.5 pr-3 text-right whitespace-nowrap">
                       {ms ? formatStudyTime(ms) : '–'}
@@ -386,7 +397,11 @@ function DeckTable({ stats }: { stats: StudyStats }) {
           <tbody className="divide-y divide-border tabular-nums">
             {rows.map(({ deck, s }) => (
               <tr key={deck.id}>
-                <td className="max-w-48 truncate py-1.5 pr-3">{deck.name}</td>
+                <td className="py-1.5 pr-3">
+                  <div className="max-w-48 truncate" title={deck.name}>
+                    {deck.name}
+                  </div>
+                </td>
                 <td className="py-1.5 pr-3 text-right">{s?.reviews ?? 0}</td>
                 <td className="py-1.5 pr-3 text-right">{s?.matureReviews ? `${Math.round((s.matureCorrect / s.matureReviews) * 100)} %` : '–'}</td>
                 <td className="py-1.5 text-right">{s?.reviews ? formatDuration(s.ms / s.reviews) : '–'}</td>

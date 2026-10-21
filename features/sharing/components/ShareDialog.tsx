@@ -57,7 +57,7 @@ export function ShareDialog({ noteId, title, onClose }: { noteId: string; title:
     >
       <div className="space-y-5">
         {url ? (
-          <div className="space-y-2 rounded-xl bg-success-soft p-3">
+          <div className="space-y-2 rounded-xl bg-success-soft p-3" role="status">
             <div className="flex gap-2">
               <Input value={url} readOnly onFocus={(e) => e.target.select()} aria-label="Link" data-testid="share-url" />
               <Button variant="primary" onClick={() => void copy()}>

@@ -1,7 +1,7 @@
 'use client'
 // Canvas-Editor (JSON Canvas): Karten frei anordnen, mit Pfeilen verbinden und gruppieren.
 // Wird per next/dynamic nachgeladen (React Flow) und gibt der Notizansicht dieselbe Schnittstelle wie die Text-Editoren.
-import { useCallback, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -17,7 +17,9 @@ import {
 import {
   ArrowLeftRight,
   ArrowRight,
+  ExternalLink,
   FilePlus2,
+  FileText,
   Group,
   Layers,
   Link2,
@@ -45,6 +47,18 @@ import {
   type CanvasNode,
   type CanvasSide,
 } from '../canvas'
+import {
+  DIRECTION_WORD,
+  arrowCommand,
+  cardLabel,
+  moveNodes,
+  nextCard,
+  nextTarget,
+  readingIndex,
+  resizeNode,
+  toBoxes,
+  type ArrowCommand,
+} from '../keyboard'
 import { CanvasContext, canvasColor, edgeTypes, nodeTypes, safeUrl, type ArrowEdge, type CardNode, type ResolvedFile } from './CanvasCards'
 import { FilePicker, LinkDialog, type PickedFile } from './InsertDialogs'
 import { AttachButtons, Divider, ToolButton } from '@/features/notes/components/toolbar'
@@ -54,7 +68,8 @@ import type { NoteEditorHandle } from '@/features/notes/client/editor-handle'
 import { useAttachments } from '@/features/attachments/client/queries'
 import type { Attachment } from '@/features/attachments/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
-import { Menu, MenuItem } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import type { Box } from '@/shared/lib/spatial'
 
 /** Werkzeug der Leiste: Ein offenes Textfeld verliert beim Klicken den Fokus und speichert, bevor das Werkzeug wirkt */
 const Tool = (props: React.ComponentProps<typeof ToolButton>) => <ToolButton keepFocus={false} {...props} />
@@ -87,9 +102,47 @@ const drawOrder = (nodes: CanvasNode[]) =>
   [...nodes.filter((n) => n.type === 'group').sort((a, b) => area(b) - area(a)), ...nodes.filter((n) => n.type !== 'group')]
 
 const isTyping = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input, textarea, [contenteditable]')
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta'])
 
 function sizeForAttachment(att: Pick<Attachment, 'mime'>) {
   return att.mime.startsWith('image/') ? CANVAS_NODE_SIZE.file : { width: 300, height: 64 }
+}
+
+/** Farben für Karten und Pfeile – im Menü der Leiste und im Kontextmenü */
+function ColorItems({ onPick }: { onPick: (color: string | undefined) => void }) {
+  return (
+    <>
+      <MenuItem onSelect={() => onPick(undefined)} icon={<span className="canvas-swatch" />}>
+        Keine Farbe
+      </MenuItem>
+      {CANVAS_COLORS.map((c) => (
+        <MenuItem
+          key={c.id}
+          onSelect={() => onPick(c.id)}
+          icon={<span className="canvas-swatch" style={{ background: canvasColor(c.id) }} />}
+        >
+          {c.label}
+        </MenuItem>
+      ))}
+    </>
+  )
+}
+
+/** Pfeilspitzen – im Menü der Leiste und im Kontextmenü eines Pfeils */
+function ArrowItems({ onPick }: { onPick: (kind: 'end' | 'both' | 'none') => void }) {
+  return (
+    <>
+      <MenuItem onSelect={() => onPick('end')} icon={<ArrowRight />}>
+        Pfeil zum Ziel
+      </MenuItem>
+      <MenuItem onSelect={() => onPick('both')} icon={<ArrowLeftRight />}>
+        Pfeil in beide Richtungen
+      </MenuItem>
+      <MenuItem onSelect={() => onPick('none')} icon={<Minus />}>
+        Linie ohne Pfeil
+      </MenuItem>
+    </>
+  )
 }
 
 export default function CanvasEditor(props: Props) {
@@ -102,6 +155,7 @@ export default function CanvasEditor(props: Props) {
 
 function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUpload, onCreateCard, header }: Props) {
   const flow = useReactFlow<CardNode, ArrowEdge>()
+  const openContextMenu = useContextMenu()
   const wrapperRef = useRef<HTMLDivElement>(null)
   const markerId = `canvas-arrow-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   // Stand zum gespeicherten Text; ändert er sich von außen (anderes Gerät), wird neu gelesen
@@ -120,6 +174,13 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
   const history = useRef<{ past: CanvasData[]; future: CanvasData[] }>({ past: [], future: [] })
   // Abgelegte Dateien landen an der Stelle, an der sie losgelassen wurden
   const dropAt = useRef<{ at: XY; remaining: number } | null>(null)
+  // Verbinden mit der Tastatur: von der ausgewählten Karte zu dem Ziel, das die Pfeiltasten wählen
+  const [connectState, setConnect] = useState<{ from: string; to: string | null } | null>(null)
+  // Wechselt die Ansicht mitten im Verbinden zum Lesen, endet es
+  const connect = readOnly ? null : connectState
+  const [announcement, setAnnouncement] = useState('')
+  // Ergebnis des letzten Schritts per Pfeiltaste – daran erkennt onArrow eine gehaltene Taste
+  const lastNudge = useRef<CanvasData | null>(null)
 
   const { data: attachments = [] } = useAttachments()
   const attachmentByName = useMemo(() => new Map(attachments.map((a) => [a.filename.toLowerCase(), a])), [attachments])
@@ -267,7 +328,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
     return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }
   }
 
-  /** Neue Karte ins Bild holen, wenn sie nicht ganz zu sehen ist (z. B. auf dem Handy) */
+  /** Karte ins Bild holen, wenn sie nicht ganz zu sehen ist (neue Karte z. B. auf dem Handy, per Taste gewählte) */
   function reveal(rect: Rect) {
     const view = visibleArea()
     if (!view) return
@@ -467,24 +528,125 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
     selectOnly([], [edge.id])
   }
 
-  function openNode(node: CanvasNode) {
+  /** Was eine Karte öffnet (Link, Notiz oder PDF) – mit dem Namen für das Kontextmenü; null, wenn nichts */
+  function openerFor(node: CanvasNode): { label: string; open: () => void } | null {
     if (node.type === 'link') {
       const href = safeUrl(node.url)
-      if (href) window.open(href, '_blank', 'noopener,noreferrer')
-    } else if (node.type === 'file') {
-      const file = resolveFile(node.file)
-      if (file.kind === 'note') links.onOpenNote(file.id)
-      else if (file.kind === 'attachment' && file.attachment.mime === 'application/pdf') {
-        const page = /^#page=(\d{1,5})$/.exec(node.subpath ?? '')?.[1]
-        links.onOpenPdf?.(file.attachment.filename, page ? Number(page) : undefined)
-      }
+      return href ? { label: 'Link öffnen', open: () => window.open(href, '_blank', 'noopener,noreferrer') } : null
     }
+    if (node.type !== 'file') return null
+    const file = resolveFile(node.file)
+    if (file.kind === 'note') return { label: 'Notiz öffnen', open: () => links.onOpenNote(file.id) }
+    const openPdf = links.onOpenPdf
+    if (file.kind !== 'attachment' || file.attachment.mime !== 'application/pdf' || !openPdf) return null
+    const page = /^#page=(\d{1,5})$/.exec(node.subpath ?? '')?.[1]
+    return { label: 'Öffnen', open: () => openPdf(file.attachment.filename, page ? Number(page) : undefined) }
   }
+
+  const openNode = (node: CanvasNode) => openerFor(node)?.open()
 
   // ---- Tastatur, Einfügen, Ablegen ----
 
+  /** Ansage für Bildschirmleser; eine gleichlautende bekommt ein Leerzeichen, sonst würde sie nicht erneut vorgelesen */
+  function announce(message: string) {
+    setAnnouncement((prev) => (prev === message ? `${message}\u00a0` : message))
+  }
+
+  const nodeLabel = (id: string) => {
+    const node = data.nodes.find((n) => n.id === id)
+    return node ? cardLabel(node) : 'Karte'
+  }
+  /** Name und Stelle einer Karte, z. B. Textkarte „Wärme“, 2 von 5 */
+  const cardInfo = (id: string, boxes: Box[]) => `${nodeLabel(id)}, ${readingIndex(boxes, id)} von ${boxes.length}`
+
+  /** Pfeiltasten: Karte wählen, Auswahl verschieben oder die Größe einer Karte ändern */
+  function onArrow({ action, dir, step }: ArrowCommand, repeat: boolean) {
+    if (action === 'select') {
+      const boxes = toBoxes(nodes)
+      // Von der ausgewählten Karte aus – nach dem Verbinden vom Ziel des neuen Pfeils
+      const from = [...selectedNodes][0] ?? data.edges.find((e) => selectedEdges.has(e.id))?.toNode ?? null
+      const next = nextCard(boxes, from, dir, viewportCenter())
+      if (!next) return announce(boxes.length ? `Keine Karte weiter ${DIRECTION_WORD[dir]}` : 'Das Canvas ist leer')
+      selectOnly([next.id])
+      reveal(next)
+      return announce(cardInfo(next.id, boxes))
+    }
+    const selected = data.nodes.filter((n) => selectedNodes.has(n.id))
+    const first = selected[0]
+    if (!first) return announce('Keine Karte ausgewählt')
+    if (action === 'resize' && selected.length > 1) return announce('Die Größe lässt sich nur bei einer Karte ändern')
+    const changed =
+      action === 'move'
+        ? moveNodes(data.nodes, selectedNodes, dir, step)
+        : data.nodes.map((n) => (n === first ? resizeNode(n, dir, step) : n))
+    if (changed.some((n, i) => n !== data.nodes[i])) {
+      const next = { ...data, nodes: changed }
+      // Wie beim Ziehen mit der Maus: Eine gehaltene Taste ist ein Schritt im Verlauf
+      const record = !(repeat && lastNudge.current === data)
+      lastNudge.current = next
+      commit(next, record)
+    }
+    const moved = changed.find((n) => n.id === first.id) ?? first
+    reveal(moved)
+    const what = selected.length > 1 ? `${selected.length} Karten` : cardLabel(first)
+    announce(
+      action === 'move'
+        ? `${what} nach ${DIRECTION_WORD[dir]} verschoben (x ${moved.x}, y ${moved.y})`
+        : `Breite ${moved.width}, Höhe ${moved.height}`,
+    )
+  }
+
+  function startConnect(node: CanvasNode) {
+    if (data.nodes.length < 2) return announce('Zum Verbinden fehlt eine zweite Karte')
+    setConnect({ from: node.id, to: null })
+    announce(`Verbinden von ${cardLabel(node)} mit …: Pfeiltasten wählen, Enter verbindet, Escape bricht ab`)
+  }
+
+  /** Tasten beim Verbinden; false, wenn die Taste das Verbinden beendet und wie sonst wirken soll */
+  function connectKey(e: React.KeyboardEvent, { from, to }: { from: string; to: string | null }): boolean {
+    const arrow = arrowCommand(e)
+    if (arrow?.action === 'select') {
+      e.preventDefault()
+      const boxes = toBoxes(nodes)
+      const target = nextTarget(boxes, from, to, arrow.dir)
+      if (!target) announce(`Keine Karte weiter ${DIRECTION_WORD[arrow.dir]}`)
+      else {
+        setConnect({ from, to: target.id })
+        reveal(target)
+        announce(`Ziel: ${cardInfo(target.id, boxes)}`)
+      }
+      return true
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (!to || !data.nodes.some((n) => n.id === to)) {
+        announce('Erst mit den Pfeiltasten ein Ziel wählen')
+        return true
+      }
+      setConnect(null)
+      // Ohne Seiten: Der Pfeil setzt dann an den einander zugewandten Seiten an, auch wenn die Karten später wandern
+      onConnect({ source: from, target: to, sourceHandle: null, targetHandle: null })
+      announce(`${nodeLabel(from)} mit ${nodeLabel(to)} verbunden – Enter beschriftet den Pfeil`)
+      return true
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setConnect(null)
+      announce('Verbinden abgebrochen')
+      return true
+    }
+    return false
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
     if (editing || isTyping(e.target)) return
+    // Die Tasten für Karten nur auf der Fläche selbst – nicht auf Knöpfen in Karten oder der Ansichtsleiste
+    const onSurface = e.target === e.currentTarget
+    if (connect) {
+      if (MODIFIER_KEYS.has(e.key)) return
+      if (onSurface && data.nodes.some((n) => n.id === connect.from) && connectKey(e, connect)) return
+      setConnect(null)
+    }
     const mod = e.ctrlKey || e.metaKey
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault()
@@ -498,11 +660,30 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
       e.preventDefault()
       return selectOnly(data.nodes.map((n) => n.id))
     }
-    if (e.key === 'Escape') return selectOnly([])
+    if (e.key === 'Escape') {
+      if (selectedNodes.size + selectedEdges.size > 0) announce('Auswahl aufgehoben')
+      return selectOnly([])
+    }
+    const arrow = onSurface ? arrowCommand(e) : null
+    if (arrow && (arrow.action === 'select' || !readOnly)) {
+      e.preventDefault()
+      return onArrow(arrow, e.repeat)
+    }
+    const one = selectedNodes.size === 1 && selectedEdges.size === 0 ? data.nodes.find((n) => selectedNodes.has(n.id)) : undefined
+    // Notiz-, Datei- und Link-Karten öffnet Enter wie ein Doppelklick – auch zum Lesen
+    const opener = onSurface && e.key === 'Enter' && one ? openerFor(one) : null
+    if (opener) {
+      e.preventDefault()
+      return opener.open()
+    }
     if (readOnly) return
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       return removeSelection()
+    }
+    if (onSurface && one && !mod && !e.altKey && e.key.toLowerCase() === 'v') {
+      e.preventDefault()
+      return startConnect(one)
     }
     const single = selectedNodes.size + selectedEdges.size === 1 ? ([...selectedNodes][0] ?? [...selectedEdges][0]) : null
     if ((e.key === 'Enter' || e.key === 'F2') && single) {
@@ -554,7 +735,125 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
     },
   }))
 
-  const ctx = { readOnly, editingId: editing?.id ?? null, links, resolveFile, commitText }
+  // ---- Ansicht und Kontextmenü ----
+
+  const zoomIn = () => void flow.zoomIn({ duration: 150 })
+  const zoomOut = () => void flow.zoomOut({ duration: 150 })
+  const fitAll = () => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 200 })
+
+  // Das Kontextmenü entsteht beim Rechtsklick, bevor dessen Auswahl gilt – Befehle für die Auswahl ruft es daher mit
+  // dem Stand auf, in dem ein Eintrag gewählt wird
+  const latest = useRef({ removeSelection, applyColor, setArrows, addGroup })
+  useEffect(() => {
+    latest.current = { removeSelection, applyColor, setArrows, addGroup }
+  })
+
+  /** Rechtsklick auf eine Karte: dieselben Befehle wie Leiste, Tastatur und Doppelklick – zum Lesen nur Öffnen */
+  function cardMenu(node: CanvasNode) {
+    const opener = openerFor(node)
+    const open = opener ? (
+      <MenuItem icon={node.type === 'link' ? <ExternalLink /> : <FileText />} onSelect={opener.open} hint="Enter">
+        {opener.label}
+      </MenuItem>
+    ) : null
+    if (readOnly) return open
+    // Gehört die Karte zu einer Auswahl mehrerer Karten, wirken Farbe, Gruppe und Löschen auf alle
+    const many = selectedNodes.has(node.id) && selectedNodes.size > 1
+    const editable = node.type === 'text' || node.type === 'group'
+    const card = node.type === 'text' && !many
+    return (
+      <>
+        {editable ? (
+          <MenuItem icon={<Pencil />} onSelect={() => startEdit(node.id)} hint="Enter">
+            Bearbeiten
+          </MenuItem>
+        ) : null}
+        {open}
+        {many ? (
+          <MenuItem icon={<Group />} onSelect={() => latest.current.addGroup()}>
+            Auswahl gruppieren
+          </MenuItem>
+        ) : null}
+        {card ? (
+          <MenuItem icon={<Layers />} onSelect={onCreateCard}>
+            Karteikarte aus Karte
+          </MenuItem>
+        ) : null}
+        {editable || open || many || card ? <MenuSeparator /> : null}
+        <MenuLabel>Farbe</MenuLabel>
+        <ColorItems onPick={(color) => latest.current.applyColor(color)} />
+        <MenuSeparator />
+        <MenuItem icon={<Trash2 />} danger onSelect={() => latest.current.removeSelection()} hint="Entf">
+          Löschen
+        </MenuItem>
+      </>
+    )
+  }
+
+  /** Rechtsklick auf einen Pfeil: Beschriftung, Pfeilspitzen, Farbe, Löschen */
+  function edgeMenu(id: string) {
+    if (readOnly) return null
+    return (
+      <>
+        <MenuItem icon={<Pencil />} onSelect={() => startEdit(id)} hint="Enter">
+          Bearbeiten
+        </MenuItem>
+        <MenuSeparator />
+        <MenuLabel>Pfeilspitzen</MenuLabel>
+        <ArrowItems onPick={(kind) => latest.current.setArrows(kind)} />
+        <MenuSeparator />
+        <MenuLabel>Farbe</MenuLabel>
+        <ColorItems onPick={(color) => latest.current.applyColor(color)} />
+        <MenuSeparator />
+        <MenuItem icon={<Trash2 />} danger onSelect={() => latest.current.removeSelection()} hint="Entf">
+          Löschen
+        </MenuItem>
+      </>
+    )
+  }
+
+  /** Rechtsklick auf die freie Fläche: Karten anlegen (eine Textkarte an der Stelle `at`), Verlauf, Ansicht */
+  function paneMenu(at?: XY) {
+    return (
+      <>
+        {readOnly ? null : (
+          <>
+            <MenuItem icon={<StickyNote />} onSelect={() => addText('', at)}>
+              Textkarte
+            </MenuItem>
+            <MenuItem icon={<FilePlus2 />} onSelect={() => setDialog('file')}>
+              Notiz oder Datei einfügen …
+            </MenuItem>
+            <MenuItem icon={<Link2 />} onSelect={() => setDialog('link')}>
+              Link einfügen …
+            </MenuItem>
+            <MenuItem icon={<Group />} onSelect={() => latest.current.addGroup()}>
+              {selectedNodes.size ? 'Auswahl gruppieren' : 'Gruppe'}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<Undo2 />} onSelect={undo} disabled={history.current.past.length === 0} hint="Strg+Z">
+              Rückgängig
+            </MenuItem>
+            <MenuItem icon={<Redo2 />} onSelect={redo} disabled={history.current.future.length === 0} hint="Strg+Umschalt+Z">
+              Wiederholen
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem icon={<ZoomIn />} onSelect={zoomIn}>
+          Vergrößern
+        </MenuItem>
+        <MenuItem icon={<ZoomOut />} onSelect={zoomOut}>
+          Verkleinern
+        </MenuItem>
+        <MenuItem icon={<Maximize />} onSelect={fitAll}>
+          Alles anzeigen
+        </MenuItem>
+      </>
+    )
+  }
+
+  const ctx = { readOnly, editingId: editing?.id ?? null, connectTarget: connect?.to ?? null, links, resolveFile, commitText }
   const hasSelection = selectedNodes.size + selectedEdges.size > 0
   const single = selectedNodes.size + selectedEdges.size === 1
   const editable =
@@ -590,18 +889,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
                 </Tool>
               )}
             >
-              <MenuItem onSelect={() => applyColor(undefined)} icon={<span className="canvas-swatch" />}>
-                Keine Farbe
-              </MenuItem>
-              {CANVAS_COLORS.map((c) => (
-                <MenuItem
-                  key={c.id}
-                  onSelect={() => applyColor(c.id)}
-                  icon={<span className="canvas-swatch" style={{ background: canvasColor(c.id) }} />}
-                >
-                  {c.label}
-                </MenuItem>
-              ))}
+              <ColorItems onPick={applyColor} />
             </Menu>
             {selectedEdges.size > 0 ? (
               <Menu
@@ -612,15 +900,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
                   </Tool>
                 )}
               >
-                <MenuItem onSelect={() => setArrows('end')} icon={<ArrowRight />}>
-                  Pfeil zum Ziel
-                </MenuItem>
-                <MenuItem onSelect={() => setArrows('both')} icon={<ArrowLeftRight />}>
-                  Pfeil in beide Richtungen
-                </MenuItem>
-                <MenuItem onSelect={() => setArrows('none')} icon={<Minus />}>
-                  Linie ohne Pfeil
-                </MenuItem>
+                <ArrowItems onPick={setArrows} />
               </Menu>
             ) : null}
             <Tool label="Löschen (Entf)" onClick={removeSelection} disabled={!hasSelection}>
@@ -641,19 +921,29 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
       )}
       {header}
       <CanvasContext.Provider value={ctx}>
+        {/* Fokusrahmen als ::after, weil die deckende React-Flow-Fläche Rahmen und Schatten der Hülle verdeckt */}
         <div
           ref={wrapperRef}
-          className="canvas-flow flow-surface relative min-h-0 flex-1 outline-none"
+          className="canvas-flow flow-surface relative min-h-0 flex-1 outline-none focus-visible:after:pointer-events-none focus-visible:after:absolute focus-visible:after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
           tabIndex={0}
           role="application"
-          aria-label="Canvas – Doppelklick legt eine Textkarte an, Entf löscht die Auswahl"
+          aria-label={
+            readOnly
+              ? 'Canvas – Pfeiltasten wählen eine Karte, Enter öffnet sie'
+              : 'Canvas – Pfeiltasten wählen eine Karte, Alt+Pfeiltasten verschieben sie, Strg+Pfeiltasten ändern ihre Größe, ' +
+                'V verbindet sie, Enter bearbeitet oder öffnet, Entf löscht, Doppelklick legt eine Textkarte an'
+          }
           onKeyDown={onKeyDown}
+          onBlur={(e) => {
+            if (e.target === e.currentTarget) setConnect(null)
+          }}
           onPaste={onPaste}
           onDragOver={(e) => {
             if (!readOnly && e.dataTransfer.types.includes('Files')) e.preventDefault()
           }}
           onDrop={onDrop}
           onPointerDown={(e) => {
+            setConnect(null)
             // React Flow verhindert den Fokus beim Klicken – Tastenbefehle sollen trotzdem hier ankommen
             if (!isTyping(e.target) && !(e.target as HTMLElement).closest('button, a')) focusFlow()
           }}
@@ -661,8 +951,27 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
             if (readOnly || !(e.target as HTMLElement).classList.contains('react-flow__pane')) return
             addText('', flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
           }}
+          onContextMenu={(e) => {
+            // Freie Fläche: eine Textkarte entsteht an der Stelle wie beim Doppelklick – mit der Tastatur (Fokus auf
+            // der Fläche selbst) wie über die Leiste
+            if ((e.target as HTMLElement).classList.contains('react-flow__pane')) {
+              openContextMenu(e, paneMenu(flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })))
+            } else if (e.target === e.currentTarget) {
+              // Kontextmenütaste mit einer per Pfeiltaste gewählten Karte oder Verbindung: deren Menü
+              const [nodeId] = selectedNodes
+              const [edgeId] = selectedEdges
+              const node = selectedNodes.size === 1 ? data.nodes.find((n) => n.id === nodeId) : undefined
+              const at = node ? e.currentTarget.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`) : null
+              if (node) openContextMenu(e, cardMenu(node), { at })
+              else if (selectedNodes.size === 0 && selectedEdges.size === 1) openContextMenu(e, edgeMenu(edgeId))
+              else openContextMenu(e, paneMenu())
+            }
+          }}
           data-testid="canvas"
         >
+          <p className="sr-only" role="status" aria-live="polite">
+            {announcement}
+          </p>
           <svg className="absolute size-0" aria-hidden="true">
             <defs>
               {edgeColors.map((color, i) => (
@@ -702,6 +1011,15 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
               else openNode(n.data.node)
             }}
             onEdgeDoubleClick={(_e, edge) => startEdit(edge.id)}
+            onNodeContextMenu={(e, n) => {
+              openContextMenu(e, cardMenu(n.data.node))
+              // Wie ein Klick wählt der Rechtsklick die Karte aus – gehört sie schon zur Auswahl, bleibt diese
+              if (e.isDefaultPrevented() && !readOnly && !selectedNodes.has(n.id)) selectOnly([n.id])
+            }}
+            onEdgeContextMenu={(e, edge) => {
+              openContextMenu(e, edgeMenu(edge.id))
+              if (e.isDefaultPrevented() && !selectedEdges.has(edge.id)) selectOnly([], [edge.id])
+            }}
             onPaneClick={() => setEditing(null)}
             connectionMode={ConnectionMode.Loose}
             nodesDraggable={!readOnly}
@@ -731,14 +1049,19 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
                 zum nächsten, um Karten zu verbinden.
               </Panel>
             ) : null}
+            {connect ? (
+              <Panel position="top-center" className="canvas-hint">
+                Verbinden: Ziel mit den Pfeiltasten wählen, Enter verbindet, Escape bricht ab
+              </Panel>
+            ) : null}
             <Panel position="bottom-right" className="flow-panel">
-              <ToolButton label="Verkleinern" onClick={() => void flow.zoomOut({ duration: 150 })}>
+              <ToolButton label="Verkleinern" onClick={zoomOut}>
                 <ZoomOut />
               </ToolButton>
-              <ToolButton label="Vergrößern" onClick={() => void flow.zoomIn({ duration: 150 })}>
+              <ToolButton label="Vergrößern" onClick={zoomIn}>
                 <ZoomIn />
               </ToolButton>
-              <ToolButton label="Alles anzeigen" onClick={() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 200 })}>
+              <ToolButton label="Alles anzeigen" onClick={fitAll}>
                 <Maximize />
               </ToolButton>
             </Panel>

@@ -1,7 +1,7 @@
 'use client'
 // Graph der Wikilinks: Gesamtansicht mit Filtern und lokaler Graph einer Notiz. Nur Anzeige – React Flow zeichnet,
-// die Anordnung berechnet layoutGraph.
-import { useEffect, useId, useMemo, useState } from 'react'
+// die Anordnung berechnet layoutGraph. Mit der Tastatur wandern die Pfeiltasten von Notiz zu Notiz (keyboard.ts).
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -16,7 +16,7 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { Loader2, Maximize, Search, ZoomIn, ZoomOut } from 'lucide-react'
+import { FileText, Link2, Loader2, Maximize, Search, ZoomIn, ZoomOut } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useFolders, useTags } from '@/features/notes/client/queries'
 import { descendantFolderIds, folderPath } from '@/features/notes/tree'
@@ -24,12 +24,17 @@ import { ToolButton } from '@/features/notes/components/toolbar'
 import type { Folder } from '@/features/notes/types'
 import { FLOW_ARIA_LABELS, FLOW_PRO_OPTIONS } from '@/shared/ui/flow'
 import { Select } from '@/shared/ui/input'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
+import { copyText } from '@/shared/client/clipboard'
+import { directionOf, type Direction } from '@/shared/lib/spatial'
 import { useGraph } from '../client/queries'
 import { layoutGraph, neighborhood } from '../layout'
 import { GRAPH_NODE_LIMIT, filterGraph, nodeSize, rootColors } from '../filter'
+import { describeNode, keyTargets, nextFocus, outsideView, viewCenter } from '../keyboard'
 import type { GraphData } from '../types'
 
 type NoteNodeData = { title: string; size: number; color: string; match: boolean; center: boolean }
@@ -80,7 +85,10 @@ function GraphCanvas({
   onOpen: (id: string) => void
 }) {
   const flow = useReactFlow()
+  const openContextMenu = useContextMenu()
+  const toast = useToast()
   const scope = useId()
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const { data: folders = [] } = useFolders()
   const colorOf = useFolderColor(folders)
   const [hover, setHover] = useState<string | null>(null)
@@ -143,14 +151,144 @@ function GraphCanvas({
         stroke: var(--accent); stroke-width: 1.5 }`
   }, [hover, neighbors, positions, scope])
 
+  // ---- Tastatur ----
+
+  /** Notiz mit dem Tastaturfokus. Nehmen Filter oder Tiefe sie aus dem Graphen, gilt sie nicht mehr (focusedId) */
+  const [keyFocus, setKeyFocus] = useState<string | null>(null)
+  /** Ansage für Bildschirmleser */
+  const [status, setStatus] = useState('')
+  const info = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph])
+  const focusedId = keyFocus !== null && info.has(keyFocus) ? keyFocus : null
+
+  // Wie beim Überfahren per CSS statt über die Knotendaten. Ring wie bei Treffern, dazu ein Saum – so hebt sich die
+  // gewählte Notiz auch unter Treffern ab und bleibt beim Abblenden (Suche, Überfahren) voll sichtbar
+  const focusCss = useMemo(() => {
+    if (!focusedId) return ''
+    const node = `[data-graph=${JSON.stringify(scope)}] .react-flow__node[data-id=${JSON.stringify(focusedId)}]`
+    return `${node} { opacity: 1 }
+      ${node} .graph-node { box-shadow: 0 0 0 2px var(--bg-subtle), 0 0 0 4px var(--accent),
+        0 0 0 7px color-mix(in srgb, var(--accent) 35%, transparent) }
+      ${node} .graph-label { display: block; color: var(--text); font-weight: 600 }`
+  }, [focusedId, scope])
+
+  function moveFocus(dir: Direction) {
+    const el = wrapperRef.current
+    if (!el) return
+    const { x, y, zoom } = flow.getViewport()
+    const view = { x, y, zoom, width: el.clientWidth, height: el.clientHeight }
+    const boxes = nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, width: n.data.size, height: n.data.size }))
+    const matches = new Set(nodes.filter((n) => n.data.match).map((n) => n.id))
+    const next = nextFocus(keyTargets(boxes, matches), focusedId, dir, { id: centerId, point: viewCenter(view) })
+    if (!next) return setStatus('Keine weitere Notiz in dieser Richtung.')
+    setKeyFocus(next.id)
+    const n = info.get(next.id)
+    if (n) setStatus(describeNode(n, n.id === centerId))
+    // Nur verschieben, nicht zoomen – sonst verliert man beim Wandern den Überblick
+    if (outsideView(next, view)) {
+      void flow.setCenter(next.x + next.width / 2, next.y + next.height / 2, { zoom, duration: 200 })
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    // Nur auf der Fläche selbst (die Knöpfe unten rechts bedienen sich selbst); Alt+Pfeil bleibt dem Browser (Zurück)
+    if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return
+    const dir = directionOf(e.key)
+    if (dir) {
+      e.preventDefault()
+      return moveFocus(dir)
+    }
+    if (!focusedId) return
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      // Wie ein Klick: Die Notiz in der Mitte des lokalen Graphen ist schon offen
+      if (focusedId !== centerId) onOpen(focusedId)
+    } else if (e.key === 'Escape') {
+      // Nur die Auswahl aufheben – nicht auch noch, was außen herum auf Escape hört
+      e.preventDefault()
+      e.stopPropagation()
+      setKeyFocus(null)
+      setStatus('Auswahl aufgehoben.')
+    }
+  }
+
+  const zoomIn = () => void flow.zoomIn({ duration: 150 })
+  const zoomOut = () => void flow.zoomOut({ duration: 150 })
+  const fitAll = () => void flow.fitView({ padding: 0.15, maxZoom: 1.5, duration: 200 })
+
+  async function copyWikilink(title: string) {
+    if (await copyText(`[[${title}]]`)) toast.success('Wikilink kopiert.')
+    else toast.error('Kopieren nicht möglich.')
+  }
+
+  /** Rechtsklick auf eine Notiz: öffnen (wie ein Klick) oder als Wikilink kopieren */
+  function nodeMenu(n: NoteFlowNode) {
+    return (
+      <>
+        {n.id === centerId ? null : (
+          <>
+            <MenuItem icon={<FileText />} onSelect={() => onOpen(n.id)}>
+              Notiz öffnen
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem icon={<Link2 />} onSelect={() => void copyWikilink(n.data.title)}>
+          Als [[Wikilink]] kopieren
+        </MenuItem>
+      </>
+    )
+  }
+
+  /** Rechtsklick auf die freie Fläche: dieselben Befehle wie die Knöpfe unten rechts */
+  function paneMenu() {
+    return (
+      <>
+        <MenuItem icon={<ZoomIn />} onSelect={zoomIn}>
+          Vergrößern
+        </MenuItem>
+        <MenuItem icon={<ZoomOut />} onSelect={zoomOut}>
+          Verkleinern
+        </MenuItem>
+        <MenuItem icon={<Maximize />} onSelect={fitAll}>
+          Alles anzeigen
+        </MenuItem>
+      </>
+    )
+  }
+
   return (
+    // Fokusrahmen als ::after, weil die deckende React-Flow-Fläche Rahmen und Schatten der Hülle verdeckt
     <div
-      className={cn('graph-flow flow-surface h-full', q && 'graph-searching')}
+      ref={wrapperRef}
+      className={cn(
+        'graph-flow flow-surface relative h-full outline-none focus-visible:after:pointer-events-none focus-visible:after:absolute focus-visible:after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
+        q && 'graph-searching',
+      )}
+      tabIndex={0}
+      role="application"
+      aria-label={`${centerId ? 'Lokaler Graph' : 'Graph der Notizen'} – Pfeiltasten wählen eine Notiz, Enter öffnet sie, Umschalt+F10 zeigt ihr Menü, Escape hebt die Auswahl auf`}
       data-graph={scope}
       data-labels={showLabels ? 'on' : 'off'}
       data-testid="graph"
+      onKeyDown={onKeyDown}
+      onPointerDown={(e) => {
+        // React Flow verhindert den Fokus beim Klicken – die Pfeiltasten sollen danach trotzdem hier ankommen
+        if (!(e.target as HTMLElement).closest('button')) wrapperRef.current?.focus({ preventScroll: true })
+      }}
+      onContextMenu={(e) => {
+        // Kontextmenütaste oder Umschalt+F10 treffen die Fläche selbst: das Menü der gewählten Notiz, sonst das der Fläche
+        const focused = e.target === e.currentTarget && focusedId ? nodes.find((n) => n.id === focusedId) : undefined
+        const at = focused ? wrapperRef.current?.querySelector(`.react-flow__node[data-id="${CSS.escape(focused.id)}"]`) : null
+        if (focused) openContextMenu(e, nodeMenu(focused), { at })
+        else if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('react-flow__pane')) {
+          openContextMenu(e, paneMenu())
+        }
+      }}
     >
-      {hoverCss ? <style>{hoverCss}</style> : null}
+      {hoverCss || focusCss ? <style>{[hoverCss, focusCss].join('\n')}</style> : null}
+      <p className="sr-only" aria-live="polite" data-testid="graph-status">
+        {status}
+      </p>
       <ReactFlow<NoteFlowNode>
         nodes={nodes}
         edges={edges}
@@ -158,6 +296,7 @@ function GraphCanvas({
         onNodeClick={(_e, n) => {
           if (n.id !== centerId) onOpen(n.id)
         }}
+        onNodeContextMenu={(e, n) => openContextMenu(e, nodeMenu(n))}
         onNodeMouseEnter={(_e, n) => setHover(n.id)}
         onNodeMouseLeave={() => setHover(null)}
         nodesDraggable={false}
@@ -179,17 +318,13 @@ function GraphCanvas({
       >
         <Background variant={BackgroundVariant.Dots} gap={24} />
         <Panel position="bottom-right" className="flow-panel">
-          <ToolButton label="Verkleinern" keepFocus={false} onClick={() => void flow.zoomOut({ duration: 150 })}>
+          <ToolButton label="Verkleinern" keepFocus={false} onClick={zoomOut}>
             <ZoomOut />
           </ToolButton>
-          <ToolButton label="Vergrößern" keepFocus={false} onClick={() => void flow.zoomIn({ duration: 150 })}>
+          <ToolButton label="Vergrößern" keepFocus={false} onClick={zoomIn}>
             <ZoomIn />
           </ToolButton>
-          <ToolButton
-            label="Alles anzeigen"
-            keepFocus={false}
-            onClick={() => void flow.fitView({ padding: 0.15, maxZoom: 1.5, duration: 200 })}
-          >
+          <ToolButton label="Alles anzeigen" keepFocus={false} onClick={fitAll}>
             <Maximize />
           </ToolButton>
         </Panel>
@@ -324,7 +459,7 @@ export function LocalGraph({ noteId }: { noteId: string }) {
             </button>
           ))}
         </div>
-        {graph ? (
+        {graph && graph.nodes.length > 0 ? (
           <span className="text-xs text-faint">
             {graph.nodes.length - 1} {graph.nodes.length === 2 ? 'Notiz' : 'Notizen'}
           </span>

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { EditorView } from '@codemirror/view'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
-  ChevronDown,
   ChevronRight,
   Cloud,
   CloudOff,
@@ -36,6 +35,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
+import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
@@ -45,7 +45,8 @@ import { HistoryDialog } from './dialogs'
 import { ShareDialog } from '@/features/sharing/components/ShareDialog'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
+import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
+import { MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
@@ -126,9 +127,15 @@ function StatusIndicator({ status }: { status: NoteSyncStatus }) {
     error: { icon: <AlertTriangle className="size-3.5" />, label: 'Fehler', cls: 'text-danger' },
   }[status.state]
   return (
-    <span className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)} title={status.error ?? map.label} data-testid="save-status">
+    <span
+      className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)}
+      title={status.error ?? map.label}
+      data-testid="save-status"
+    >
       {map.icon}
-      <span className="hidden sm:inline">{map.label}</span>
+      {/* Auf dem Handy nur das Symbol – vorlesbar bleibt der Zustand trotzdem. Bewusst keine Live-Region: Beim Tippen
+          würde sonst jedes Speichern angesagt */}
+      <span className="sr-only sm:not-sr-only">{map.label}</span>
     </span>
   )
 }
@@ -568,6 +575,107 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     note.content === '' && (note.version === 0 || (isVisualFormat(note.format) && sync.wasCreatedHere(note.id))),
   )
 
+  const openContextMenu = useContextMenu()
+  // Rechtsklick neben das Blatt (Tisch, Kopfzeile, Mindmap und Canvas ohne eigenes Menü): Ansicht und Aktionen
+  const modeItems = (
+    <>
+      {effectiveMode !== 'edit' ? (
+        <MenuItem icon={<PenLine />} onSelect={() => setMode('edit')}>
+          Bearbeiten
+        </MenuItem>
+      ) : null}
+      {effectiveMode !== 'read' ? (
+        <MenuItem icon={<BookOpen />} onSelect={() => setMode('read')}>
+          Lesen
+        </MenuItem>
+      ) : null}
+      {canSplit && effectiveMode !== 'split' ? (
+        <MenuItem icon={<Columns2 />} onSelect={() => setMode('split')}>
+          Geteilt
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+    </>
+  )
+  const editorMenu = (e: React.MouseEvent) => {
+    const view = cmRef.current?.view()
+    const items = view ? <MarkdownEditorMenu view={view} markdown={format !== 'text'} onCreateCard={createCard} /> : null
+    openContextMenu(e, items, { text: true })
+  }
+  const readMenu = (e: React.MouseEvent) =>
+    openContextMenu(
+      e,
+      <ReadViewMenu
+        target={e.target as Element}
+        links={previewLinks}
+        onCreateCard={createCard}
+        onEdit={effectiveMode === 'read' ? () => setMode('edit') : undefined}
+      />,
+      { text: true },
+    )
+
+  // Aktionen der Notiz: im Menü „⋮“ und beim Rechtsklick neben das Blatt (auf den Tisch)
+  const actionItems = (
+    <>
+      <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
+        {copyLabel}
+      </MenuItem>
+      {format === 'markdown' || format === 'mindmap' ? (
+        <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
+          Ohne Properties kopieren
+        </MenuItem>
+      ) : null}
+      <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
+        Als [[Wikilink]] kopieren
+      </MenuItem>
+      <MenuItem icon={<Download />} onSelect={download}>
+        Als {noteExtension(format)} herunterladen
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
+        {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
+      </MenuItem>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
+        Verschieben …
+      </MenuItem>
+      <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
+        Format …
+      </MenuItem>
+      {sharing && format !== 'canvas' ? (
+        <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
+          Teilen …
+        </MenuItem>
+      ) : null}
+      <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
+        Verlauf …
+      </MenuItem>
+      <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
+        Informationen
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<Layers />} onSelect={createCard}>
+        Karteikarte erstellen
+      </MenuItem>
+      <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
+        Karteikarten aus Notiz …
+      </MenuItem>
+      {canQuiz(format) ? (
+        <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
+          Abfragen
+        </MenuItem>
+      ) : null}
+      {linkedCards > 0 ? (
+        <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
+          {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
+        In den Papierkorb
+      </MenuItem>
+    </>
+  )
+
   const titleInput = (
     <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
   )
@@ -615,7 +723,19 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     )
 
   return (
-    <div ref={rootRef} className="@container flex h-full flex-col">
+    <div
+      ref={rootRef}
+      className="@container flex h-full flex-col"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            {modeItems}
+            {actionItems}
+          </>,
+        )
+      }
+    >
       {/* Kopfzeile */}
       {/* Safe-Area-Abstand außen, Zeilenhöhe innen: sonst überschreibt pt-safe das obere Padding */}
       <header className="pt-safe border-b border-border">
@@ -632,9 +752,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
             {path.map((f) => (
               <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
-                <button type="button" onClick={() => app.go({ kind: 'folder', id: f.id })} className="truncate hover:text-fg">
+                <NavLink to={{ kind: 'folder', id: f.id }} className="truncate hover:text-fg">
                   {f.name}
-                </button>
+                </NavLink>
                 <ChevronRight className="size-3.5 shrink-0 text-faint" />
               </span>
             ))}
@@ -706,69 +826,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Button>
             )}
           >
-            <MenuItem icon={<Copy />} onSelect={() => copy('content')}>
-              {copyLabel}
-            </MenuItem>
-            {format === 'markdown' || format === 'mindmap' ? (
-              <MenuItem icon={<FileText />} onSelect={() => copy('body')}>
-                Ohne Properties kopieren
-              </MenuItem>
-            ) : null}
-            <MenuItem icon={<Link2 />} onSelect={() => copy('link')}>
-              Als [[Wikilink]] kopieren
-            </MenuItem>
-            <MenuItem icon={<Download />} onSelect={download}>
-              Als {noteExtension(format)} herunterladen
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
-              {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
-            </MenuItem>
-            <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
-              Verschieben …
-            </MenuItem>
-            <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
-              Format …
-            </MenuItem>
-            {sharing && format !== 'canvas' ? (
-              <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
-                Teilen …
-              </MenuItem>
-            ) : null}
-            <MenuItem icon={<History />} onSelect={() => setHistoryOpen(true)} disabled={!serverNote}>
-              Verlauf …
-            </MenuItem>
-            <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
-              Informationen
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem icon={<Layers />} onSelect={createCard}>
-              Karteikarte erstellen
-            </MenuItem>
-            <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
-              Karteikarten aus Notiz …
-            </MenuItem>
-            {canQuiz(format) ? (
-              <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
-                Abfragen
-              </MenuItem>
-            ) : null}
-            {linkedCards > 0 ? (
-              <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
-                {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
-              </MenuItem>
-            ) : null}
-            <MenuSeparator />
-            <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
-              In den Papierkorb
-            </MenuItem>
+            {actionItems}
           </Menu>
         </div>
       </header>
 
       {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} onResolved={applyRemote} /> : null}
       {status.state === 'error' ? (
-        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger">
+        <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
           <AlertTriangle className="size-4 shrink-0" />
           <span className="flex-1">{status.error}</span>
           <Button size="sm" onClick={() => void sync.flush(note.id)}>
@@ -806,22 +871,24 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             header={titleInput}
           />
         ) : (
-          <div className="flex min-h-0 flex-col overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
-              {titleInput}
-              <div className="min-h-0 flex-1">
-                <Editor
-                  key={format}
-                  ref={cmRef}
-                  initialDoc={content}
-                  onChange={onChange}
-                  onSave={() => void sync.flush(note.id)}
-                  onPasteFiles={upload}
-                  data={completionData}
-                  autoFocus={autoFocus}
-                  spellcheck={spellcheck === '1'}
-                  plain={format === 'text'}
-                />
+          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+            <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
+              <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
+                {titleInput}
+                <div className="min-h-0 flex-1">
+                  <Editor
+                    key={format}
+                    ref={cmRef}
+                    initialDoc={content}
+                    onChange={onChange}
+                    onSave={() => void sync.flush(note.id)}
+                    onPasteFiles={upload}
+                    data={completionData}
+                    autoFocus={autoFocus}
+                    spellcheck={spellcheck === '1'}
+                    plain={format === 'text'}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -829,20 +896,23 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         {visual && effectiveMode === 'split' ? (
           <div className="flex min-h-0 flex-col">{visualEditor}</div>
         ) : !visual && effectiveMode !== 'edit' ? (
-          <div className="min-h-0 overflow-y-auto">
+          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+            <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
+              {effectiveMode === 'read' ? (
+                <h1
+                  className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
+                  style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+                >
+                  {title}
+                </h1>
+              ) : (
+                <div className="pt-6" />
+              )}
+              {readView}
+            </div>
             {effectiveMode === 'read' ? (
-              <h1
-                className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
-                style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
-              >
-                {title}
-              </h1>
-            ) : (
-              <div className="pt-6" />
-            )}
-            {readView}
-            {effectiveMode === 'read' ? (
-              <>
+              // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
+              <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
                 {linkedCards > 0 || cardsInNote ? (
                   <NoteCards
                     count={linkedCards}
@@ -850,11 +920,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                     onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                   />
                 ) : null}
-                <div className="mx-auto max-w-[44rem] space-y-4 px-5 pb-16">
-                  <Backlinks id={note.id} />
-                  {hasLinks ? <NoteGraph id={note.id} /> : null}
-                </div>
-              </>
+                <Backlinks id={note.id} />
+                {hasLinks ? <NoteGraph id={note.id} /> : null}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -922,6 +990,7 @@ function TitleInput({
   /** Kleine Zeile über Mindmap und Canvas */
   compact?: boolean
 }) {
+  const errorId = useId()
   return (
     <div className={cn('w-full', compact ? 'border-b border-border px-4 py-1.5' : 'px-5 pt-6 pb-1')}>
       <input
@@ -936,6 +1005,7 @@ function TitleInput({
         placeholder="Titel"
         aria-label="Titel"
         aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
         className={cn(
           'w-full bg-transparent leading-tight font-bold tracking-tight outline-none placeholder:text-faint',
           compact && 'text-lg',
@@ -943,7 +1013,11 @@ function TitleInput({
         style={compact ? undefined : { fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
         data-testid="note-title"
       />
-      {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <p id={errorId} className="mt-1 text-sm text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -951,32 +1025,29 @@ function TitleInput({
 /** Lesemodus: Karteikarten aus dieser Notiz */
 function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
   return (
-    <div className="mx-auto max-w-[44rem] px-5 pb-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
-        <Layers className="size-4 text-muted" />
-        <span className="flex-1 text-muted">
-          {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
-        </span>
-        {count > 0 ? (
-          <>
-            <Button size="sm" variant="ghost" onClick={() => onLearn('learn')}>
-              <GraduationCap className="size-4" /> Lernen
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onLearn('practice')}>
-              <Dumbbell className="size-4" /> Üben
-            </Button>
-          </>
-        ) : null}
-        <Button size="sm" variant="ghost" onClick={onCreate}>
-          <Layers className="size-4" /> Karten erstellen
-        </Button>
-      </div>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
+      <Layers className="size-4 text-muted" />
+      <span className="flex-1 text-muted">
+        {count > 0 ? `${count} ${count === 1 ? 'Karteikarte' : 'Karteikarten'} aus dieser Notiz` : 'Diese Notiz enthält Karteikarten-Fragen'}
+      </span>
+      {count > 0 ? (
+        <>
+          <Button size="sm" variant="ghost" onClick={() => onLearn('learn')}>
+            <GraduationCap className="size-4" /> Lernen
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onLearn('practice')}>
+            <Dumbbell className="size-4" /> Üben
+          </Button>
+        </>
+      ) : null}
+      <Button size="sm" variant="ghost" onClick={onCreate}>
+        <Layers className="size-4" /> Karten erstellen
+      </Button>
     </div>
   )
 }
 
 function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
-  const app = useApp()
   const { data = [] } = useBacklinks(id)
   if (data.length === 0) {
     return compact ? <p className="text-sm text-muted">Keine anderen Notizen verlinken hierher.</p> : null
@@ -989,9 +1060,9 @@ function Backlinks({ id, compact }: { id: string; compact?: boolean }) {
       <ul className="space-y-1">
         {data.map((b) => (
           <li key={b.id}>
-            <button type="button" onClick={() => app.go({ kind: 'note', id: b.id })} className="text-sm text-accent-text hover:underline">
+            <NavLink to={{ kind: 'note', id: b.id }} className="text-sm text-accent-text hover:underline">
               {b.title}
-            </button>
+            </NavLink>
           </li>
         ))}
       </ul>
@@ -1010,10 +1081,14 @@ function NoteGraph({ id }: { id: string }) {
         aria-expanded={open === '1'}
         className="flex w-full items-center gap-1 p-4 text-sm font-semibold text-muted hover:text-fg"
       >
-        {open === '1' ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        <ChevronRight className={cn('size-4 transition-transform', open === '1' && 'rotate-90')} />
         Lokaler Graph
       </button>
-      {open === '1' ? <LocalGraph noteId={id} /> : null}
+      {open === '1' ? (
+        <div className="animate-fade-in">
+          <LocalGraph noteId={id} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1030,7 +1105,7 @@ function ConflictBanner({
 }) {
   const server = status.serverNote
   return (
-    <div className="border-b border-danger/30 bg-danger-soft px-4 py-3 text-sm">
+    <div className="border-b border-danger/30 bg-danger-soft px-4 py-3 text-sm" role="alert">
       <div className="flex items-start gap-2 text-danger">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <p>

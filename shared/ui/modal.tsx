@@ -1,8 +1,26 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from './cn'
 import { Button } from './button'
+
+/**
+ * Schließen per Klick auf den Hintergrund eines <dialog>. Der Klick muss dort auch begonnen haben: Wer Text im
+ * Dialog markiert und die Maus außerhalb loslässt, löst sonst ebenfalls einen Klick auf den Hintergrund aus – und
+ * verliert, was er eingetippt hat.
+ */
+export function useBackdropPress(ref: React.RefObject<HTMLDialogElement | null>) {
+  const pressed = useRef(false)
+  return (onClose: () => void) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      pressed.current = e.target === ref.current
+    },
+    onClick: (e: React.MouseEvent) => {
+      if (pressed.current && e.target === ref.current) onClose()
+      pressed.current = false
+    },
+  })
+}
 
 /** Dialog auf Basis von <dialog> (Fokusfalle, Escape, oberste Ebene). */
 export function Modal({
@@ -25,27 +43,35 @@ export function Modal({
   className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const id = useId()
+  const backdropPress = useBackdropPress(ref)
+  // Inhalt erst einhängen, wenn der Dialog offen ist: Sonst greift autoFocus darin nicht – das Feld wäre beim
+  // Einhängen noch unsichtbar, und showModal() setzte den Fokus danach auf den ersten Knopf („Schließen“)
+  const [shown, setShown] = useState(false)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current
     if (!dialog) return
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
+    setShown(open)
   }, [open])
 
   return (
     <dialog
       ref={ref}
+      aria-labelledby={`${id}-title`}
+      aria-describedby={description ? `${id}-description` : undefined}
       onCancel={(e) => {
         e.preventDefault()
+        // React reicht onCancel an umgebende Dialoge weiter: Escape in einer Rückfrage schlösse sonst auch den Dialog,
+        // aus dem sie kommt
+        e.stopPropagation()
         onClose()
       }}
-      onClick={(e) => {
-        // Klick auf den Hintergrund schließt
-        if (e.target === ref.current) onClose()
-      }}
+      {...backdropPress(onClose)}
       className={cn(
-        'm-auto w-[calc(100%-1.5rem)] max-h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl border border-border bg-elevated p-0 text-fg shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px] open:animate-pop-in',
+        'm-auto w-[calc(100%-1.5rem)] max-h-[calc(100dvh-2rem)] overflow-hidden overscroll-contain rounded-2xl border border-border bg-elevated p-0 text-fg shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px] open:animate-pop-in open:backdrop:animate-fade-in',
         size === 'sm' && 'max-w-sm',
         size === 'md' && 'max-w-lg',
         size === 'lg' && 'max-w-2xl',
@@ -53,18 +79,24 @@ export function Modal({
         className,
       )}
     >
-      {open ? (
+      {open && shown ? (
         <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
           <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{title}</h2>
-              {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
+              <h2 id={`${id}-title`} className="text-lg font-semibold break-words">
+                {title}
+              </h2>
+              {description ? (
+                <p id={`${id}-description`} className="mt-1 text-sm break-words text-muted">
+                  {description}
+                </p>
+              ) : null}
             </div>
             <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Schließen" className="-mr-1.5 -mt-1">
               <X className="size-4.5" />
             </Button>
           </div>
-          {children ? <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{children}</div> : null}
+          {children ? <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">{children}</div> : null}
           {footer ? (
             <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-subtle px-5 py-3">{footer}</div>
           ) : null}

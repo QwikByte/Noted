@@ -212,7 +212,7 @@ test('Notiz mit Vorlage schreiben, Vorschau prüfen und als Markdown kopieren', 
   await shot(page, '11-search')
 
   // Backlinks
-  await page.getByRole('button', { name: /Folgen und Grenzwerte/ }).first().click()
+  await page.getByRole('link', { name: /Folgen und Grenzwerte/ }).first().click()
   await page.getByRole('radio', { name: 'Lesen' }).click()
   await expect(page.getByText('Verlinkt in 1 Notiz')).toBeVisible()
 })
@@ -235,7 +235,7 @@ test('Mobile Ansicht', async ({ browser }) => {
   await shot(page, '13-mobile-drawer')
   const drawer = page.getByRole('complementary')
   await drawer.getByRole('button', { name: /^Analysis I/ }).click()
-  await drawer.getByRole('button', { name: 'Folgen und Grenzwerte' }).click()
+  await drawer.getByRole('link', { name: 'Folgen und Grenzwerte' }).click()
   await expect(page.getByTestId('note-title')).toBeVisible()
   await shot(page, '14-mobile-editor')
   await page.getByRole('radio', { name: 'Lesen' }).click()

@@ -191,8 +191,8 @@ export function createExtensions(opts: {
     placeholderExt(opts.placeholder ?? 'Schreib los …'),
     EditorView.contentAttributes.of(
       opts.spellcheck === false
-        ? { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'sentences', lang: 'de' }
-        : { spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', lang: 'de' },
+        ? { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'sentences', lang: 'de', 'aria-label': 'Notiztext' }
+        : { spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', lang: 'de', 'aria-label': 'Notiztext' },
     ),
     EditorView.updateListener.of((u) => {
       if (u.docChanged && !u.transactions.some((tr) => tr.annotation(externalChange))) {

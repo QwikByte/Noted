@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { ChartColumn, CloudOff, Dumbbell, FileArchive, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
-import { Menu, MenuItem } from '@/shared/ui/menu'
+import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
@@ -40,6 +40,7 @@ export function CardsView() {
   const [creating, setCreating] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importingPackage, setImportingPackage] = useState(false)
+  const openContextMenu = useContextMenu()
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -54,8 +55,33 @@ export function CardsView() {
   const due = rows.reduce((s, r) => s + r.counts.due, 0)
   const total = data?.cards.length ?? 0
 
+  // Dieselben Einträge im Menü „…“ und beim Rechtsklick auf die freie Fläche
+  const importItems = (
+    <>
+      <MenuItem icon={<FileArchive />} onSelect={() => setImportingPackage(true)}>
+        Stapel importieren …
+      </MenuItem>
+      <MenuItem icon={<Upload />} onSelect={() => setImporting(true)}>
+        Anki-Deck importieren …
+      </MenuItem>
+    </>
+  )
+
   return (
-    <Page>
+    <Page
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            <MenuItem icon={<Plus />} onSelect={() => setCreating(true)}>
+              Neuer Stapel …
+            </MenuItem>
+            {importItems}
+          </>,
+          { text: true, copy: true },
+        )
+      }
+    >
       <PageHeader
         title="Karteikarten"
         subtitle={
@@ -83,12 +109,7 @@ export function CardsView() {
                 </Button>
               )}
             >
-              <MenuItem icon={<FileArchive />} onSelect={() => setImportingPackage(true)}>
-                Stapel importieren …
-              </MenuItem>
-              <MenuItem icon={<Upload />} onSelect={() => setImporting(true)}>
-                Anki-Deck importieren …
-              </MenuItem>
+              {importItems}
             </Menu>
           </>
         }
@@ -166,8 +187,28 @@ function DeckTile({
   onLearn: () => void
   onPractice: () => void
 }) {
+  const openContextMenu = useContextMenu()
   return (
-    <div className="deck-stack flex flex-col rounded-lg border border-border bg-elevated transition-colors hover:border-border-strong">
+    <div
+      className="deck-stack flex flex-col rounded-lg border border-border bg-elevated transition-colors hover:border-border-strong"
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          <>
+            <MenuItem icon={<Layers />} onSelect={onOpen}>
+              Öffnen
+            </MenuItem>
+            <MenuItem icon={<GraduationCap />} onSelect={onLearn} disabled={cards === 0}>
+              Lernen
+            </MenuItem>
+            <MenuItem icon={<Dumbbell />} onSelect={onPractice} disabled={cards === 0}>
+              Üben
+            </MenuItem>
+          </>,
+          { copy: true },
+        )
+      }
+    >
       <button type="button" onClick={onOpen} className="flex flex-1 flex-col gap-1 p-4 pb-3 text-left">
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>

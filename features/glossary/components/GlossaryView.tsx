@@ -3,13 +3,14 @@
 import { useMemo, useState } from 'react'
 import { Copy, Download, FileText, Loader2, MoreVertical, Search } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
+import type { View } from '@/features/workspace/client/nav'
 import { useFolders } from '@/features/notes/client/queries'
 import { folderPath } from '@/features/notes/tree'
 import { CardMarkdown } from '@/features/flashcards/components/CardMarkdown'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { Select } from '@/shared/ui/input'
-import { Menu, MenuItem } from '@/shared/ui/menu'
+import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { copyText } from '@/shared/client/clipboard'
@@ -22,6 +23,13 @@ type Tab = 'terms' | 'formulas'
 
 const matches = (q: string, ...texts: (string | null)[]) => texts.some((t) => t?.toLowerCase().includes(q))
 
+/** Fundstelle eines Eintrags: die Notiz, mit Überschrift an dieser Stelle */
+const sourceView = (source: GlossarySource): View => ({
+  kind: 'note',
+  id: source.noteId,
+  heading: source.heading ?? undefined,
+})
+
 export function GlossaryView({ folder }: { folder?: string }) {
   const app = useApp()
   const toast = useToast()
@@ -29,6 +37,7 @@ export function GlossaryView({ folder }: { folder?: string }) {
   const { data, isLoading, error } = useGlossary(folder ?? null)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<Tab>('terms')
+  const openContextMenu = useContextMenu()
 
   const options = useMemo(
     () =>
@@ -65,8 +74,20 @@ export function GlossaryView({ folder }: { folder?: string }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  // Dieselben Einträge im Menü „…“ und beim Rechtsklick auf die freie Fläche
+  const exportItems = (
+    <>
+      <MenuItem icon={<Copy />} onSelect={() => void copy()} disabled={terms.length + formulas.length === 0}>
+        Als Markdown kopieren
+      </MenuItem>
+      <MenuItem icon={<Download />} onSelect={download} disabled={terms.length + formulas.length === 0}>
+        Als .md herunterladen
+      </MenuItem>
+    </>
+  )
+
   return (
-    <Page>
+    <Page onContextMenu={(e) => openContextMenu(e, exportItems, { text: true, copy: true })}>
       <PageHeader
         title="Glossar und Formeln"
         actions={
@@ -77,12 +98,7 @@ export function GlossaryView({ folder }: { folder?: string }) {
               </Button>
             )}
           >
-            <MenuItem icon={<Copy />} onSelect={() => void copy()} disabled={terms.length + formulas.length === 0}>
-              Als Markdown kopieren
-            </MenuItem>
-            <MenuItem icon={<Download />} onSelect={download} disabled={terms.length + formulas.length === 0}>
-              Als .md herunterladen
-            </MenuItem>
+            {exportItems}
           </Menu>
         }
       />
@@ -164,7 +180,7 @@ function SourceLink({ source, withNote = true }: { source: GlossarySource; withN
   return (
     <button
       type="button"
-      onClick={() => app.go({ kind: 'note', id: source.noteId, heading: source.heading ?? undefined })}
+      onClick={() => app.go(sourceView(source))}
       className="inline-flex max-w-full items-center gap-1 text-xs text-muted hover:text-fg"
       title="In der Notiz zeigen"
     >
@@ -183,6 +199,8 @@ function Empty({ searching, children }: { searching: boolean; children: React.Re
 }
 
 function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean }) {
+  const app = useApp()
+  const openContextMenu = useContextMenu()
   if (terms.length === 0) {
     return (
       <Empty searching={searching}>
@@ -207,7 +225,18 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
           <h2 className="mb-2 border-b border-border pb-1 text-sm font-semibold text-faint">{g.letter}</h2>
           <dl className="space-y-4">
             {g.items.map((t, i) => (
-              <div key={`${t.noteId}-${i}`}>
+              <div
+                key={`${t.noteId}-${i}`}
+                onContextMenu={(e) =>
+                  openContextMenu(
+                    e,
+                    <MenuItem icon={<FileText />} onSelect={() => app.go(sourceView(t))}>
+                      In der Notiz zeigen
+                    </MenuItem>,
+                    { text: true, copy: true },
+                  )
+                }
+              >
                 <dt>
                   <CardMarkdown text={t.term} className="font-semibold" />
                 </dt>
@@ -226,6 +255,7 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
 
 function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; searching: boolean }) {
   const app = useApp()
+  const openContextMenu = useContextMenu()
   if (formulas.length === 0) {
     return (
       <Empty searching={searching}>
@@ -247,13 +277,29 @@ function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; search
       {groups.map((g) => (
         <section key={g.noteId}>
           <h2 className="mb-2 border-b border-border pb-1">
-            <button type="button" onClick={() => app.go({ kind: 'note', id: g.noteId })} className="text-sm font-semibold hover:underline">
+            <button
+              type="button"
+              onClick={() => app.go({ kind: 'note', id: g.noteId })}
+              className="max-w-full text-left text-sm font-semibold break-words hover:underline"
+            >
               {g.title}
             </button>
           </h2>
           <ul className="space-y-3">
             {g.items.map((f, i) => (
-              <li key={i} className="rounded-xl border border-border bg-elevated px-4 py-2">
+              <li
+                key={i}
+                className="rounded-xl border border-border bg-elevated px-4 py-2"
+                onContextMenu={(e) =>
+                  openContextMenu(
+                    e,
+                    <MenuItem icon={<FileText />} onSelect={() => app.go(sourceView(f))}>
+                      In der Notiz zeigen
+                    </MenuItem>,
+                    { text: true, copy: true },
+                  )
+                }
+              >
                 <SourceLink source={f} withNote={false} />
                 <CardMarkdown text={`$$\n${f.tex}\n$$`} className="overflow-x-auto" />
               </li>
