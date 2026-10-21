@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   BookOpenText,
@@ -7,10 +7,7 @@ import {
   Copy,
   Download,
   ExternalLink,
-  File,
-  FileAudio,
   FileText,
-  FileVideo,
   Folder as FolderIcon,
   Loader2,
   RefreshCw,
@@ -31,15 +28,10 @@ import { attachmentsKey, useFiles } from '../client/queries'
 import { formatBytes, formatRelative } from '@/shared/lib/format'
 import { copyText } from '@/shared/client/clipboard'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '../client/upload'
+import { prunePdfPreviews } from '../client/preview'
 import { filesAt, UNLINKED, type FileItem } from '../folders'
 import type { FileEntry, SearchIndexInfo } from '../types'
-
-function FileIcon({ mime }: { mime: string }) {
-  if (mime.startsWith('audio/')) return <FileAudio className="size-6" />
-  if (mime.startsWith('video/')) return <FileVideo className="size-6" />
-  if (mime === 'application/pdf' || mime.startsWith('text/')) return <FileText className="size-6" />
-  return <File className="size-6" />
-}
+import { FilePreview } from './FilePreview'
 
 const filesLabel = (n: number) => `${n} ${n === 1 ? 'Datei' : 'Dateien'}`
 
@@ -58,7 +50,7 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const qc = useQueryClient()
   const toast = useToast()
   const input = useRef<HTMLInputElement>(null)
-  const { data: files = [], isLoading } = useFiles()
+  const { data: files = [], isLoading, isSuccess } = useFiles()
   const { notes } = useNotes()
   const { data: folders = [], isLoading: foldersLoading } = useFolders()
   const [uploading, setUploading] = useState(false)
@@ -70,6 +62,10 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const folder = level && !unlinked ? folders.find((f) => f.id === level) : undefined
   const content = useMemo(() => filesAt(files, notes, folders, level ?? null), [files, notes, folders, level])
   const path = folder ? folderPath(folders, folder.id) : []
+
+  useEffect(() => {
+    if (isSuccess) void prunePdfPreviews(files.map((f) => f.id))
+  }, [isSuccess, files])
 
   async function upload(list: File[]) {
     setUploading(true)
@@ -340,25 +336,20 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
         <button
           type="button"
           onClick={() => app.openPdf(f.filename)}
-          className="flex aspect-[4/3] w-full items-center justify-center bg-subtle text-faint hover:text-muted"
+          className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border bg-subtle text-faint hover:text-muted"
           aria-label={`${f.filename} öffnen`}
         >
-          <FileIcon mime={f.mime} />
+          <FilePreview file={f} />
         </button>
       ) : (
         <a
           href={url}
           target="_blank"
           rel="noopener"
-          className="flex aspect-[4/3] items-center justify-center bg-subtle text-faint"
+          className="flex aspect-[4/3] items-center justify-center overflow-hidden border-b border-border bg-subtle text-faint"
           aria-label={`${f.filename} öffnen`}
         >
-          {f.mime.startsWith('image/') && f.mime !== 'image/heic' ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={f.filename} loading="lazy" className="size-full object-cover" />
-          ) : (
-            <FileIcon mime={f.mime} />
-          )}
+          <FilePreview file={f} />
         </a>
       )}
       <div className="p-2.5">

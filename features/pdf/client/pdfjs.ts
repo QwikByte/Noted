@@ -39,8 +39,18 @@ export const DOCUMENT_OPTIONS = {
 
 /** Eine Seite als PNG – höchstens `maxWidth` Pixel breit, scharf genug für Beschriftungen in Abbildungen */
 export async function renderPdfPage(file: string, page: number, maxWidth = 1600): Promise<{ blob: Blob; pages: number }> {
+  return renderPdfData(await fetchPdf(file), page, maxWidth)
+}
+
+/** Wie renderPdfPage, aber mit bereits geladener Datei; `type` z. B. image/jpeg für kleine Vorschaubilder */
+export async function renderPdfData(
+  data: Uint8Array,
+  page: number,
+  maxWidth: number,
+  type = 'image/png',
+): Promise<{ blob: Blob; pages: number }> {
   const { pdfjs } = await loadPdfjs()
-  const task = pdfjs.getDocument({ data: await fetchPdf(file), ...DOCUMENT_OPTIONS })
+  const task = pdfjs.getDocument({ data, ...DOCUMENT_OPTIONS })
   try {
     const doc = await task.promise
     if (page < 1 || page > doc.numPages) throw new Error(`Das PDF hat ${doc.numPages} ${doc.numPages === 1 ? 'Seite' : 'Seiten'}.`)
@@ -51,7 +61,7 @@ export async function renderPdfPage(file: string, page: number, maxWidth = 1600)
     canvas.width = Math.round(viewport.width)
     canvas.height = Math.round(viewport.height)
     await p.render({ canvas, viewport }).promise
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85))
     if (!blob) throw new Error('Die Seite konnte nicht als Bild gespeichert werden.')
     return { blob, pages: doc.numPages }
   } finally {
