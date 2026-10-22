@@ -54,7 +54,7 @@ export function conflictCopyTitle(title: string): string {
   return `${title} (Konflikt ${stamp})`
 }
 
-class SyncStore {
+export class SyncStore {
   private storageKey = ''
   private drafts = new Map<string, Draft>()
   private status = new Map<string, NoteSyncStatus>()
@@ -71,6 +71,8 @@ class SyncStore {
   private created = new Set<string>()
   /** Notiz, die gerade im Editor offen ist (Konflikte dort nicht automatisch lösen) */
   activeId: string | null = null
+  /** Der lokale Speicher ist voll: Entwürfe liegen nur im Arbeitsspeicher, bis das Schreiben wieder klappt */
+  private memoryOnly = false
 
   start(userId: number) {
     if (this.started) return
@@ -138,16 +140,33 @@ class SyncStore {
     return this.drafts.size > 0
   }
 
+  /** Entwürfe nur im Arbeitsspeicher, weil der lokale Speicher voll ist – sie gehen verloren, wenn der Tab schließt */
+  isMemoryOnly() {
+    return this.memoryOnly
+  }
+
   private persist() {
     if (!this.storageKey) return
     try {
       if (this.drafts.size === 0) localStorage.removeItem(this.storageKey)
       else localStorage.setItem(this.storageKey, JSON.stringify([...this.drafts.values()]))
+      this.setMemoryOnly(false)
     } catch {
-      for (const id of this.drafts.keys()) {
-        this.setStatus(id, { state: 'error', error: 'Lokaler Speicher ist voll – Änderungen sind nur im Arbeitsspeicher.' })
-      }
+      // Kein Fehlerzustand der Entwürfe: Senden geht weiterhin und ist jetzt die einzige Sicherung
+      this.setMemoryOnly(true)
     }
+  }
+
+  private setMemoryOnly(on: boolean) {
+    if (on === this.memoryOnly) return
+    this.memoryOnly = on
+    if (on) window.addEventListener('beforeunload', this.warnBeforeUnload)
+    else window.removeEventListener('beforeunload', this.warnBeforeUnload)
+  }
+
+  /** Nur solange Entwürfe ausschließlich im Arbeitsspeicher liegen: vor dem Schließen des Tabs warnen */
+  private warnBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (this.drafts.size > 0) e.preventDefault()
   }
 
   private setStatus(id: string, s: NoteSyncStatus) {
@@ -403,6 +422,7 @@ class SyncStore {
     this.drafts.clear()
     this.status.clear()
     if (this.storageKey) localStorage.removeItem(this.storageKey)
+    this.setMemoryOnly(false)
     if (this.retryTimer) clearInterval(this.retryTimer)
     this.emit()
   }

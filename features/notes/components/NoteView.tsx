@@ -144,19 +144,34 @@ function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   return wide
 }
 
-function StatusIndicator({ status }: { status: NoteSyncStatus }) {
+function useMemoryOnly(): boolean {
+  return useSyncExternalStore(
+    sync.subscribe,
+    () => sync.isMemoryOnly(),
+    () => false,
+  )
+}
+
+const MEMORY_ONLY_HINT =
+  'Der Speicher des Browsers ist voll – die Änderungen liegen nur im Arbeitsspeicher. ' +
+  'Schließe den Tab nicht, bis wieder eine Verbindung besteht.'
+
+function StatusIndicator({ status, memoryOnly }: { status: NoteSyncStatus; memoryOnly: boolean }) {
+  // Offline und der lokale Speicher voll: Die Änderungen liegen nur im Arbeitsspeicher
+  const unsaved = memoryOnly && status.state === 'offline'
   const map = {
     saved: { icon: <Check className="size-3.5" />, label: 'Gespeichert', cls: 'text-faint' },
     pending: { icon: <Cloud className="size-3.5" />, label: 'Ungespeichert', cls: 'text-faint' },
     saving: { icon: <Loader2 className="size-3.5 animate-spin" />, label: 'Speichert …', cls: 'text-faint' },
     offline: { icon: <CloudOff className="size-3.5" />, label: 'Offline – lokal gesichert', cls: 'text-warning' },
+    unsaved: { icon: <AlertTriangle className="size-3.5" />, label: 'Offline – nicht gesichert', cls: 'text-danger' },
     conflict: { icon: <AlertTriangle className="size-3.5" />, label: 'Konflikt', cls: 'text-danger' },
     error: { icon: <AlertTriangle className="size-3.5" />, label: 'Fehler', cls: 'text-danger' },
-  }[status.state]
+  }[unsaved ? 'unsaved' : status.state]
   return (
     <span
       className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)}
-      title={status.error ?? map.label}
+      title={unsaved ? MEMORY_ONLY_HINT : (status.error ?? map.label)}
       data-testid="save-status"
     >
       {map.icon}
@@ -305,6 +320,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const { data: tags = [] } = useTags()
   const { data: attachments = [] } = useAttachments()
   const status = useSyncStatus(note.id)
+  const memoryOnly = useMemoryOnly()
   const rootRef = useRef<HTMLDivElement>(null)
   const isWide = useIsWide(rootRef, 960)
   const outlineWide = useIsWide(rootRef, OUTLINE_BESIDE_WIDTH)
@@ -987,7 +1003,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Badge>
             ) : null}
           </nav>
-          <StatusIndicator status={status} />
+          <StatusIndicator status={status} memoryOnly={memoryOnly} />
           <Menu
             className="max-h-[60vh] w-72 overflow-y-auto"
             trigger={(p) => (
