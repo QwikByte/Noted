@@ -204,3 +204,55 @@ test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {
   await panel.getByRole('button', { name: 'PDF schließen' }).click()
   await expect(panel).toHaveCount(0)
 })
+
+test('PDF-Viewer räumt beim Schließen auf und lässt Bilder für die Notiz in Ruhe', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Aufräumen.pdf', mimeType: 'application/pdf', buffer: makePdf([['Seite eins'], ['Seite zwei']]) } },
+  })
+  expect(up.status()).toBe(201)
+  const res = await page.request.post('/api/notes', { headers, data: { title: 'Aufräumen', content: '![[Skript Aufräumen.pdf]]\n' } })
+  const noteId = (await res.json()).note.id as string
+
+  // Listener am Dokument zählen (wie die Entwicklerwerkzeuge)
+  const cdp = await page.context().newCDPSession(page)
+  const listeners = async (type: string) => {
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'document' })
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! })
+    return listeners.filter((l) => l.type === type).length
+  }
+
+  // Ausgangslage im Editor – CodeMirror hat eigene Listener am Dokument
+  await page.goto(`/?n=${noteId}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(page.locator('.cm-content')).toBeVisible()
+  const before = { drop: await listeners('drop'), selection: await listeners('selectionchange') }
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  // pdf.js hängt keinen eigenen Drop-Handler an das Dokument
+  expect(await listeners('drop')).toBe(before.drop)
+
+  // Ein Bild, das in die Notiz gezogen wird, landet nicht als Stempel im PDF
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await page.evaluate(() => {
+    const png = Uint8Array.from(
+      atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+      (c) => c.charCodeAt(0),
+    )
+    const data = new DataTransfer()
+    data.items.add(new File([png], 'Foto.png', { type: 'image/png' }))
+    document.querySelector('.cm-content')!.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+  })
+  await expect(page.locator('.cm-content')).toContainText('.png]]')
+  await expect(panel.locator('.stampEditor')).toHaveCount(0)
+
+  // Nach dem Schließen sind keine Listener des Viewers übrig
+  await panel.getByRole('button', { name: 'PDF schließen' }).click()
+  await expect(panel).toHaveCount(0)
+  expect(await listeners('drop')).toBe(before.drop)
+  expect(await listeners('selectionchange')).toBe(before.selection)
+})

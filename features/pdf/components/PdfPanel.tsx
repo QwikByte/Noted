@@ -29,7 +29,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist/legacy/build/pdf.mjs'
-import type { EventBus, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
+import type { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
@@ -171,6 +171,8 @@ export default function PdfPanel({
     let cancelled = false
     const ac = new AbortController()
     let task: PDFDocumentLoadingTask | null = null
+    // Erst setDocument(null) entfernt, was pdf.js an Listenern und Seiten festhält – sonst bliebe jedes geöffnete PDF
+    let opened: { viewer: PDFViewer; linkService: PDFLinkService } | null = null
     pendingPage.current = page ?? loadPositions()[file] ?? 1
     setStatus({ state: 'loading' })
     setSelection(null)
@@ -195,6 +197,9 @@ export default function PdfPanel({
           linkService,
           findController,
           annotationMode: pdfjs.AnnotationMode.ENABLE,
+          // Eigene Markierungen statt der Editoren von pdf.js – die hängen sonst Listener an window und document und
+          // fangen z. B. Bilder ab, die in die Notiz gezogen werden
+          annotationEditorMode: pdfjs.AnnotationEditorType.DISABLE,
           // Beim Schließen Beobachter und Listener des Viewers wieder entfernen (fehlt in den Typen)
           ...{ abortSignal: ac.signal },
         } as ConstructorParameters<typeof V.PDFViewer>[0])
@@ -220,6 +225,7 @@ export default function PdfPanel({
         eventBus.on('updatefindcontrolstate', (e: { matchesCount: Matches }) => setMatches(e.matchesCount))
         viewer.setDocument(doc)
         linkService.setDocument(doc)
+        opened = { viewer, linkService }
         viewerRef.current = viewer
         busRef.current = eventBus
         setNumPages(doc.numPages)
@@ -234,6 +240,8 @@ export default function PdfPanel({
     return () => {
       cancelled = true
       ac.abort()
+      opened?.viewer.setDocument(null)
+      opened?.linkService.setDocument(null)
       viewerRef.current = null
       busRef.current = null
       void task?.destroy()
