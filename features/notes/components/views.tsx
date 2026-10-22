@@ -1,6 +1,6 @@
 'use client'
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BookA,
   BookOpen,
@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Hash,
   Loader2,
+  Lock,
   MoreHorizontal,
   NotebookPen,
   Pencil,
@@ -38,6 +39,8 @@ import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 import { NoteSelectionBar, NoteSelectionMenuItems, SelectButton, SelectionCheckbox } from './SelectionBar'
 import { NavLink } from '@/features/workspace/components/NavLink'
+import { useVaultInfo, useVaultState } from '@/features/vault/client/vault'
+import { requestVault } from '@/features/vault/client/vault-ui'
 
 /** Notizen in Anzeigereihenfolge der Liste – Umschalt-Klick wählt nur innerhalb einer Liste einen Bereich */
 const ListOrderContext = createContext<readonly string[]>([])
@@ -118,6 +121,10 @@ function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult
           <p className="search-snippet line-clamp-2 text-sm text-muted" dangerouslySetInnerHTML={{ __html: snippet }} />
         ) : 'excerpt' in note && note.excerpt ? (
           <p className="line-clamp-1 text-sm text-muted">{note.excerpt}</p>
+        ) : 'vault' in note && note.vault ? (
+          <p className="flex items-center gap-1 text-sm text-faint">
+            <Lock className="size-3.5" /> Im Tresor
+          </p>
         ) : (
           <p className="text-sm text-faint">Noch leer</p>
         )}
@@ -246,9 +253,11 @@ export function HomeNotes() {
 
 export function FolderView({ id }: { id: string }) {
   const app = useApp()
+  const qc = useQueryClient()
   const openContextMenu = useContextMenu()
   const { notes } = useNotes()
   const { data: folders = [], isLoading } = useFolders()
+  const { unlocked } = useVaultState()
   const dropTarget = useDropTarget()
   const dragged = useDraggedIds()
   const folder = folders.find((f) => f.id === id)
@@ -259,6 +268,26 @@ export function FolderView({ id }: { id: string }) {
   const root = useRef<HTMLDivElement>(null)
   // Nur die Notizen sind auswählbar, nicht die Karten der Unterordner
   const selection = useNoteSelection({ order, resetKey: `folder:${id}`, root })
+
+  // Gesperrt sind nur der Wurzelordner des Tresors und dessen Name zu sehen (Unterordner fehlen in der Liste)
+  const lockedVault =
+    !unlocked && (folder?.vault || qc.getQueryData<Folder[]>(keys.folders)?.find((f) => f.id === id)?.vault)
+  if (lockedVault) {
+    return (
+      <Page>
+        <EmptyState
+          icon={<Lock />}
+          title="Tresor – gesperrt"
+          text="Die Notizen im Tresor sind verschlüsselt. Entsperre ihn mit deinem Tresor-Passwort."
+          action={
+            <Button variant="primary" onClick={() => requestVault({ kind: 'unlock' })}>
+              Entsperren
+            </Button>
+          }
+        />
+      </Page>
+    )
+  }
 
   if (!folder) {
     return (
@@ -272,6 +301,7 @@ export function FolderView({ id }: { id: string }) {
     )
   }
 
+  const vaultRoot = folder.vault && folder.nameEnc === null
   // Die ganze Seite nimmt Notizen und Ordner auf (z. B. aus der Seitenleiste), Unterordner und Pfad ebenso
   return (
     <Page>
@@ -320,19 +350,30 @@ export function FolderView({ id }: { id: string }) {
                 <MenuItem icon={<FolderPlus />} onSelect={() => app.openNewFolder(id)}>
                   Neuer Unterordner
                 </MenuItem>
-                <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
-                  Umbenennen
-                </MenuItem>
-                <MenuItem icon={<BookA />} onSelect={() => app.go({ kind: 'glossary', folder: id })}>
-                  Glossar und Formeln
-                </MenuItem>
-                <MenuItem icon={<Files />} onSelect={() => app.go({ kind: 'files', folder: id })}>
-                  Dateien
-                </MenuItem>
-                <MenuSeparator />
-                <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
-                  Löschen
-                </MenuItem>
+                {/* Im Tresor: kein Glossar und keine Dateien; den Wurzelordner nicht umbenennen oder löschen */}
+                {vaultRoot ? null : (
+                  <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
+                    Umbenennen
+                  </MenuItem>
+                )}
+                {folder.vault ? null : (
+                  <>
+                    <MenuItem icon={<BookA />} onSelect={() => app.go({ kind: 'glossary', folder: id })}>
+                      Glossar und Formeln
+                    </MenuItem>
+                    <MenuItem icon={<Files />} onSelect={() => app.go({ kind: 'files', folder: id })}>
+                      Dateien
+                    </MenuItem>
+                  </>
+                )}
+                {vaultRoot ? null : (
+                  <>
+                    <MenuSeparator />
+                    <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
+                      Löschen
+                    </MenuItem>
+                  </>
+                )}
               </Menu>
             </>
           }
@@ -462,6 +503,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
   const [debounced, setDebounced] = useState(initialQuery)
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
+  const { data: vaultInfo } = useVaultInfo()
 
   const [prevInitial, setPrevInitial] = useState(initialQuery)
   if (prevInitial !== initialQuery) {
@@ -485,11 +527,11 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
   const results = search.data?.results ?? []
   const files = search.data?.files ?? []
 
-  // Offline: zumindest Titel und Auszüge lokal durchsuchen
+  // Offline: zumindest Titel und Auszüge lokal durchsuchen – wie online ohne den Tresor
   const offlineResults = useMemo(() => {
     if (!(search.error instanceof NetworkError) || !debounced) return null
     const q = debounced.toLowerCase()
-    return notes.filter((n) => n.title.toLowerCase().includes(q) || n.excerpt.toLowerCase().includes(q))
+    return notes.filter((n) => !n.vault && (n.title.toLowerCase().includes(q) || n.excerpt.toLowerCase().includes(q)))
   }, [search.error, debounced, notes])
 
   // Auswählbar sind die Notiz-Treffer (auch offline), nicht die Treffer in Dateien
@@ -516,7 +558,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
           <EmptyState
             icon={<Search />}
             title="Volltextsuche"
-            text="Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags."
+            text={`Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags.${vaultInfo ? ' Notizen im Tresor werden nicht durchsucht.' : ''}`}
           />
         ) : offlineResults ? (
           <NoteSelectionContext.Provider value={selection}>

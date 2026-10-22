@@ -95,9 +95,13 @@ export function toCrockford(bytes: Uint8Array): string {
   return out.match(/.{1,4}/g)?.join('-') ?? ''
 }
 
+/** Eingabe in Crockford-Base32 vereinheitlichen: groß, ohne Leerzeichen und Bindestriche, O → 0, I/L → 1 */
+export const normalizeCrockford = (text: string) =>
+  text.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
+
 /** Gegenstück zu `toCrockford` – `null`, wenn ein Zeichen nicht passt oder die Länge nicht stimmt */
 export function fromCrockford(text: string, length: number): Uint8Array<ArrayBuffer> | null {
-  const clean = text.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
+  const clean = normalizeCrockford(text)
   if (clean.length !== Math.ceil((length * 8) / 5)) return null
   const out = new Uint8Array(length)
   let value = 0

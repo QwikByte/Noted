@@ -109,18 +109,32 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - **In offene Notiz einfügen** setzt den Text als eigenen Absatz an die Cursorposition (im Lesemodus ans Ende; in einer Mindmap wird jede Zeile ein Unterpunkt, im Canvas eine Textkarte). **Als neue Notiz** legt eine Markdown-Notiz an, deren Titel aus der ersten Zeile kommt – die Ansicht bleibt, „Öffnen“ in der Meldung führt hin. **Leeren** leert ihn. Danach ist der Zettel leer; Einfügen und Leeren lassen sich über die Meldung zurückholen.
   - `Alt + J` setzt den Cursor ins Textfeld, `Esc` schließt den Zettel und springt zurück an die vorherige Stelle im Editor.
 
+**Tresor (Ende-zu-Ende verschlüsselt)**
+
+Notizen im Tresor werden in deinem Browser verschlüsselt, bevor sie den Server erreichen. Ohne dein Tresor-Passwort kann sie niemand lesen – auch nicht der Admin oder wer eine Sicherung der Datenbank hat. Vergisst du Passwort und Wiederherstellungsschlüssel, sind sie verloren. Nicht geschützt bist du, wenn der Server absichtlich verändert wurde oder dein Gerät Schadsoftware hat. Suche, Tags, Rückverweise, Teilen und Karteikarten funktionieren im Tresor nicht.
+
+- **Einrichten** unter **Einstellungen → Tresor**: ein eigenes Tresor-Passwort (mindestens 12 Zeichen, am besten ein Satz aus mehreren Wörtern – nicht dein Anmeldepasswort) und ein **Wiederherstellungsschlüssel** (32 Zeichen in 8 Gruppen) zum Drucken, Speichern oder Kopieren, den du zur Kontrolle einmal teilweise eintippst. Danach gibt es in den Notizen den Ordner **Tresor** mit Schloss; darin lassen sich Unterordner und Notizen in allen Formaten anlegen.
+- **Entsperren** per Klick auf „Tresor“ in der Seitenleiste. Entsperrt ist nur der eine Tab: Der Schlüssel liegt nur in dessen Arbeitsspeicher, Neuladen und Abmelden sperren. **Sperren** geht über das Schloss neben „Tresor“ und im Benutzermenü und wirkt in allen Tabs; außerdem sperrt der Tab nach 5, 15 oder 60 Minuten ohne Eingabe (**Einstellungen → Tresor**, je Gerät, Standard 15). Gesperrt sind Tresor-Notizen nirgends zu sehen, im Papierkorb stehen sie als „Gesperrte Notiz“.
+- **Passwort vergessen?** Im Entsperren-Dialog mit dem Wiederherstellungsschlüssel öffnen (Groß-/Kleinschreibung und Bindestriche sind egal) und ein neues Passwort festlegen. Passwort ändern und einen neuen Wiederherstellungsschlüssel erzeugen geht unter **Einstellungen → Tresor** – dabei wird nur der Schlüssel neu verpackt, keine Notiz neu verschlüsselt. Sind Passwort und Wiederherstellungsschlüssel weg, hilft nur **Tresor löschen …** (Bestätigung durch Eintippen, geht ohne Passwort).
+- **Verschlüsselt** werden Titel, Inhalt, die Namen der Unterordner und der Verlauf (AES-GCM mit 256 Bit; der Schlüssel aus dem Passwort per PBKDF2-SHA-256 mit 600 000 Iterationen, alles mit WebCrypto im Browser). Unverschlüsselt bleiben Format, „angeheftet“, Zeitpunkte, Version, die Ordnerstruktur (ohne Namen) und der Name „Tresor“. Eine veränderte oder vertauschte Notiz wird erkannt und nicht geöffnet.
+- **Was im Tresor nicht geht:** Volltextsuche, Tags (sie werden angezeigt, aber nicht gesammelt), Rückverweise, Graph, Glossar, Teilen, Karteikarten aus der Notiz, Abfragen und Dateien hochladen (Bilder und PDFs wären unverschlüsselt). Wikilinks aus dem Tresor finden alle Notizen, normale Notizen sehen Tresor-Notizen nicht; beim Umbenennen werden Links aus dem Tresor nicht angepasst. Schnellwechsler, Verlauf, Formatwechsel und Vorlagen (eingebaute und normale) funktionieren. Was du kopierst, herunterlädst oder druckst, ist Klartext.
+- **Verschieben** in den Tresor und heraus geht nur Notiz für Notiz über **⋮ → In den Tresor verschieben …** bzw. **Aus dem Tresor verschieben …** (auch beim Ziehen über die Grenze). Hinein werden Verlauf, geteilte Links, Tags und Verweise der Notiz gelöscht; Karteikarten aus ihr bleiben unverschlüsselt im Stapel, wenn du sie nicht mitlöschst. Der bisherige Klartext steckt aber noch in Sicherungen, früheren Exporten und auf anderen Geräten, bis sie wieder online waren – Geheimes deshalb direkt im Tresor anlegen. Heraus ist die Notiz wieder unverschlüsselt und durchsuchbar. Ordner lassen sich nicht über die Grenze verschieben.
+- **Offline** lassen sich Tresor-Notizen entsperren und bearbeiten; auf dem Gerät liegt dabei nur Verschlüsseltes. Rechtschreibprüfung ist im Tresor aus (manche Browser schicken den Text dafür an einen Dienst).
+- **Grenzen:** Wer den Server kontrolliert, kann verändertes JavaScript ausliefern, das beim nächsten Entsperren Passwort oder Inhalte abgreift – das lässt sich bei einer Web-App nicht verhindern. Ebenso wenig schützt der Tresor vor Schadsoftware oder Browser-Erweiterungen, einem entsperrten Tresor auf einem fremden Gerät und einem schwachen Passwort: Wer die Datenbank hat, kann beliebig oft raten. Sichtbar bleibt, dass es einen Tresor gibt, wie viele Notizen er ungefähr wie groß enthält und wann sie geändert wurden. Nach dem Sperren hält die App keine Verweise mehr auf Entschlüsseltes; gezielt aus dem Arbeitsspeicher löschen kann JavaScript es nicht.
+
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
 - Anmerkungen eines PDFs liegen daneben als lesbare Markdown-Datei (`Anhänge/Skript.pdf.anmerkungen.md`: Seite, Zitat, Kommentar). Beim Import eines Exports werden sie übersprungen.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen. Daneben liegt jeder Stapel als verlustfreie `.noted-deck.zip`; beim Import zählt dann nur sie, damit keine Notiz aus der `.md` entsteht.
 - Die Termine liegen als `Kalender.ics` im ZIP.
 - Der Schmierzettel gehört nicht zum Export.
+- Der Tresor liegt nur verschlüsselt im ZIP, als `Tresor.noted-vault`: JSON mit `format: "noted-vault"`, `version: 1`, den Parametern der Schlüsselableitung (`kdf`), den verpackten Schlüsseln (Passwort und Wiederherstellungsschlüssel) sowie Ordnern und Notizen (ohne Papierkorb) als verschlüsselte Umschläge (`nv1.…`). So bleibt der Export ein vollständiges Backup. Importieren lässt sich die Datei noch nicht – der Import überspringt sie mit Hinweis, und in den Tresor lässt sich nichts importieren.
 - Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), Karteikarten-Stapeln (`.noted-deck.zip`), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
 - Jede Änderung wird zuerst lokal auf dem Gerät gesichert und dann synchronisiert. Ohne Netz schreibst du einfach weiter, die Änderungen werden später automatisch nachgesendet.
-- Die App startet auch offline. Zuletzt geladene Notizen sind lesbar.
+- Die App startet auch offline. Zuletzt geladene Notizen sind lesbar – auch die im Tresor, nach dem Entsperren (auf dem Gerät liegen sie nur verschlüsselt).
 - Bearbeitest du dieselbe Notiz auf zwei Geräten, erkennt Noted den Konflikt. Du wählst „Meine Version“, „Andere Version“ oder „Beide behalten“, es geht nichts verloren.
 
 **Benutzer & Sicherheit**
@@ -130,7 +144,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Benutzer anlegen, bearbeiten, deaktivieren und löschen
   - Passwort und MFA zurücksetzen, Sitzungen beenden, gesperrte Konten entsperren
   - Sicherheitsprotokoll
-- Jeder sieht nur die eigenen Notizen; auch der Admin kann fremde Notizen in der Oberfläche nicht öffnen. Technisch könnte ein Admin Passwort und MFA eines Kontos zurücksetzen und sich damit anmelden. Das wird protokolliert, und der Betroffene merkt es, weil sein Passwort danach nicht mehr funktioniert.
+- Jeder sieht nur die eigenen Notizen; auch der Admin kann fremde Notizen in der Oberfläche nicht öffnen. Technisch könnte ein Admin Passwort und MFA eines Kontos zurücksetzen und sich damit anmelden. Das wird protokolliert, und der Betroffene merkt es, weil sein Passwort danach nicht mehr funktioniert. Für den **Tresor** gilt das nicht: Ohne Tresor-Passwort oder Wiederherstellungsschlüssel sieht auch dann niemand mehr als „Tresor – gesperrt“ (löschen ließe er sich, wie das ganze Konto).
 - Weitere Schutzmaßnahmen:
   - Argon2id für Passwörter, verschlüsselt gespeicherte MFA-Schlüssel und Replay-Schutz für TOTP-Codes
   - Begrenzte Anmeldeversuche: nach 10 falschen Passwörtern wird die jeweilige IP-Adresse für dieses Konto 15 Minuten gesperrt (Fremde können dich so nicht aussperren), nach 50 Fehlversuchen insgesamt das ganze Konto
@@ -259,6 +273,8 @@ docker run --rm -v noted-data:/data -v "$PWD":/backup alpine \
 
 Zusätzlich kann jeder Benutzer unter **Einstellungen → Export & Import** jederzeit ein ZIP mit allen Notizen herunterladen.
 
+Zum **Tresor**: Sicherungen enthalten Tresor-Notizen nur verschlüsselt – aber den alten Klartext von Notizen, die erst später in den Tresor verschoben wurden. Nach dem Zurückspielen einer Sicherung gilt das Tresor-Passwort von damals; auf Geräten, die nach einem Passwortwechsel offline waren, bis zur nächsten Verbindung noch das alte.
+
 ### Automatische Updates
 
 Der Server aktualisiert sich selbst, sobald es ein neues **Release** gibt – ein Git-Tag der Form `vX.Y.Z` (Vorabversionen wie `v1.3.0-beta` werden nicht automatisch installiert). Das übernimmt `scripts/auto-update.sh`:
@@ -324,7 +340,7 @@ docker compose start noted
 - **Einzelne Notiz**: **Kopieren** legt das Markdown in die Zwischenablage; im Menü daneben lässt sich die Notiz auch als Datei herunterladen. Der Titel der Notiz ist der Dateiname.
 - **Alles auf einmal**: Lade unter **Einstellungen → Export & Import** das ZIP herunter. Es enthält alle Notizen als Dateien in ihrer Ordnerstruktur, die hochgeladenen Dateien im Ordner `Anhänge/` (mit den Anmerkungen zu PDFs), die Karteikarten als Markdown und als Stapel-Datei (`.noted-deck.zip`) und die Termine als `Kalender.ics`.
 - **Bestehende Notizen übernehmen**: Packe einen Ordner mit Markdown-Dateien als ZIP und importiere ihn. Ordnerstruktur, Notizen und Dateien werden übernommen, versteckte Ordner (z. B. Einstellungen anderer Programme) ignoriert.
-- **Teilen** (**⋮ → Teilen …** in der Notiz): erzeugt einen Link, mit dem Kommilitonen die Notiz ohne Konto lesen können – nicht bearbeiten. Gültig 7 Tage, 30 Tage oder unbegrenzt. Eingebettete Bilder und PDFs der Notiz sind dabei, Links auf andere Notizen erscheinen nur als Text, Canvas lässt sich nicht teilen. Den Link siehst du nur beim Erstellen (gespeichert wird nur ein Hash). Widerrufen kannst du ihn im Dialog oder unter **Einstellungen → Geteilte Links**; dort steht auch, wie oft er geöffnet wurde. Liegt die Notiz im Papierkorb, ist der Link so lange tot. Mit `SHARING=false` ist Teilen für die ganze Instanz abgeschaltet.
+- **Teilen** (**⋮ → Teilen …** in der Notiz): erzeugt einen Link, mit dem Kommilitonen die Notiz ohne Konto lesen können – nicht bearbeiten. Gültig 7 Tage, 30 Tage oder unbegrenzt. Eingebettete Bilder und PDFs der Notiz sind dabei, Links auf andere Notizen erscheinen nur als Text, Canvas lässt sich nicht teilen. Den Link siehst du nur beim Erstellen (gespeichert wird nur ein Hash). Widerrufen kannst du ihn im Dialog oder unter **Einstellungen → Geteilte Links**; dort steht auch, wie oft er geöffnet wurde. Liegt die Notiz im Papierkorb, ist der Link so lange tot. Notizen im Tresor lassen sich nicht teilen; kommt eine geteilte Notiz in den Tresor, sind ihre Links tot. Mit `SHARING=false` ist Teilen für die ganze Instanz abgeschaltet.
 
 Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme machen: `\ / : * ? " < > | # ^ [ ]`.
 
@@ -384,6 +400,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
   sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung
+  vault/                Tresor: Krypto (WebCrypto), Schlüssel im Tab, Sperren, Ver- und Entschlüsseln der Notizen, Verschieben über die Grenze, Einrichten und Einstellungen
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
   scratchpad/           Schmierzettel: ein Text je Konto, lokal zuerst gespeichert, Zusammenführen zwischen Geräten, Übernehmen in Notizen
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben

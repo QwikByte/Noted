@@ -184,7 +184,14 @@ export function ReadViewMenu({
         <MenuItem icon={<FileText />} onSelect={() => links.onOpenNote(noteId, heading)}>
           Notiz öffnen
         </MenuItem>
-        <MenuItem icon={<ExternalLink />} onSelect={() => window.open(viewToUrl({ kind: 'note', id: noteId, heading }), '_blank', 'noopener')}>
+        <MenuItem
+          icon={<ExternalLink />}
+          onSelect={() => {
+            // Überschriften aus dem Tresor nicht in die Adresse (Browserverlauf)
+            const target = links.isVaultNote?.(noteId) ? undefined : heading
+            window.open(viewToUrl({ kind: 'note', id: noteId, heading: target }), '_blank', 'noopener')
+          }}
+        >
           In neuem Tab öffnen
         </MenuItem>
       </>

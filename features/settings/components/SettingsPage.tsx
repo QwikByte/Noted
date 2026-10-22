@@ -28,6 +28,7 @@ import type { SessionInfo } from '@/features/auth/types'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { useShares } from '@/features/sharing/client/queries'
 import { ShareList } from '@/features/sharing/components/ShareList'
+import { VaultSettings } from '@/features/vault/components/VaultSettings'
 
 export function SettingsPage() {
   const user = useUser()
@@ -40,6 +41,7 @@ export function SettingsPage() {
           <PasswordForm />
         </Section>
         <MfaSection />
+        <VaultSettings />
         <SessionsSection />
         <AppearanceSection />
         <SharesSection />
@@ -453,7 +455,8 @@ function DataSection() {
               {(id) => (
                 <Select id={id} value={targetFolder} onChange={(e) => setTargetFolder(e.target.value)}>
                   <option value="">— Oberste Ebene —</option>
-                  {folders.map((f) => (
+                  {/* In den Tresor lässt sich (noch) nicht importieren – der Server kann nicht verschlüsseln */}
+                  {folders.filter((f) => !f.vault).map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name}
                     </option>

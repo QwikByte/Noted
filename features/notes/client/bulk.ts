@@ -3,6 +3,7 @@
 import { useCallback } from 'react'
 import { useToast } from '@/shared/ui/toast'
 import { api } from '@/shared/client/api'
+import { requestVault } from '@/features/vault/client/vault-ui'
 import { useFolders } from './queries'
 import { sync } from './sync'
 import type { NoteBatchAction, NoteBatchResult, NoteSummary } from '../types'
@@ -21,6 +22,7 @@ export function notesLabel(notes: readonly { title: string }[]): string {
 /**
  * Notizen in einen Ordner verschieben (`null` = oberste Ebene) – über die Entwürfe wie beim Bearbeiten, damit es auch
  * offline klappt. Notizen, die schon dort liegen, werden übersprungen. „Rückgängig“ legt jede in ihren bisherigen Ordner.
+ * Über die Grenze des Tresors geht es nur einzeln und über dessen eigenen Dialog (verschlüsseln bzw. entschlüsseln).
  */
 export function useMoveNotes() {
   const toast = useToast()
@@ -29,6 +31,12 @@ export function useMoveNotes() {
     (notes: readonly NoteSummary[], to: string | null) => {
       const moving = notes.filter((n) => n.folderId !== to)
       if (moving.length === 0) return
+      const toVault = !!to && !!folders.find((f) => f.id === to)?.vault
+      if (moving.some((n) => n.vault !== toVault)) {
+        if (moving.length === 1) requestVault({ kind: 'move', note: moving[0], folderId: to })
+        else toast.error('In den Tresor und wieder heraus geht es nur Notiz für Notiz.')
+        return
+      }
       sync.updateMany(
         moving.map((n) => ({ id: n.id, version: n.version, patch: { folderId: to } })),
         { immediate: true },

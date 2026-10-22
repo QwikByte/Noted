@@ -22,6 +22,9 @@ import { Preview } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { formatBytes, formatDateTime, formatRelative } from '@/shared/lib/format'
 import { NOTE_FORMAT_LABELS } from '../format'
+import { useDecrypted, useVaultState } from '@/features/vault/client/vault'
+import { revealNote } from '@/features/vault/client/vault-notes'
+import { VaultError } from '@/features/vault/crypto'
 import type { Note, NoteFormat, NoteSummary, NoteVersion, NoteVersionReason } from '../types'
 
 /** Ordnerliste mit Einrückung für Auswahlfelder. */
@@ -42,21 +45,24 @@ function useFolderOptions(exclude?: Set<string>) {
   }, [folders, exclude])
 }
 
-function FolderSelect({
+export function FolderSelect({
   value,
   onChange,
   exclude,
+  noRoot,
   id,
 }: {
   value: string | null
   onChange: (id: string | null) => void
   exclude?: Set<string>
+  /** Ohne „Oberste Ebene“ (z. B. im Tresor) */
+  noRoot?: boolean
   id?: string
 }) {
   const options = useFolderOptions(exclude)
   return (
     <Select id={id} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
-      <option value="">— Oberste Ebene —</option>
+      {noRoot ? null : <option value="">— Oberste Ebene —</option>}
       {options.map((o) => (
         <option key={o.id} value={o.id}>
           {'   '.repeat(o.depth)}
@@ -82,6 +88,7 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
   const app = useApp()
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
+  const { unlocked } = useVaultState()
   const [defaultFormat, setDefaultFormat] = useDefaultNoteFormat()
   const [format, setFormat] = useState<NoteFormat>(defaultFormat)
   const [templateId, setTemplateId] = useState('empty')
@@ -94,8 +101,9 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
   // Eigene Vorlagen: Notizen im Ordner „Vorlagen“ / „Templates“
   const userTemplates: TemplateChoice[] = useMemo(() => {
     const tplFolders = new Set(folders.filter((f) => TEMPLATE_FOLDER_NAMES.includes(f.name.toLowerCase())).map((f) => f.id))
+    // Tresor-Notizen nie als Vorlage – sonst landete ihr Inhalt in normalen Notizen
     return notes
-      .filter((n) => n.folderId && tplFolders.has(n.folderId))
+      .filter((n) => n.folderId && tplFolders.has(n.folderId) && !n.vault)
       .map((n) => ({ id: `user:${n.id}`, noteId: n.id, name: n.title, description: 'Eigene Vorlage', title: '', format: n.format }))
   }, [notes, folders])
 
@@ -105,6 +113,11 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
     [userTemplates],
   )
   const templates = allTemplates.filter((t) => !t.format || t.format === format)
+  // In den Tresor nur entsperrt
+  const lockedFolders = useMemo(
+    () => (unlocked ? undefined : new Set(folders.filter((f) => f.vault).map((f) => f.id))),
+    [unlocked, folders],
+  )
   const template = templates.find((t) => t.id === templateId) ?? templates[0]
 
   // Beim Öffnen mit den übergebenen Optionen vorbelegen
@@ -224,7 +237,9 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
             />
           )}
         </Field>
-        <Field label="Ordner">{(id) => <FolderSelect id={id} value={folderId} onChange={setFolderId} />}</Field>
+        <Field label="Ordner">
+          {(id) => <FolderSelect id={id} value={folderId} onChange={setFolderId} exclude={lockedFolders} />}
+        </Field>
       </form>
     </Modal>
   )
@@ -258,10 +273,13 @@ export function MoveDialog({
     if (target) setDest(target.kind === 'notes' ? commonFolder(target.notes) : target.folder.parentId)
   }
 
-  const exclude = useMemo(
-    () => (target?.kind === 'folder' ? descendantFolderIds(folders, target.folder.id) : undefined),
-    [target, folders],
-  )
+  // Ordner bleiben auf ihrer Seite des Tresors
+  const exclude = useMemo(() => {
+    if (target?.kind !== 'folder') return undefined
+    const ids = descendantFolderIds(folders, target.folder.id)
+    for (const f of folders) if (f.vault !== target.folder.vault) ids.add(f.id)
+    return ids
+  }, [target, folders])
 
   async function submit() {
     if (!target) return
@@ -302,7 +320,17 @@ export function MoveDialog({
         </>
       }
     >
-      <Field label="Zielordner">{(id) => <FolderSelect id={id} value={dest} onChange={setDest} exclude={exclude} />}</Field>
+      <Field label="Zielordner">
+        {(id) => (
+          <FolderSelect
+            id={id}
+            value={dest}
+            onChange={setDest}
+            exclude={exclude}
+            noRoot={target?.kind === 'folder' && target.folder.vault}
+          />
+        )}
+      </Field>
     </Modal>
   )
 }
@@ -401,6 +429,7 @@ const ignore = () => {}
 export function HistoryDialog({
   noteId,
   title,
+  vault,
   open,
   onClose,
   onRestored,
@@ -408,6 +437,8 @@ export function HistoryDialog({
   noteId: string
   /** Aktueller Titel – ältere Stände mit anderem Titel zeigen ihren Titel an */
   title: string
+  /** Tresor-Notiz: Stände sind verschlüsselt gespeichert und werden hier entschlüsselt */
+  vault: boolean
   open: boolean
   onClose: () => void
   /** Wiederhergestellten Stand in den Editor übernehmen */
@@ -430,12 +461,19 @@ export function HistoryDialog({
 
   const selected = versions.find((v) => v.id === selectedId) ?? versions[0] ?? null
   const detail = useNoteVersion(noteId, open && selected ? selected.id : null)
+  const envelope = vault ? detail.data?.content : undefined
+  const reveal = useMemo(
+    () => (envelope ? { id: noteId, field: 'content' as const, envelope } : null),
+    [noteId, envelope],
+  )
+  const plain = useDecrypted(reveal)
+  const content = !vault ? detail.data?.content : typeof plain === 'string' ? plain : undefined
   const resolveNote = useCallback(
     (target: string) => {
-      const n = app.resolveTitle(target)
+      const n = app.resolveTitle(target, { vault })
       return n ? { id: n.id, title: n.title } : null
     },
-    [app],
+    [app, vault],
   )
 
   async function restore() {
@@ -450,7 +488,7 @@ export function HistoryDialog({
       )
       sync.discard(noteId)
       sync.setKnownVersion(noteId, res.note.version)
-      onRestored(res.note)
+      onRestored(vault ? await revealNote(res.note) : res.note)
       applySavedNote(qc, res.note)
       void qc.invalidateQueries({ queryKey: keys.versions(noteId) })
       void qc.invalidateQueries({ queryKey: keys.tags })
@@ -506,29 +544,31 @@ export function HistoryDialog({
                     {formatDateTime(selected.createdAt)} · {NOTE_FORMAT_LABELS[selected.format].label}
                   </p>
                 </div>
-                <Button size="sm" variant="primary" onClick={() => setConfirming(true)} disabled={!detail.data}>
+                <Button size="sm" variant="primary" onClick={() => setConfirming(true)} disabled={content === undefined}>
                   <RotateCcw className="size-4" /> Diesen Stand wiederherstellen
                 </Button>
               </div>
             ) : null}
             <div className="history-preview min-h-48 flex-1 overflow-y-auto p-3" data-testid="history-preview">
-              {detail.isLoading ? (
-                <Loader2 className="mx-auto my-8 size-5 animate-spin text-faint" />
-              ) : detail.error ? (
+              {detail.error ? (
                 <ErrorText>{errorMessage(detail.error)}</ErrorText>
-              ) : detail.data ? (
+              ) : plain instanceof VaultError ? (
+                <ErrorText>{plain.message}</ErrorText>
+              ) : detail.isLoading || (detail.data && content === undefined) ? (
+                <Loader2 className="mx-auto my-8 size-5 animate-spin text-faint" />
+              ) : detail.data && content !== undefined ? (
                 detail.data.format === 'markdown' || detail.data.format === 'mindmap' ? (
                   <Preview
-                    content={detail.data.content}
+                    content={content}
                     resolveNote={resolveNote}
                     onOpenNote={ignore}
                     onCreateNote={ignore}
                     onOpenTag={ignore}
                   />
                 ) : detail.data.format === 'richtext' ? (
-                  <RichTextView html={detail.data.content} onOpenPdf={ignore} />
+                  <RichTextView html={content} onOpenPdf={ignore} />
                 ) : (
-                  <PlainTextView text={detail.data.content} />
+                  <PlainTextView text={content} />
                 )
               ) : null}
             </div>

@@ -40,7 +40,14 @@ import { cn } from '@/shared/ui/cn'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useNav, type View } from '../client/nav'
 import { usePref } from '@/shared/client/prefs'
-import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/notes/client/queries'
+import {
+  applySavedNote,
+  keys,
+  removeNoteFromCache,
+  useFolders,
+  useNotes,
+  useVaultNoteIds,
+} from '@/features/notes/client/queries'
 import { graphKey } from '@/features/graph/client/queries'
 import { api, errorMessage } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
@@ -48,6 +55,17 @@ import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { validateName } from '@/shared/lib/names'
+import { useVaultInfo, useVaultState, vault } from '@/features/vault/client/vault'
+import {
+  createVaultFolder,
+  createVaultNote,
+  purgeCachedPlaintext,
+  renameVaultFolder,
+  sealPlainDrafts,
+  updateVaultNote,
+} from '@/features/vault/client/vault-notes'
+import { requestVault } from '@/features/vault/client/vault-ui'
+import { VaultDialogs } from '@/features/vault/components/VaultDialogs'
 import type { Folder, Note, NoteSummary } from '@/features/notes/types'
 
 // pdf.js wird erst geladen, wenn ein PDF geöffnet wird
@@ -69,6 +87,21 @@ export default function NotesApp() {
   const qc = useQueryClient()
   const toast = useToast()
   const { notes } = useNotes()
+  const { data: folders = [] } = useFolders()
+  const vaultIds = useVaultNoteIds()
+  const { unlocked } = useVaultState()
+  // Schlüsselmaterial gleich laden: So liegt es im Cache des Service Workers, und Entsperren geht später auch offline
+  useVaultInfo()
+
+  // Klartext aufräumen, den dieses Gerät von Notizen hat, die inzwischen im Tresor liegen (Cache des Service Workers,
+  // Entwürfe) – Entwürfe lassen sich erst entsperrt verschlüsseln
+  useEffect(() => {
+    if (vaultIds.length === 0) return
+    void purgeCachedPlaintext(vaultIds).then((found) => {
+      if (found) void qc.invalidateQueries({ queryKey: keys.tags })
+    })
+    if (unlocked) void sealPlainDrafts(new Set(vaultIds))
+  }, [vaultIds, unlocked, qc])
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Verknüpfungen aus dem Manifest (/?new=1, /?new=lecture) öffnen direkt den Dialog
@@ -114,14 +147,25 @@ export default function NotesApp() {
     }
   }, [qc, toast])
 
+  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor)
   const titleIndex = useMemo(() => {
-    const map = new Map<string, NoteSummary>()
+    const plain = new Map<string, NoteSummary>()
+    const inVault = new Map<string, NoteSummary>()
     // Neueste zuerst, damit bei Namensgleichheit die zuletzt bearbeitete gewinnt
-    for (const n of [...notes].sort((a, b) => a.updatedAt - b.updatedAt)) map.set(linkKey(n.title), n)
-    return map
+    for (const n of [...notes].sort((a, b) => a.updatedAt - b.updatedAt)) {
+      const index = n.vault ? inVault : plain
+      index.set(linkKey(n.title), n)
+    }
+    return { plain, inVault }
   }, [notes])
 
-  const resolveTitle = useCallback((target: string) => titleIndex.get(linkKey(target)) ?? null, [titleIndex])
+  const resolveTitle = useCallback<AppActions['resolveTitle']>(
+    (target, opts) => {
+      const key = linkKey(target)
+      return (opts?.vault ? titleIndex.inVault.get(key) : undefined) ?? titleIndex.plain.get(key) ?? null
+    },
+    [titleIndex],
+  )
 
   const navigate = useCallback(
     (next: View, opts?: { replace?: boolean }) => {
@@ -135,12 +179,23 @@ export default function NotesApp() {
   const [defaultFormat] = useDefaultNoteFormat()
   const createNote = useCallback<AppActions['createNote']>(
     async ({ title, folderId, content = '', format = defaultFormat }) => {
-      const id = crypto.randomUUID()
-      void sync.create({ id, title, folderId, content, format })
+      // Ungefilterte Ordner: Gesperrt fehlen die Unterordner des Tresors in der Liste
+      const inVault = !!folderId && !!qc.getQueryData<Folder[]>(keys.folders)?.find((f) => f.id === folderId)?.vault
+      let id: string
+      if (inVault) {
+        if (!vault.unlocked) {
+          requestVault({ kind: 'unlock' })
+          throw new Error('Entsperre zuerst den Tresor.')
+        }
+        id = await createVaultNote({ title, folderId, content, format })
+      } else {
+        id = crypto.randomUUID()
+        void sync.create({ id, title, folderId, content, format })
+      }
       navigate({ kind: 'note', id })
       return id
     },
-    [navigate, defaultFormat],
+    [navigate, defaultFormat, qc],
   )
 
   // Editoren für formatierten Text, Mindmap und Canvas sowie die Formatumwandlung im Hintergrund laden – so cacht
@@ -439,6 +494,7 @@ export default function NotesApp() {
         {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
         <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
         <DragLayer />
+        <VaultDialogs />
         <MoveDialog target={moveTarget?.target ?? null} onMoved={moveTarget?.onMoved} onClose={() => setMoveTarget(null)} />
         <PromptDialog
           open={!!folderPrompt}
@@ -450,8 +506,14 @@ export default function NotesApp() {
           onClose={() => setFolderPrompt(null)}
           onSubmit={async (name) => {
             if (!folderPrompt) return
-            if ('folder' in folderPrompt) {
+            // Im Tresor nur verschlüsselte Namen
+            const parent = 'folder' in folderPrompt ? null : folders.find((f) => f.id === folderPrompt.parentId)
+            if ('folder' in folderPrompt && folderPrompt.folder.vault) {
+              await renameVaultFolder(folderPrompt.folder.id, name)
+            } else if ('folder' in folderPrompt) {
               await api(`/api/folders/${folderPrompt.folder.id}`, { method: 'PATCH', body: { name } })
+            } else if (parent?.vault) {
+              await createVaultFolder(name, parent.id)
             } else {
               await api('/api/folders', { method: 'POST', body: { name, parentId: folderPrompt.parentId } })
             }
@@ -469,7 +531,8 @@ export default function NotesApp() {
           onClose={() => setRenameTarget(null)}
           onSubmit={async (title) => {
             if (!renameTarget) return
-            sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
+            if (renameTarget.vault) await updateVaultNote(renameTarget.id, renameTarget.version, { title }, { immediate: true })
+            else sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
             setRenameTarget(null)
           }}
         />

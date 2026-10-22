@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo } from 'react'
-import { ChevronRight, FileText, Folder as FolderIcon, FolderOpen, MoreHorizontal, Pin } from 'lucide-react'
+import { ChevronRight, FileText, Folder as FolderIcon, FolderOpen, Lock, LockOpen, MoreHorizontal, Pin } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Menu, useContextMenu } from '@/shared/ui/menu'
 import { cn } from '@/shared/ui/cn'
@@ -11,6 +11,8 @@ import { ROOT, startDrag, useDraggedIds, useDropTarget } from '../client/drag'
 import type { NoteSummary } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 import { NavLink } from '@/features/workspace/components/NavLink'
+import { useVaultState, vault } from '@/features/vault/client/vault'
+import { requestVault } from '@/features/vault/client/vault-ui'
 
 /** Zugeklappter Ordner, über dem beim Ziehen so lange verweilt wird, klappt auf */
 const EXPAND_DELAY_MS = 600
@@ -24,6 +26,7 @@ export function FolderTree() {
   const dragged = useDraggedIds()
   const tree = useMemo(() => buildTree(folders, notes), [folders, notes])
   const openContextMenu = useContextMenu()
+  const { unlocked } = useVaultState()
 
   const activeNoteId = app.view.kind === 'note' ? app.view.id : null
   const activeFolderId = app.view.kind === 'folder' ? app.view.id : null
@@ -70,8 +73,22 @@ export function FolderTree() {
   }
 
   function renderFolder(node: FolderNode) {
-    const open = expanded.has(node.id) || activeAncestors.has(node.id)
+    // Wurzelordner des Tresors: gesperrt zugeklappt, ein Klick fragt nach dem Passwort
+    const vaultRoot = node.vault && node.nameEnc === null
+    const locked = vaultRoot && !unlocked
+    const open = !locked && (expanded.has(node.id) || activeAncestors.has(node.id))
     const count = node.notes.length
+    const icon = vaultRoot ? (
+      locked ? (
+        <Lock className="size-4 shrink-0 text-muted" />
+      ) : (
+        <LockOpen className="size-4 shrink-0 text-accent-text" />
+      )
+    ) : open ? (
+      <FolderOpen className="size-4 shrink-0 text-muted" />
+    ) : (
+      <FolderIcon className="size-4 shrink-0 text-muted" />
+    )
     // Der ganze Block (Ordner samt Inhalt) ist Ablageziel – so landet eine Notiz, die auf eine andere Notiz im Ordner
     // gezogen wird, in diesem Ordner
     return (
@@ -92,16 +109,31 @@ export function FolderTree() {
         >
           <button
             type="button"
-            onClick={() => toggle(node.id, !open)}
+            onClick={() =>
+              locked ? requestVault({ kind: 'unlock', then: () => toggle(node.id, true) }) : toggle(node.id, !open)
+            }
             onPointerDown={(e) => startDrag(e, { kind: 'folder', id: node.id, name: node.name })}
             className="flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-sm select-none [-webkit-touch-callout:none]"
             aria-expanded={open}
+            title={locked ? 'Tresor entsperren' : undefined}
           >
             <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
-            {open ? <FolderOpen className="size-4 shrink-0 text-muted" /> : <FolderIcon className="size-4 shrink-0 text-muted" />}
+            {icon}
             <span className="ml-1 truncate font-medium text-fg/90">{node.name}</span>
+            {locked ? <span className="sr-only">(gesperrt)</span> : null}
             {!open && count > 0 ? <span className="ml-1 text-xs text-faint">{count}</span> : null}
           </button>
+          {vaultRoot && unlocked ? (
+            <button
+              type="button"
+              onClick={() => void vault.lock()}
+              className="flex size-6 items-center justify-center rounded-md text-faint hover:bg-bg hover:text-fg"
+              aria-label="Tresor sperren"
+              title="Tresor sperren"
+            >
+              <Lock className="size-3.5" />
+            </button>
+          ) : null}
           <FolderMenu node={node} />
         </div>
         {open ? (

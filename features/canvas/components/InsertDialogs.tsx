@@ -16,12 +16,15 @@ export type PickedFile = { kind: 'note'; title: string } | { kind: 'attachment';
 export function FilePicker({
   open,
   excludeTitle,
+  vault,
   onClose,
   onPick,
 }: {
   open: boolean
   /** Das Canvas selbst nicht anbieten */
   excludeTitle: string
+  /** Tresor-Notizen nur in einem Canvas im Tresor – sonst stünden ihre Titel unverschlüsselt in dessen Inhalt */
+  vault?: boolean
   onClose: () => void
   onPick: (file: PickedFile) => void
 }) {
@@ -38,7 +41,7 @@ export function FilePicker({
     const q = query.trim()
     const score = (text: string, fallback: number) => (q ? fuzzyScore(q, text) : fallback)
     const fromNotes = notes
-      .filter((n) => n.title.toLowerCase() !== excludeTitle.toLowerCase())
+      .filter((n) => (vault || !n.vault) && n.title.toLowerCase() !== excludeTitle.toLowerCase())
       .map((n) => ({
         key: `n:${n.id}`,
         label: n.title,
@@ -55,7 +58,7 @@ export function FilePicker({
       .filter((i) => i.score >= 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 60)
-  }, [notes, attachments, query, excludeTitle])
+  }, [notes, attachments, query, excludeTitle, vault])
 
   return (
     <Modal open={open} onClose={onClose} title="Notiz oder Datei einfügen" size="md">

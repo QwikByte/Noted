@@ -451,10 +451,13 @@ function FocusStart({ occurrence, onDone }: { occurrence: Occurrence; onDone: ()
   )
 }
 
-/** Mitschrift zum Termin: die gleichnamige Notiz öffnen oder sie mit der Vorlage „Vorlesung“ anlegen */
+/**
+ * Mitschrift zum Termin: die gleichnamige Notiz öffnen oder sie mit der Vorlage „Vorlesung“ anlegen – Notizen im
+ * Tresor sieht der Kalender nicht
+ */
 export function lectureNote(occurrence: Occurrence, notes: NoteSummary[], app: AppActions) {
   const title = noteTitleFor(occurrence)
-  const note = notes.find((n) => n.title.toLowerCase() === title.toLowerCase())
+  const note = notes.find((n) => !n.vault && n.title.toLowerCase() === title.toLowerCase())
   return {
     title,
     note,

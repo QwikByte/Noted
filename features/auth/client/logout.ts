@@ -7,8 +7,11 @@ import { reviewQueue } from '@/features/flashcards/client/flashcards'
 import { focusSessions, GOAL_KEY, SUBJECT_KEY } from '@/features/focus/client/sessions'
 import { pdfAnnotations } from '@/features/pdf/client/annotations'
 import { scratchpad } from '@/features/scratchpad/client/scratchpad'
+import { vault } from '@/features/vault/client/vault'
 
 export async function logout() {
+  // Tresor zuerst sperren – auch in den anderen Tabs
+  await vault.lock()
   // Noch nicht gesendete Lernfortschritte, Fokus-Runden, PDF-Anmerkungen und den Schmierzettel möglichst mitnehmen
   await Promise.all([reviewQueue.flush(), focusSessions.flush(), pdfAnnotations.flush(), scratchpad.flush()])
   try {

@@ -30,7 +30,7 @@ export type Draft = {
   updatedAt: number
 }
 
-type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId' | 'titleEnc'>>
+type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId' | 'titleEnc' | 'vault'>>
 
 export type SyncState ='saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
 
@@ -47,6 +47,12 @@ const SAVE_DELAY = 900
 const RETRY_INTERVAL = 20_000
 
 const SAVED: NoteSyncStatus = { state: 'saved' }
+
+/** Titel der Kopie, die bei „Beide behalten“ entsteht */
+export function conflictCopyTitle(title: string): string {
+  const stamp = new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }).replace(/[:/]/g, '-')
+  return `${title} (Konflikt ${stamp})`
+}
 
 class SyncStore {
   private storageKey = ''
@@ -297,7 +303,8 @@ class SyncStore {
         const serverNote = err.body.note as Note
         this.setKnownVersion(id, serverNote.version)
         this.setStatus(id, { state: 'conflict', serverNote })
-        if (this.activeId !== id) await this.resolveConflict(id, 'copy')
+        // Eine Tresor-Notiz lässt sich nur entsperrt kopieren (neue ID, also neu verschlüsseln) – der Konflikt bleibt
+        if (this.activeId !== id && !draft.vault) await this.resolveConflict(id, 'copy')
       } else if (err instanceof ApiError && err.status === 404 && !draft.isNew) {
         this.setStatus(id, { state: 'error', error: 'Die Notiz wurde auf einem anderen Gerät gelöscht.' })
       } else {
@@ -320,7 +327,8 @@ class SyncStore {
     const draft = this.drafts.get(id)
     const status = this.getStatus(id)
     const serverNote = status.serverNote
-    if (!draft) return
+    // Kopie einer Tresor-Notiz legt die Notizansicht verschlüsselt an (der Umschlag gehört zur alten ID)
+    if (!draft || (mode === 'copy' && draft.vault)) return
     if (mode === 'mine' && serverNote) {
       draft.baseVersion = serverNote.version
       draft.overwrite = true
@@ -335,17 +343,33 @@ class SyncStore {
     this.emit()
     if (serverNote) for (const fn of this.savedListeners) fn(serverNote, { linksUpdated: 0, created: false })
     if (mode === 'copy') {
-      const stamp = new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }).replace(/[:/]/g, '-')
       if (draft.content !== undefined) {
         await this.create({
           id: crypto.randomUUID(),
-          title: `${draft.title ?? serverNote?.title ?? 'Notiz'} (Konflikt ${stamp})`,
+          title: conflictCopyTitle(draft.title ?? serverNote?.title ?? 'Notiz'),
           folderId: draft.folderId ?? serverNote?.folderId ?? null,
           content: draft.content,
           format: draft.format ?? serverNote?.format ?? 'markdown',
         })
       }
     }
+  }
+
+  /**
+   * Klartext-Entwurf zu einer Notiz, die inzwischen im Tresor liegt, durch seine verschlüsselte Fassung ersetzen –
+   * der Server lehnt Klartext dort ab
+   */
+  sealDraft(id: string, sealed: { titleEnc?: string; content?: string }) {
+    const draft = this.drafts.get(id)
+    if (!draft || draft.vault) return
+    const next: Draft = { ...draft, vault: true, title: undefined, rev: draft.rev + 1, updatedAt: Date.now() }
+    if (sealed.titleEnc !== undefined) next.titleEnc = sealed.titleEnc
+    if (sealed.content !== undefined) next.content = sealed.content
+    this.drafts.set(id, next)
+    if (this.getStatus(id).state === 'error') this.setStatus(id, { state: 'pending' })
+    this.persist()
+    this.emit()
+    this.schedule(id, 0)
   }
 
   /** Entwurf als neue Notiz anlegen (z. B. wenn das Original auf dem Server gelöscht wurde). */

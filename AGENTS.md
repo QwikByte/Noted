@@ -45,7 +45,7 @@ e2e/            Browser-Tests (Playwright) über mehrere Features
 Features: `workspace` (App-Rahmen und Startseite, setzt die Features zusammen), `notes`, `mindmap`, `canvas`,
 `attachments`, `flashcards`, `glossary` (Glossar und Formeln), `graph` (Graph der Wikilinks), `focus` (Fokus-Timer),
 `scratchpad` (Schmierzettel), `calendar` (Kalender), `pdf`, `transfer` (Export/Import), `sharing` (Notizen per Link
-teilen), `auth`, `admin`, `settings`, `updates`.
+teilen), `vault` (Tresor: Ende-zu-Ende verschlüsselte Notizen), `auth`, `admin`, `settings`, `updates`.
 
 **Regeln**
 

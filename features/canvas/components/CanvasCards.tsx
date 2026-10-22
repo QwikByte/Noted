@@ -166,6 +166,9 @@ function NoteBody({ id, title }: { id: string; title: string }) {
           ) : (
             <p className="p-3 text-sm text-muted">Nicht verfügbar</p>
           )
+        ) : note.vault ? (
+          // Inhalt einer Tresor-Notiz nur in der Notiz selbst (entschlüsselt)
+          <p className="p-3 text-sm text-muted">Im Tresor – zum Lesen öffnen</p>
         ) : note.format === 'richtext' ? (
           <RichTextView html={note.content} onOpenPdf={open} />
         ) : note.format === 'text' ? (

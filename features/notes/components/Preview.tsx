@@ -39,6 +39,8 @@ async function renderMermaid(root: HTMLElement) {
 export type PreviewLinks = {
   resolveNote: (target: string) => ResolvedNote | null
   onOpenNote: (id: string, heading?: string) => void
+  /** Tresor-Notiz? Deren Überschriften kommen nicht in die Adresse */
+  isVaultNote?: (id: string) => boolean
   onCreateNote: (title: string) => void
   onOpenTag: (tag: string) => void
   /** PDF im eingebauten Viewer öffnen statt in einem neuen Tab */

@@ -80,6 +80,9 @@ export function canMoveTo(
   }
   const folder = folders.find((f) => f.id === item.id)
   if (!folder || folder.parentId === target) return false
+  // Ordner nicht über die Grenze des Tresors – und dessen Wurzelordner gar nicht
+  const targetVault = target !== null && folders.some((f) => f.id === target && f.vault)
+  if (folder.vault !== targetVault || (folder.vault && folder.nameEnc === null)) return false
   return target === null || !descendantFolderIds(folders, folder.id).has(target)
 }
 

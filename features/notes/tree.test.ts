@@ -56,4 +56,18 @@ describe('Verschieben per Drag & Drop', () => {
     expect(canMoveTo({ kind: 'folder', id: 'uni' }, 'uni', notes, folders)).toBe(false)
     expect(canMoveTo({ kind: 'folder', id: 'uni' }, 'ueb', notes, folders)).toBe(false)
   })
+
+  it('verschiebt Ordner nicht über die Grenze des Tresors und dessen Wurzelordner gar nicht', () => {
+    const vaultFolder = (id: string, parentId: string | null): Folder => ({
+      ...folder(id, parentId),
+      vault: true,
+      nameEnc: parentId ? 'nv1.x' : null,
+    })
+    const all = [...folders, vaultFolder('tresor', null), vaultFolder('geheim', 'tresor'), vaultFolder('tief', 'tresor')]
+    expect(canMoveTo({ kind: 'folder', id: 'geheim' }, 'tief', notes, all)).toBe(true)
+    expect(canMoveTo({ kind: 'folder', id: 'geheim' }, 'uni', notes, all)).toBe(false)
+    expect(canMoveTo({ kind: 'folder', id: 'geheim' }, null, notes, all)).toBe(false)
+    expect(canMoveTo({ kind: 'folder', id: 'privat' }, 'tresor', notes, all)).toBe(false)
+    expect(canMoveTo({ kind: 'folder', id: 'tresor' }, 'uni', notes, all)).toBe(false)
+  })
 })

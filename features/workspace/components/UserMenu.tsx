@@ -1,14 +1,16 @@
 'use client'
 import Link from 'next/link'
-import { ChevronsUpDown, LogOut, Settings, Shield } from 'lucide-react'
+import { ChevronsUpDown, Lock, LogOut, Settings, Shield } from 'lucide-react'
 import { useUser } from '@/features/auth/client/current-user'
 import { confirmLogout } from '@/features/auth/client/logout'
 import { Avatar } from '@/shared/ui/avatar'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { ThemeSwitch } from '@/shared/ui/theme-switch'
+import { useVaultState, vault } from '@/features/vault/client/vault'
 
 export function UserMenu() {
   const user = useUser()
+  const { unlocked } = useVaultState()
   return (
     <Menu
       align="left"
@@ -46,6 +48,11 @@ export function UserMenu() {
         </Link>
       ) : null}
       <MenuSeparator />
+      {unlocked ? (
+        <MenuItem icon={<Lock />} onSelect={() => void vault.lock()}>
+          Tresor sperren
+        </MenuItem>
+      ) : null}
       <MenuItem icon={<LogOut />} onSelect={confirmLogout}>
         Abmelden
       </MenuItem>
