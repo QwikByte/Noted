@@ -90,6 +90,25 @@ describe('Warteschlange für Bewertungen', () => {
     expect(store.has(KEY)).toBe(false)
   })
 
+  it('sendet viele offline gesammelte Bewertungen in Blöcken – keine geht verloren', async () => {
+    const q = started()
+    const received: string[] = []
+    // Wie der Server: mehr als 5000 Bewertungen je Anfrage lehnt er ab
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const { reviews } = JSON.parse(init.body as string) as { reviews: CardReview[] }
+      if (reviews.length > 5000) return new Response('{"error":"invalid","message":"x"}', { status: 400, headers: { 'content-type': 'application/json' } })
+      received.push(...reviews.map((r) => r.cardId))
+      return ok()
+    })
+    // Eine Woche offline gelernt: über 5000 verschiedene Kartenseiten stehen aus
+    store.set(KEY, JSON.stringify({ pending: Array.from({ length: 5001 }, (_, i) => review(`c${i}`, 1000 + i)), acked: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await q.flush()
+    expect(new Set(received).size).toBe(5001)
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1)
+    expect(stored().pending).toEqual([])
+  })
+
   it('holt verworfene Karten nicht aus dem Speicher zurück', () => {
     const q = started()
     q.add(review('a', 1000))

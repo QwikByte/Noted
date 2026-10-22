@@ -197,7 +197,8 @@ describe('Lückentext-Karten', () => {
     expect((await save(1)).data.saved).toBe(1)
     // Eine dritte Lücke gibt es nicht
     expect((await save(2)).data.saved).toBe(0)
-    expect((await save(50)).status).toBe(400)
+    // Ungültige Seite: verworfen, ohne die Anfrage abzulehnen
+    expect((await save(50)).data).toEqual({ saved: 0, logged: 0, rejected: 1 })
 
     // Eine Lücke fällt weg: ihr Lernstand auch
     const edited = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { front: 'Nur noch ==sin==' } })
@@ -284,7 +285,11 @@ describe('Lernstand', () => {
     const unknown = { ...first, cardId: crypto.randomUUID() }
     const wrongSide = { ...first, cardId: rev.id, side: 1 as const }
     expect((await save([unknown, wrongSide])).data.saved).toBe(0)
-    expect((await save([{ ...first, ease: 99 }])).status).toBe(400)
+    // Ein ungültiger Eintrag wird einzeln verworfen – die übrigen derselben Anfrage kommen an
+    const third = { cardId: c.id, side: 0 as const, ...schedule(second, 3, t + 1_200_000) }
+    const mixed = await save([{ ...first, ease: 99, reviewedAt: t + 1_800_000 }, third])
+    expect(mixed.data).toEqual({ saved: 1, logged: 0, rejected: 1 })
+    expect((await data()).reviews.find((r) => r.cardId === c.id)).toMatchObject({ reviewedAt: t + 1_200_000 })
 
     const reset = await call(progress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: d.id } })
     expect(reset.data.reset).toBe(1)
@@ -362,11 +367,11 @@ describe('Bewertungsprotokoll und Statistik', () => {
     const log = [entry(t, 3, 'new'), entry(t + 600_000, 1, 'review'), entry(t + 1_200_000, 3, 'review')]
     const send = (body: object) => call(reviews.POST, '/api/reviews', { cookie: token, body })
     const first = await send({ reviews: [{ cardId: c.id, side: 0, ...schedule(null, 3, t + 1_200_000) }], log })
-    expect(first.data).toEqual({ saved: 1, logged: 3 })
+    expect(first.data).toEqual({ saved: 1, logged: 3, rejected: 0 })
     // Erneut gesendet (z. B. Antwort ging verloren) und Einträge fremder Karten: nichts doppelt
     const again = await send({ reviews: [], log: [...log, { ...log[0], cardId: crypto.randomUUID() }] })
-    expect(again.data).toEqual({ saved: 0, logged: 0 })
-    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).status).toBe(400)
+    expect(again.data).toEqual({ saved: 0, logged: 0, rejected: 0 })
+    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).data).toEqual({ saved: 0, logged: 0, rejected: 1 })
     // Ältere Geräte senden noch kein Protokoll
     expect((await send({ reviews: [] })).status).toBe(200)
 

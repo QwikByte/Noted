@@ -109,6 +109,16 @@ describe('Wiederholungsplan', () => {
   })
 })
 
+describe('Leichtigkeit', () => {
+  it('bleibt nach beliebig vielen „Einfach“ bei höchstens 10 – mehr nimmt der Server nicht an', () => {
+    const learned = run([4], NOW - 5 * DAY)
+    expect(schedule({ ...learned, ease: 9.95 }, 4, learned.due).ease).toBe(10)
+    let s: SrsState = learned
+    for (let i = 0; i < 60; i++) s = schedule(s, 4, s.due)
+    expect(s.ease).toBe(10)
+  })
+})
+
 describe('Lernsitzung', () => {
   const deck = { id: 'd1', newPerDay: 3 }
 

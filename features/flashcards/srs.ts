@@ -27,6 +27,8 @@ const GRADUATING_INTERVAL = 1
 const EASY_INTERVAL = 4
 const START_EASE = 2.5
 const MIN_EASE = 1.3
+/** Obergrenze wie auf dem Server (Anki-Importe bringen bis zu 10 mit) */
+const MAX_EASE = 10
 const EASY_BONUS = 1.3
 const HARD_FACTOR = 1.2
 /** Anteil des bisherigen Abstands nach dem Vergessen */
@@ -40,7 +42,7 @@ export const DEFAULT_NEW_PER_DAY = 20
 /** Gewünschte Behaltensrate mit FSRS */
 export const DEFAULT_RETENTION = 0.9
 
-const clampEase = (e: number) => Math.max(MIN_EASE, Math.round(e * 100) / 100)
+const clampEase = (e: number) => Math.min(MAX_EASE, Math.max(MIN_EASE, Math.round(e * 100) / 100))
 const clampInterval = (d: number) => Math.min(MAX_INTERVAL, Math.max(1, Math.round(d)))
 
 /**

@@ -5,7 +5,7 @@
 
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
-import { api, ApiError, NetworkError } from '@/shared/client/api'
+import { api, ApiError } from '@/shared/client/api'
 import { deviceTimeZone, useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
@@ -27,6 +27,8 @@ export const flashcardsKey = ['flashcards'] as const
 
 const FLUSH_DELAY = 1500
 const RETRY_INTERVAL = 30_000
+/** Höchstens so viele Bewertungen pro Anfrage – mehr in mehreren (der Server nimmt bis zu 5000) */
+const REVIEW_BATCH = 1000
 /** Höchstens so viele Protokolleinträge pro Anfrage bzw. im Speicher (älteste fallen zuerst weg) */
 const LOG_BATCH = 5000
 const MAX_LOG = 20_000
@@ -201,22 +203,24 @@ export class ReviewQueue {
     this.load()
     if (this.pending.size === 0 && this.log.size === 0) return
     this.flushing = true
-    const batch = [...this.pending.values()]
-    const logBatch = [...this.log.values()].slice(0, LOG_BATCH)
     try {
-      await api('/api/reviews', { method: 'POST', body: { reviews: batch, log: logBatch } })
-      this.settleLog(logBatch)
-      this.settle(batch, true)
-      // Während des Sendens neu bewertete Karten gleich hinterherschicken
-      if (this.pending.size > 0 || this.log.size > 0) {
-        clearTimeout(this.timer)
-        this.timer = setTimeout(() => void this.flush(), FLUSH_DELAY)
-      }
-    } catch (err) {
-      // Offline oder Serverfehler: später erneut. Als ungültig abgelehnt: verwerfen, sonst hinge es ewig fest.
-      if (!(err instanceof NetworkError) && err instanceof ApiError && (err.status === 400 || err.status === 413)) {
-        this.settleLog(logBatch)
-        this.settle(batch, false)
+      // In Blöcken, bis nichts mehr aussteht – auch was während des Sendens neu bewertet wurde
+      while (this.pending.size > 0 || this.log.size > 0) {
+        const batch = [...this.pending.values()].slice(0, REVIEW_BATCH)
+        const logBatch = [...this.log.values()].slice(0, LOG_BATCH)
+        try {
+          await api('/api/reviews', { method: 'POST', body: { reviews: batch, log: logBatch } })
+          this.settleLog(logBatch)
+          this.settle(batch, true)
+        } catch (err) {
+          // Offline oder Serverfehler: später erneut. Als ungültig abgelehnt: verwerfen, sonst hinge es ewig fest.
+          if (err instanceof ApiError && (err.status === 400 || err.status === 413)) {
+            this.settleLog(logBatch)
+            this.settle(batch, false)
+            continue
+          }
+          return
+        }
       }
     } finally {
       this.flushing = false
