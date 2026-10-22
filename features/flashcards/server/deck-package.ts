@@ -38,7 +38,7 @@ export function deckPackage(userId: number, deck: Deck, cards: Card[]): ZipEntry
 }
 
 /** Dateiname des Pakets, z. B. „Anatomie.noted-deck.zip“ */
-export const deckPackageName = (deck: Pick<Deck, 'name'>) => sanitizeName(deck.name, 'Stapel') + DECK_PACKAGE_EXT
+const deckPackageName = (deck: Pick<Deck, 'name'>) => sanitizeName(deck.name, 'Stapel') + DECK_PACKAGE_EXT
 
 /** Paket eines Stapels zum Herunterladen */
 export function exportDeckPackage(userId: number, deckId: string): { filename: string; entries: ZipEntry[] } {

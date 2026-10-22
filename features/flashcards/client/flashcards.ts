@@ -31,7 +31,7 @@ const RETRY_INTERVAL = 30_000
 const LOG_BATCH = 5000
 const MAX_LOG = 20_000
 
-type Stored = { pending: CardReview[]; acked: CardReview[]; log?: ReviewLogEntry[] }
+type Stored = { pending: CardReview[]; acked: CardReview[]; log: ReviewLogEntry[] }
 
 const logKey = (e: ReviewLogEntry) => `${e.cardId}:${e.side}:${e.reviewedAt}`
 
@@ -108,10 +108,9 @@ export class ReviewQueue {
   private read(): Stored {
     try {
       const raw = JSON.parse(localStorage.getItem(this.storageKey) ?? 'null')
-      if (Array.isArray(raw)) return { pending: raw, acked: [] } // älteres Format
-      return { pending: raw?.pending ?? [], acked: raw?.acked ?? [], log: Array.isArray(raw?.log) ? raw.log : [] }
+      return { pending: raw?.pending ?? [], acked: raw?.acked ?? [], log: raw?.log ?? [] }
     } catch {
-      return { pending: [], acked: [] }
+      return { pending: [], acked: [], log: [] }
     }
   }
 
@@ -122,7 +121,7 @@ export class ReviewQueue {
       !this.dropped.has(r.cardId) && (this.forgotten.get(reviewKey(r.cardId, r.side)) ?? -1) < r.reviewedAt
     for (const r of stored.acked) if (keep(r)) upsert(this.acked, r)
     for (const r of stored.pending) if (keep(r)) upsert(this.pending, r)
-    for (const e of stored.log ?? []) {
+    for (const e of stored.log) {
       const key = logKey(e)
       if (!this.sentLog.has(key) && !this.log.has(key)) this.log.set(key, e)
     }
@@ -297,8 +296,7 @@ export function useFlashcards() {
     const reviews = pending.length ? mergeReviews(query.data.reviews, pending) : query.data.reviews
     const exams = examsByDeck(events ?? [])
     const decks = exams.size ? query.data.decks.map((d) => ({ ...d, exams: exams.get(d.id) })) : query.data.decks
-    // Antworten einer älteren Version (Offline-Cache) haben noch keine FSRS-Parameter
-    return { ...query.data, fsrs: query.data.fsrs ?? null, decks, reviews, states: stateMap(reviews) }
+    return { ...query.data, decks, reviews, states: stateMap(reviews) }
   }, [query.data, pending, events])
   return { ...query, data }
 }
@@ -313,7 +311,7 @@ function patch(qc: QueryClient, fn: (d: FlashcardData) => FlashcardData) {
 
 const byName = (a: Deck, b: Deck) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
 
-export type DeckInput = Partial<Pick<Deck, 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>> & { name: string }
+type DeckInput = Partial<Pick<Deck, 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>> & { name: string }
 
 export async function createDeck(qc: QueryClient, input: DeckInput): Promise<Deck> {
   const { deck } = await api<{ deck: Deck }>('/api/decks', { method: 'POST', body: input })

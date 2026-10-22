@@ -202,7 +202,7 @@ function rawEvents(text: string): RawEvent[] {
   return out
 }
 
-export type IcsImport = {
+type IcsImport = {
   events: ImportedEvent[]
   /** Unlesbar, abgesagt oder über der Grenze */
   skipped: number

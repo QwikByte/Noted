@@ -30,7 +30,7 @@ import { attachmentFromUrl } from '../rich-html'
 import type { PreviewLinks } from './Preview'
 
 /** Wo die Befehle wirken. Ausschneiden und Kopieren laufen über den Editor selbst (er schreibt Text und Format). */
-export type EditTarget = {
+type EditTarget = {
   focus: () => void
   hasSelection: boolean
   paste: (text: string) => void

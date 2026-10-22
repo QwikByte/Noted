@@ -52,15 +52,16 @@ function run(args: string[], env: Record<string, string> = {}) {
 const read = (f: string) => fs.readFileSync(f, 'utf8')
 const calls = () => (fs.existsSync(path.join(fake, 'calls.log')) ? read(path.join(fake, 'calls.log')) : '')
 
-// So schreiben die Installer bis v1.0.3 das Caddyfile (Neuinstallation mit E-Mail)
-const LEGACY = `{
+// Caddyfile einer Installation mit eigenen globalen Optionen vor dem Noted-Eintrag
+const INSTALLED = `{
 \temail alt@example.com
 }
 
-# Noted (eingerichtet von install.sh)
+# >>> Noted – verwaltet von noted-domain, nicht von Hand ändern
 qwikbyte.de {
 \treverse_proxy 127.0.0.1:3000
 }
+# <<< Noted
 `
 
 beforeAll(() => {
@@ -80,7 +81,7 @@ beforeAll(() => {
 afterAll(() => fs.rmSync(base, { recursive: true, force: true }))
 
 beforeEach(() => {
-  fs.writeFileSync(caddyfile, LEGACY)
+  fs.writeFileSync(caddyfile, INSTALLED)
   fs.writeFileSync(path.join(root, '.env'), 'ADMIN_USERNAME=admin\nAPP_URL=https://qwikbyte.de\n')
   for (const f of fs.readdirSync(path.dirname(caddyfile))) {
     if (f !== 'Caddyfile') fs.rmSync(path.join(path.dirname(caddyfile), f))
@@ -96,14 +97,13 @@ describe('noted-domain', () => {
     expect(calls()).toBe('')
   })
 
-  it('stellt eine Installation im bisherigen Format auf die neue Domain um', () => {
+  it('stellt eine Installation auf die neue Domain um', () => {
     const res = run(['https://Notizen.Example.com/', '--yes'])
     expect(res.out).toContain('Fertig: Noted läuft unter https://notizen.example.com')
     expect(res.code).toBe(0)
     const cf = read(caddyfile)
     // alte Domain abgeschaltet, neue verwaltet eingetragen, globale Optionen unverändert
     expect(cf).not.toMatch(/^qwikbyte\.de \{/m)
-    expect(cf).not.toContain('# Noted (eingerichtet von install.sh)')
     expect(cf).toContain('{\n\temail alt@example.com\n}')
     expect(cf).toContain('# >>> Noted – verwaltet von noted-domain, nicht von Hand ändern\nnotizen.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n# <<< Noted\n')
     expect(read(path.join(root, '.env'))).toContain('APP_URL=https://notizen.example.com')
@@ -115,7 +115,7 @@ describe('noted-domain', () => {
     // Sicherung der vorherigen Konfiguration
     const backups = fs.readdirSync(path.dirname(caddyfile)).filter((f) => f.startsWith('Caddyfile.vor-'))
     expect(backups).toHaveLength(1)
-    expect(read(path.join(path.dirname(caddyfile), backups[0]))).toBe(LEGACY)
+    expect(read(path.join(path.dirname(caddyfile), backups[0]))).toBe(INSTALLED)
 
     // erneut: bereits eingestellt → nichts zu tun; ein weiterer Wechsel ersetzt nur den verwalteten Eintrag
     expect(run(['notizen.example.com', '--yes']).out).toContain('nichts zu tun')
@@ -128,10 +128,12 @@ describe('noted-domain', () => {
 
   it('lässt andere Seiten im Caddyfile unberührt', () => {
     const other = `www.meine-seite.de {\n\troot * /var/www\n\tfile_server\n}\n`
-    fs.writeFileSync(caddyfile, `${other}\n# Noted (eingerichtet von install.sh)\nqwikbyte.de {\n\treverse_proxy 127.0.0.1:3000\n}\n`)
+    const after = `\n# Letzte Zeile\n`
+    fs.writeFileSync(caddyfile, `${other}\n${INSTALLED.slice(INSTALLED.indexOf('# >>>'))}${after}`)
     expect(run(['notizen.example.com', '--yes']).code).toBe(0)
     const cf = read(caddyfile)
     expect(cf.startsWith(other)).toBe(true)
+    expect(cf.endsWith(`# <<< Noted\n${after}`)).toBe(true)
     expect(cf).toContain('notizen.example.com {')
     expect(cf).not.toContain('qwikbyte.de')
   })
@@ -140,7 +142,7 @@ describe('noted-domain', () => {
     let res = run(['notizen.example.com', '--yes'], { FAKE_DNS: '203.0.113.9', FAKE_PUBLIC_IP: '198.51.100.1' })
     expect(res.code).toBe(1)
     expect(res.out).toContain('zeigt nicht auf diesen Server')
-    expect(read(caddyfile)).toBe(LEGACY)
+    expect(read(caddyfile)).toBe(INSTALLED)
     res = run(['notizen.example.com', '--yes'], { FAKE_DNS: '' })
     expect(res.code).toBe(1)
     expect(res.out).toContain('lässt sich nicht auflösen')
@@ -153,7 +155,7 @@ describe('noted-domain', () => {
     const res = run(['notizen.example.com', '--yes'], { FAKE_HTTPS_FAIL: '1' })
     expect(res.code).toBe(1)
     expect(res.out).toContain('Vorherige Konfiguration wiederhergestellt – Noted läuft weiter unter https://qwikbyte.de')
-    expect(read(caddyfile)).toBe(LEGACY)
+    expect(read(caddyfile)).toBe(INSTALLED)
     expect(read(path.join(root, '.env'))).toContain('APP_URL=https://qwikbyte.de')
     expect(calls().match(/systemctl reload-or-restart caddy/g)).toHaveLength(2)
     expect(calls()).not.toContain('docker compose')
@@ -191,11 +193,11 @@ describe('noted-domain', () => {
     const res = run(['notizen.example.com'])
     expect(res.code).toBe(1)
     expect(res.out).toContain('mit --yes aufrufen')
-    expect(read(caddyfile)).toBe(LEGACY)
+    expect(read(caddyfile)).toBe(INSTALLED)
   })
 
   it('lehnt eine ungültige Caddy-Konfiguration ab, ohne etwas zu ändern', () => {
-    fs.writeFileSync(caddyfile, `${LEGACY}\n# UNGUELTIG\n`)
+    fs.writeFileSync(caddyfile, `${INSTALLED}\n# UNGUELTIG\n`)
     const before = read(caddyfile)
     const res = run(['notizen.example.com', '--yes'])
     expect(res.code).toBe(1)

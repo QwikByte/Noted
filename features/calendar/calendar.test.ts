@@ -269,16 +269,10 @@ describe('Klausuren', () => {
     await call(deckRoute.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: analysis } })
   })
 
-  it('lässt Klausuren sich nicht wiederholen und nimmt Termine älterer App-Versionen ohne Angabe an', async () => {
+  it('lässt Klausuren sich nicht wiederholen', async () => {
     const series = await call(calendar.POST, '/api/calendar', { cookie: token, body: { ...lecture, exam: { deckIds: [] } } })
     expect(series.status).toBe(400)
     expect(series.data.message).toBe('Eine Klausur kann sich nicht wiederholen.')
-
-    const old: Partial<EventInput> = { ...lecture }
-    delete old.exam
-    const r = await call(calendar.POST, '/api/calendar', { cookie: token, body: old })
-    expect(r.status).toBe(201)
-    expect(r.data.event.exam).toBeNull()
   })
 
   it('macht aus dem geänderten Termin einer Serie auf Wunsch eine Klausur', async () => {

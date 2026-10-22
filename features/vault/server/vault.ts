@@ -120,7 +120,7 @@ export function createVault({ user, ip }: Actor, material: VaultMaterial): Vault
   return getVault(user.id)!
 }
 
-export type VaultKeysPatch = {
+type VaultKeysPatch = {
   /** Stand, auf dem die Änderung beruht – sonst 409 (ein anderes Gerät hat inzwischen neu verpackt) */
   revision: number
   kdf?: VaultKdf

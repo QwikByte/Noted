@@ -1,7 +1,7 @@
 import 'server-only'
 import { getDb } from '@/shared/server/db'
 
-export type AppSettings = {
+type AppSettings = {
   /** MFA für alle Benutzer verpflichtend */
   enforceMfa: boolean
 }

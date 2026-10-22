@@ -1,7 +1,7 @@
 import 'server-only'
 import { getDb } from './db'
 
-export type AuditEvent =
+type AuditEvent =
   | 'login_success'
   | 'login_failed'
   | 'login_locked'
@@ -27,7 +27,7 @@ export type AuditEvent =
   | 'vault_deleted'
   | 'vault_note_moved'
 
-export type AuditEntry = {
+type AuditEntry = {
   event: AuditEvent
   userId?: number | null
   username?: string | null
@@ -63,7 +63,7 @@ export function audit(entry: AuditEntry) {
   }
 }
 
-export type AuditRow = {
+type AuditRow = {
   id: number
   createdAt: number
   event: AuditEvent

@@ -1,11 +1,11 @@
 // Anordnung der Graph-Ansicht: kleine kräftebasierte Simulation (Abstoßung zwischen allen Knoten, Federn entlang der
 // Kanten, Zug zur Mitte). Reine Logik ohne DOM – läuft im Browser und in den Tests.
 
-export type Point = { x: number; y: number }
+type Point = { x: number; y: number }
 
 type Edge = { source: string; target: string }
 
-export type LayoutOptions = {
+type LayoutOptions = {
   /** Fläche, auf die der Graph verteilt wird (Standard: wächst mit der Zahl der Knoten) */
   width?: number
   height?: number

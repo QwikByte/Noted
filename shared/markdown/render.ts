@@ -46,7 +46,7 @@ function createMarkdownIt() {
 
 let instance: MarkdownIt | null = null
 
-export type Rendered = {
+type Rendered = {
   html: string
   properties: Record<string, unknown> | null
   /** YAML konnte nicht gelesen werden */

@@ -12,9 +12,9 @@ import { pendingSetup, type UserRow } from './users'
  *   user  – angemeldet und eingerichtet
  *   admin – wie user, zusätzlich Rolle admin
  */
-export type AuthLevel = 'none' | 'mfa' | 'setup' | 'user' | 'admin'
+type AuthLevel = 'none' | 'mfa' | 'setup' | 'user' | 'admin'
 
-export type HandlerContext<P> = {
+type HandlerContext<P> = {
   req: NextRequest
   params: P
   user: UserRow

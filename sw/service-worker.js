@@ -50,9 +50,6 @@ async function pruneStatic() {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys()
-      // Caches älterer Service Worker (Name mit Versionsnummer)
-      await Promise.all(keys.filter((k) => /^noted-(shell|static)-/.test(k)).map((k) => caches.delete(k)))
       await pruneStatic()
       await self.clients.claim()
     })(),

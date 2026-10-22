@@ -114,7 +114,7 @@ describe('Volltextsuche in Dateien', () => {
   it('liest Dateien erneut und holt den Bestand beim Serverstart nach', async () => {
     const pdf = await upload('Bestand.pdf', makePdf([['Altbestand']]))
     await indexPending()
-    // Wie vor der Volltextsuche hochgeladen
+    // Wie ein Upload, der vor einem Neustart nicht mehr gelesen wurde
     getDb().prepare('DELETE FROM attachments_fts WHERE attachment_id = ?').run(pdf.id)
     getDb().prepare('DELETE FROM attachments_index WHERE attachment_id = ?').run(pdf.id)
     expect(await searchState(pdf.id)).toEqual({ state: 'pending', pages: 0, reason: null })

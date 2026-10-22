@@ -276,11 +276,7 @@ export const eventSchema = z.object({
   end: z.string().max(16),
   repeat: z.object({ weeks: z.number().int().min(1).max(MAX_REPEAT_WEEKS), until: day.nullable() }).nullable(),
   exdates: z.array(day).max(MAX_EXDATES),
-  // Fehlt bei Geräten mit einer älteren Version der App
-  exam: z
-    .object({ deckIds: z.array(z.string().max(64)).max(MAX_EXAM_DECKS) })
-    .nullable()
-    .default(null),
+  exam: z.object({ deckIds: z.array(z.string().max(64)).max(MAX_EXAM_DECKS) }).nullable(),
 })
 
 export const occurrenceSchema = z.object({ date: day, event: eventSchema.nullable() })

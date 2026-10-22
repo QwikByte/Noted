@@ -193,7 +193,7 @@ function descendantIds(userId: number, id: string): string[] {
   return rows.map((r) => r.id)
 }
 
-export type FolderPatch = { name?: string; parentId?: string | null; nameEnc?: string }
+type FolderPatch = { name?: string; parentId?: string | null; nameEnc?: string }
 
 export function updateFolder(userId: number, id: string, patch: FolderPatch): Folder {
   const folder = getFolderRow(userId, id)
@@ -341,7 +341,7 @@ function checkContent(content: string, format: NoteFormat) {
   if (format === 'canvas' && !parseCanvas(content)) throw badRequest('Das Canvas konnte nicht gelesen werden.')
 }
 
-export type NoteInput = {
+type NoteInput = {
   id?: string
   title: string
   folderId: string | null
@@ -408,7 +408,7 @@ function createVaultNote(userId: number, input: NoteInput): Note {
   return getNote(userId, input.id)
 }
 
-export type NotePatch = {
+type NotePatch = {
   title?: string
   /** Nur im Tresor: verschlüsselter Titel – zählt wie eine Änderung des Titels */
   titleEnc?: string

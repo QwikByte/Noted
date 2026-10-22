@@ -22,7 +22,7 @@ const sizes: Record<Size, string> = {
   'icon-sm': 'h-8 w-8 rounded-md',
 }
 
-export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant
   size?: Size
   loading?: boolean

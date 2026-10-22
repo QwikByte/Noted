@@ -782,9 +782,6 @@ const EVENTS: Record<string, { label: string; tone: 'neutral' | 'success' | 'war
   vault_keys_changed: { label: 'Tresor-Schlüssel geändert', tone: 'accent' },
   vault_deleted: { label: 'Tresor gelöscht', tone: 'danger' },
   vault_note_moved: { label: 'Notiz in/aus Tresor verschoben', tone: 'neutral' },
-  // Frühere Einträge aus der Microsoft-Kalenderanbindung (bis Version 1.6.0)
-  calendar_connected: { label: 'Kalender verbunden', tone: 'accent' },
-  calendar_disconnected: { label: 'Kalender getrennt', tone: 'neutral' },
 }
 
 function AuditTab() {

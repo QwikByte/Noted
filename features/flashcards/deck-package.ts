@@ -20,7 +20,7 @@ const MAX_ENTRIES = 50_000
 
 export type DeckSettings = Pick<Deck, 'name' | 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>
 export type PackageCard = Pick<Card, 'type' | 'front' | 'back' | 'options' | 'occlusion' | 'position' | 'suspended'>
-export type DeckManifest = { noted: number; deck: DeckSettings; cards: PackageCard[]; media: string[] }
+type DeckManifest = { noted: number; deck: DeckSettings; cards: PackageCard[]; media: string[] }
 
 /** Ungültiges Paket – die Meldung ist für Nutzer gedacht */
 export class DeckPackageError extends Error {}
@@ -123,7 +123,7 @@ function cardIssue(error: z.ZodError): string {
   return 'ungültige Angaben'
 }
 
-export type ParsedDeckPackage = {
+type ParsedDeckPackage = {
   deck: DeckSettings
   /** Gültige Karten nach Position sortiert – Längen usw. prüft erst das Anlegen */
   cards: PackageCard[]

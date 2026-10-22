@@ -68,7 +68,7 @@ export function ankiDeckName(name: string): string {
   )
 }
 
-export type AnkiNote = { fields: string[]; ords: number[] }
+type AnkiNote = { fields: string[]; ords: number[] }
 
 /**
  * Kartenart und Seiten einer Anki-Notiz: Lücken in einem Feld → Lückentext, zwei Karten (ord 0 und 1) → beidseitig,

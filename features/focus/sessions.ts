@@ -5,7 +5,7 @@ import type { FocusSession } from './types'
 /** Fach in einheitlicher Schreibweise – Leerzeichen zusammengefasst */
 export const cleanSubject = (s: string) => s.replace(/\s+/g, ' ').trim()
 
-export type SubjectWeeks = {
+type SubjectWeeks = {
   /** Fach wie zuletzt geschrieben; leer = ohne Fach */
   subject: string
   /** Lernzeit je Woche (ms), in der Reihenfolge von `weeks` */

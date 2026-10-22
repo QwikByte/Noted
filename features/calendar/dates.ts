@@ -4,7 +4,7 @@
 const pad = (n: number) => String(n).padStart(2, '0')
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-export const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
 
 const DAY_MS = 86_400_000
 
@@ -16,7 +16,7 @@ export function wallMs(value: string): number {
   return Date.UTC(y, m - 1, d, h, min)
 }
 
-export function fromWallMs(ms: number, withTime: boolean): string {
+function fromWallMs(ms: number, withTime: boolean): string {
   const d = new Date(ms)
   const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
   return withTime ? `${date}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}` : date

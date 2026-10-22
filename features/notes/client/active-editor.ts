@@ -18,7 +18,7 @@ export type Insertion =
   | { kind: 'quotes'; quotes: PdfQuote[] }
   | { kind: 'text'; text: string }
 
-export type ActiveEditor = {
+type ActiveEditor = {
   noteId: string
   title: string
   /** Fügt den Inhalt als eigenen Absatz an der Cursorposition (bzw. am Ende) ein */

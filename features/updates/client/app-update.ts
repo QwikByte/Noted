@@ -9,7 +9,7 @@ const CHECK_INTERVAL = 10 * 60_000
 /** Mindestabstand zwischen zwei Prüfungen (z. B. beim schnellen Wechseln zwischen Apps) */
 const MIN_GAP = 60_000
 
-export type UpdateState = { available: boolean; version: string | null }
+type UpdateState = { available: boolean; version: string | null }
 
 let state: UpdateState = { available: false, version: null }
 const listeners = new Set<() => void>()

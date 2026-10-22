@@ -4,7 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import type { NoteSummary } from '@/features/notes/types'
 
-export type VaultRequest =
+type VaultRequest =
   | { kind: 'unlock'; then?: () => void }
   /** Über die Grenze verschieben – `folderId`: vorgeschlagenes Ziel (z. B. beim Ziehen) */
   | { kind: 'move'; note: NoteSummary; folderId?: string | null }

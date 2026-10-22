@@ -33,7 +33,7 @@ export async function setupTestEnv() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Handler = (req: NextRequest, ctx: { params: Promise<any> }) => Promise<Response>
 
-export type CallOptions = {
+type CallOptions = {
   method?: string
   body?: unknown
   form?: FormData

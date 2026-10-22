@@ -2,7 +2,7 @@
 import { addDays, minutesBetween } from './dates'
 import type { Occurrence } from './types'
 
-export type Placed = {
+type Placed = {
   occurrence: Occurrence
   /** Minuten ab 0:00 dieses Tages */
   top: number

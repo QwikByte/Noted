@@ -204,6 +204,7 @@ test.describe('Handy', () => {
       end: '2026-10-20T11:00',
       repeat: null,
       exdates: [],
+      exam: null,
     }
     expect((await page.request.post('/api/calendar', { headers, data })).status()).toBe(201)
     await page.goto('/?v=calendar')

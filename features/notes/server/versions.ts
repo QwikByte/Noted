@@ -6,7 +6,7 @@ import { notFound } from '@/shared/server/http'
 import type { NoteFormat, NoteVersion, NoteVersionReason, NoteVersionWithContent } from '../types'
 
 /** Beim Tippen höchstens ein gesicherter Stand je 10 Minuten – sonst entstünde pro Autosave ein Eintrag */
-export const EDIT_SNAPSHOT_INTERVAL = 10 * 60_000
+const EDIT_SNAPSHOT_INTERVAL = 10 * 60_000
 export const MAX_VERSIONS_PER_NOTE = 50
 export const VERSION_MAX_AGE = 90 * 86_400_000
 

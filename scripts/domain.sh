@@ -19,7 +19,6 @@
 
 MARK_BEGIN='# >>> Noted – verwaltet von noted-domain, nicht von Hand ändern'
 MARK_END='# <<< Noted'
-LEGACY_MARK='# Noted (eingerichtet von install.sh)'
 
 usage() {
   sed -n '2,/^# Hinweis/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'
@@ -38,12 +37,12 @@ valid_domain() {
 
 # ---- Caddyfile -------------------------------------------------------------------------
 
-# Aktuelle Noted-Domain: aus dem verwalteten Eintrag, dem Eintrag älterer Installer-Versionen oder APP_URL
+# Aktuelle Noted-Domain: aus dem verwalteten Eintrag oder APP_URL
 current_domain() {
   local d=''
   if [[ -f $CADDYFILE ]]; then
-    d=$(awk -v b="$MARK_BEGIN" -v l="$LEGACY_MARK" '
-      $0 == b || $0 == l { grab = 1; next }
+    d=$(awk -v b="$MARK_BEGIN" '
+      $0 == b { grab = 1; next }
       grab && /\{[[:space:]]*$/ { sub(/[[:space:]]*\{[[:space:]]*$/, ""); print; exit }
       grab { grab = 0 }' "$CADDYFILE")
   fi
@@ -82,25 +81,15 @@ build_caddyfile() {
     while IFS= read -r line || [[ -n $line ]]; do
       case $state in
         normal)
-          if [[ $line == "$MARK_BEGIN" ]]; then
-            state=managed
-          elif [[ $line == "$LEGACY_MARK" ]]; then
-            state=legacy_head
-          else
+          if [[ $line != "$MARK_BEGIN" ]]; then
             printf '%s\n' "$line"
             continue
           fi
+          state=managed
           if ((!written)); then render_block; written=1; fi
           ;;
         managed)
           [[ $line == "$MARK_END" ]] && state=normal
-          ;;
-        legacy_head)
-          # Eintrag älterer Installer: „domain {“ … „}“
-          if [[ $line =~ \{[[:space:]]*$ ]]; then state=legacy_body; else state=normal; printf '%s\n' "$line"; fi
-          ;;
-        legacy_body)
-          [[ $line =~ ^\}[[:space:]]*$ ]] && state=normal
           ;;
       esac
     done < "$CADDYFILE"

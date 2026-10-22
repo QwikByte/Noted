@@ -71,7 +71,7 @@ function checkLocked(user: UserRow) {
   }
 }
 
-export type LoginResult =
+type LoginResult =
   | { status: 'mfa'; token: string }
   | { status: 'ok'; token: string; setup: 'password' | 'mfa' | null; user: UserRow }
 
