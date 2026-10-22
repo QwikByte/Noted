@@ -475,4 +475,19 @@ export const migrations: string[] = [
   );
   CREATE INDEX pdf_annotations_attachment ON pdf_annotations(user_id, attachment_id, page);
   `,
+
+  /* 23: Eigene FSRS-Parameter je Konto, aus dem Bewertungsprotokoll geschätzt („Parameter optimieren“). weights = JSON
+     mit den 19 Gewichten von FSRS-5; reviews = ausgewertete Wiederholungen; log_loss/rmse = Vorhersagefehler mit diesen
+     Gewichten, default_* mit den Standardwerten auf denselben Daten. Keine Zeile = Standardwerte. */ `
+  CREATE TABLE fsrs_params (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    weights TEXT NOT NULL,
+    reviews INTEGER NOT NULL,
+    log_loss REAL NOT NULL,
+    rmse REAL NOT NULL,
+    default_log_loss REAL NOT NULL,
+    default_rmse REAL NOT NULL,
+    optimized_at INTEGER NOT NULL
+  );
+  `,
 ]

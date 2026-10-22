@@ -6,7 +6,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError, NetworkError } from '@/shared/client/api'
-import { useEvents } from '@/features/calendar/client/calendar'
+import { deviceTimeZone, useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
 import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
 import type {
@@ -18,6 +18,7 @@ import type {
   Deck,
   DeckImportResult,
   FlashcardData,
+  FsrsOptimizeResult,
   Occlusion,
   ReviewLogEntry,
 } from '../types'
@@ -296,7 +297,8 @@ export function useFlashcards() {
     const reviews = pending.length ? mergeReviews(query.data.reviews, pending) : query.data.reviews
     const exams = examsByDeck(events ?? [])
     const decks = exams.size ? query.data.decks.map((d) => ({ ...d, exams: exams.get(d.id) })) : query.data.decks
-    return { ...query.data, decks, reviews, states: stateMap(reviews) }
+    // Antworten einer älteren Version (Offline-Cache) haben noch keine FSRS-Parameter
+    return { ...query.data, fsrs: query.data.fsrs ?? null, decks, reviews, states: stateMap(reviews) }
   }, [query.data, pending, events])
   return { ...query, data }
 }
@@ -331,11 +333,28 @@ export async function deleteDeck(qc: QueryClient, id: string) {
     const gone = new Set(d.cards.filter((c) => c.deckId === id).map((c) => c.id))
     reviewQueue.drop(gone)
     return {
+      ...d,
       decks: d.decks.filter((x) => x.id !== id),
       cards: d.cards.filter((c) => !gone.has(c.id)),
       reviews: d.reviews.filter((r) => !gone.has(r.cardId)),
     }
   })
+}
+
+/** FSRS-Gewichte aus dem eigenen Lernverlauf schätzen (auf dem Server, Tage in der Zeitzone dieses Geräts) */
+export async function optimizeFsrs(qc: QueryClient): Promise<FsrsOptimizeResult> {
+  const result = await api<FsrsOptimizeResult>('/api/flashcards/fsrs', {
+    method: 'POST',
+    body: { timeZone: deviceTimeZone() },
+  })
+  patch(qc, (d) => ({ ...d, fsrs: result.fsrs }))
+  return result
+}
+
+/** Zurück zu den Standardwerten von FSRS */
+export async function resetFsrs(qc: QueryClient) {
+  await api('/api/flashcards/fsrs', { method: 'DELETE' })
+  patch(qc, (d) => ({ ...d, fsrs: null }))
 }
 
 export async function resetDeckProgress(qc: QueryClient, id: string) {

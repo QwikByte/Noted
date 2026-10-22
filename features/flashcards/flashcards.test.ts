@@ -406,7 +406,7 @@ describe('Trennung der Konten und Export', () => {
     const tom = await loginAs('tom', 'Tom-Passwort-1234')
     await call(password.POST, '/', { cookie: tom, body: { currentPassword: 'Tom-Passwort-1234', newPassword: 'Tom-Passwort-5678' } })
     const theirs = await data(tom)
-    expect(theirs).toEqual({ decks: [], cards: [], reviews: [] })
+    expect(theirs).toEqual({ decks: [], cards: [], reviews: [], fsrs: null })
     expect((await addCards(d.id, [{ type: 'basic', front: 'x', back: 'y' }], tom)).status).toBe(404)
     expect((await call(card.PATCH, '/', { method: 'PATCH', cookie: tom, params: { id: c.id }, body: { front: 'x' } })).status).toBe(404)
     expect((await call(deck.DELETE, '/', { method: 'DELETE', cookie: tom, params: { id: d.id } })).status).toBe(404)

@@ -43,19 +43,22 @@ export const DEFAULT_RETENTION = 0.9
 const clampEase = (e: number) => Math.max(MIN_EASE, Math.round(e * 100) / 100)
 const clampInterval = (d: number) => Math.min(MAX_INTERVAL, Math.max(1, Math.round(d)))
 
-/** Wiederholungsplan eines Stapels: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate */
-export type Plan = { kind: 'sm2' } | { kind: 'fsrs'; retention: number }
+/**
+ * Wiederholungsplan eines Stapels: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate – `weights`: auf den eigenen
+ * Lernverlauf optimierte Gewichte (sonst die Standardwerte)
+ */
+export type Plan = { kind: 'sm2' } | { kind: 'fsrs'; retention: number; weights?: readonly number[] }
 
 export const SM2: Plan = { kind: 'sm2' }
 
 /** FSRS: Stabilität und Schwierigkeit nach der Bewertung – bisher mit SM-2 geplante Seiten werden umgerechnet */
-function fsrsMemory(prev: SrsState | null, rating: Rating, now: number): Memory {
-  if (!prev) return initialMemory(rating)
+function fsrsMemory(prev: SrsState | null, rating: Rating, now: number, weights?: readonly number[]): Memory {
+  if (!prev) return initialMemory(rating, weights)
   const memory =
     prev.stability != null && prev.difficulty != null
       ? { stability: prev.stability, difficulty: prev.difficulty }
-      : memoryFromSm2(prev.interval, prev.ease)
-  return nextMemory(memory, rating, (now - prev.reviewedAt) / DAY)
+      : memoryFromSm2(prev.interval, prev.ease, weights)
+  return nextMemory(memory, rating, (now - prev.reviewedAt) / DAY, weights)
 }
 
 /** Neuer Lernstand nach einer Bewertung. `prev` = null bei einer neuen Karte. */
@@ -78,10 +81,10 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
   // FSRS: Abstand in Tagen aus der Stabilität nach der jeweiligen Bewertung
   const fsrsDays = (r: Rating) => {
     if (plan.kind !== 'fsrs') return 0
-    return clampInterval(fsrsInterval(fsrsMemory(prev, r, now).stability, plan.retention))
+    return clampInterval(fsrsInterval(fsrsMemory(prev, r, now, plan.weights).stability, plan.retention))
   }
   if (plan.kind === 'fsrs') {
-    const memory = fsrsMemory(prev, rating, now)
+    const memory = fsrsMemory(prev, rating, now, plan.weights)
     s.stability = memory.stability
     s.difficulty = memory.difficulty
   }

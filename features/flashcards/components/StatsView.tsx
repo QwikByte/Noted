@@ -1,5 +1,6 @@
 'use client'
-// Lernstatistik: Kennzahlen, Lerntage als Heatmap, fällige Karten der nächsten Tage und Trefferquote je Stapel
+// Lernstatistik: Kennzahlen, Lerntage als Heatmap, fällige Karten der nächsten Tage, eigene FSRS-Parameter und
+// Trefferquote je Stapel
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Download, Flame, Layers, MoreVertical } from 'lucide-react'
@@ -12,6 +13,7 @@ import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
 import { useNow } from '@/shared/client/now'
 import { useFlashcards } from '../client/flashcards'
+import { FsrsPanel } from './FsrsPanel'
 import { addDays, isoWeek, localDate, shortDate, startOfWeek, weekday, weekdayShort } from '@/features/calendar/dates'
 import { useFocusSessions } from '@/features/focus/client/sessions'
 import { formatStudyTime, weeklyBySubject } from '@/features/focus/sessions'
@@ -92,6 +94,9 @@ export function StatsView() {
           <Figures stats={data} today={today} />
           <Heatmap days={data.days} today={today} />
           {flashcards ? <Forecast now={now} /> : null}
+          {flashcards ? (
+            <FsrsPanel fsrs={flashcards.fsrs} usesFsrs={flashcards.decks.some((d) => d.scheduler === 'fsrs')} />
+          ) : null}
           <DeckTable stats={data} />
           <FocusTime today={today} />
         </div>

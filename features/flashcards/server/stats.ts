@@ -10,7 +10,7 @@ const HISTORY_DAYS = 380
 
 /** Zeitpunkt → Tag (YYYY-MM-DD) in der Zeitzone des Geräts; je Viertelstunde einmal gerechnet – Zonen weichen um
  *  Vielfache von 15 Minuten von UTC ab, innerhalb einer Viertelstunde ändert sich der Tag also nie */
-function dayFormatter(timeZone: string): (t: number) => string {
+export function dayFormatter(timeZone: string): (t: number) => string {
   let fmt: Intl.DateTimeFormat
   try {
     fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })

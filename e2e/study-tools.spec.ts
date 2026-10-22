@@ -826,3 +826,57 @@ test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und a
   await expect.poll(async () => (await saved()).length, { timeout: 15_000 }).toBe(1)
   await expect.poll(queued).toBe(0)
 })
+
+test('FSRS-Parameter aus dem Lernverlauf optimieren und zurücksetzen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'FSRS-Optimierung', scheduler: 'fsrs' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  // Die Parameter gelten für das ganze Konto – danach wieder Standardwerte für die übrigen Tests
+  cleanup.push('/api/flashcards/fsrs')
+  const cards = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: Array.from({ length: 60 }, (_, i) => ({ type: 'basic', front: `Begriff ${i}`, back: `Bedeutung ${i}` })) },
+    'cards',
+  )
+  // Ein Verlauf, der viel schlechter erinnert wird, als die Standardwerte vorhersagen: nach 1–3 Tagen nur die Hälfte
+  const start = Date.now() - 120 * DAY
+  const log = cards.flatMap((card, i) => {
+    const entry = (rating: number, phase: string, reviewedAt: number) => ({
+      cardId: card.id,
+      side: 0,
+      rating,
+      phase,
+      intervalBefore: 0,
+      intervalAfter: 0,
+      durationMs: 4000,
+      reviewedAt,
+    })
+    const first = start + (i % 10) * DAY + i * 60_000
+    const second = first + (1 + (i % 3)) * DAY
+    const third = second + (2 + (i % 4)) * DAY
+    return [
+      entry(3, 'new', first),
+      entry(3, 'learning', first + 600_000),
+      entry(i % 2 ? 3 : 1, 'review', second),
+      ...(i % 2 ? [] : [entry(3, 'relearning', second + 600_000)]),
+      entry(i % 4 < 2 ? 1 : 3, 'review', third),
+    ]
+  })
+  await post(page, '/api/reviews', { reviews: [], log }, 'logged')
+
+  await page.goto('/?v=cards')
+  await page.getByRole('button', { name: 'Lernstatistik' }).click()
+  const panel = page.getByTestId('stats-fsrs')
+  await expect(panel).toContainText('Standardwerte von FSRS-5')
+  await panel.getByRole('button', { name: 'Parameter optimieren' }).click()
+  await expect(page.getByText(/^Parameter angepasst – Abweichung .* → .*\.$/)).toBeVisible()
+  await expect(panel).toContainText('An deinen Lernverlauf angepasst')
+  await expect(panel).toContainText('Eigene Werte')
+  await shot(page, '39-fsrs')
+
+  await panel.getByRole('button', { name: 'Standardwerte' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Standardwerte' }).click()
+  await expect(panel).toContainText('Standardwerte von FSRS-5')
+  expect((await (await page.request.get('/api/flashcards')).json()).fsrs).toBeNull()
+})
