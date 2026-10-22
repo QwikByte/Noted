@@ -35,7 +35,7 @@ type FocusSnapshot = {
 }
 
 /** Meldung am Ende einer Phase – `endedAt` verbindet sie mit der Runde, die gezählt werden kann */
-export type EndMessage = { title: string; body: string; endedAt: number }
+type EndMessage = { title: string; body: string; endedAt: number }
 
 /** Abgelaufene Phase (auch wenn niemand da war, als sie endete) */
 export type EndedPhase = { phase: Phase; startedAt: number; endedAt: number; durationMs: number }

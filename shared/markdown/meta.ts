@@ -3,7 +3,7 @@ import { parse as parseYaml } from 'yaml'
 
 const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n?---[ \t]*(?:\r?\n|$)/
 
-export type Frontmatter = { raw: string; data: Record<string, unknown> | null; body: string; lines: number }
+type Frontmatter = { raw: string; data: Record<string, unknown> | null; body: string; lines: number }
 
 /** Trennt YAML-Frontmatter (muss in Zeile 1 beginnen) vom Inhalt. */
 export function splitFrontmatter(content: string): Frontmatter | null {
@@ -61,7 +61,7 @@ function plainInline(text: string): string {
 /** Vergleichsform einer Überschrift – nur Buchstaben und Ziffern, damit Formatierung und Satzzeichen nicht stören */
 export const headingKey = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
-export type MarkdownHeading = {
+type MarkdownHeading = {
   level: number
   /** Klartext wie in Auszügen, z. B. für die Gliederung */
   text: string
@@ -201,7 +201,7 @@ export function extractTags(content: string): string[] {
 // Innerhalb eines Links sind keine eckigen Klammern erlaubt (verhindert quadratische Laufzeit bei „[[[[…“)
 const WIKILINK_RE = /(!?)\[\[([^[\]\n]{1,1000})\]\]/g
 
-export type WikiLink = { embed: boolean; target: string; heading: string | null; alias: string | null }
+type WikiLink = { embed: boolean; target: string; heading: string | null; alias: string | null }
 
 export function parseWikiTarget(inner: string): Omit<WikiLink, 'embed'> {
   let target = inner

@@ -11,9 +11,9 @@ import type { Card, CardOption, CardType, Deck } from './types'
 
 export type CandidateSource = 'syntax' | 'question' | 'cloze' | 'definition' | 'bold' | 'highlight' | 'heading'
 
-export type CardDraft = { type: CardType; front: string; back: string; options: CardOption[] }
+type CardDraft = { type: CardType; front: string; back: string; options: CardOption[] }
 
-export type CardCandidate = CardDraft & {
+type CardCandidate = CardDraft & {
   source: CandidateSource
   /** Zeile in der Notiz (0-basiert, inkl. Frontmatter) */
   line: number
@@ -78,7 +78,7 @@ function splitInline(line: string): { front: string; back: string; reversed: boo
   return { front, back, reversed }
 }
 
-export type ParseOptions = {
+type ParseOptions = {
   /** Zeilen „Begriff<Tab>Erklärung“ als Karte (Import aus Quizlet, Anki, Tabellen) */
   tabs?: boolean
 }

@@ -223,6 +223,7 @@ test('Nach der Vorlesung an Karten erinnern, Fokus aus dem Termin starten', asyn
     end,
     repeat: null,
     exdates: [],
+    exam: null,
   })
   await post(page, '/api/calendar', event('Analysis I', '2026-10-19T10:15', '2026-10-19T11:45'), 'event')
   await post(page, '/api/calendar', event('Lernblock', '2026-10-19T12:30', '2026-10-19T14:00'), 'event')

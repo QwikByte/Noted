@@ -33,6 +33,7 @@ const event = (title: string, start: string, end: string, extra: object = {}) =>
   end,
   repeat: null,
   exdates: [],
+  exam: null,
   ...extra,
 })
 

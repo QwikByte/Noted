@@ -12,7 +12,7 @@ export const POST = route('user', async ({ req, user }) => {
   if (files.length === 0) throw badRequest('Keine Dateien übermittelt.')
   const folder = form.get('folderId')
   const folderId = typeof folder === 'string' && isValidId(folder) ? folder : null
-  // Zeiten aus .ics-Dateien gelten in der Zeitzone des Browsers (ältere Seiten schicken sie nicht mit)
+  // Zeiten aus .ics-Dateien gelten in der Zeitzone des Browsers (ohne gültige Angabe in der des Servers)
   const zone = form.get('timeZone')
   const timeZone =
     typeof zone === 'string' && zone.length <= 100 && isTimeZone(zone) ? zone : Intl.DateTimeFormat().resolvedOptions().timeZone

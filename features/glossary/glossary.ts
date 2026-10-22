@@ -6,12 +6,12 @@ import { splitFrontmatter, stripCode } from '@/shared/markdown/meta'
 import type { Glossary, GlossaryFormula, GlossarySource, GlossaryTerm } from './types'
 
 /** Höchstens so viele Begriffe bzw. Formeln in einer Antwort */
-export const MAX_ENTRIES = 5000
+const MAX_ENTRIES = 5000
 
 const HEADING_RE = /^#{1,6}[ \t]+(.+?)[ \t#]*$/
 const FORMULA_RE = /\$\$([\s\S]+?)\$\$/g
 
-export type GlossaryNote = { id: string; title: string; text: string }
+type GlossaryNote = { id: string; title: string; text: string }
 
 /** Überschrift über jeder Zeile (Zeilen inkl. Frontmatter) */
 function headingsByLine(text: string): (string | null)[] {

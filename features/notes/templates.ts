@@ -1,7 +1,7 @@
 // Vorlagen für neue Notizen. Platzhalter:
 // {{title}}, {{date}}, {{time}}, {{date:YYYY-MM-DD}}, {{time:HH:mm}}
 
-export type Template = {
+type Template = {
   id: string
   name: string
   description: string

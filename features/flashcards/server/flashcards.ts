@@ -166,7 +166,7 @@ function checkDeckName(userId: number, name: string, excludeId?: string): string
   return clean
 }
 
-export type DeckInput = {
+type DeckInput = {
   id?: string
   name: string
   description?: string

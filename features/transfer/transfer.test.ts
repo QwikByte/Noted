@@ -189,6 +189,7 @@ describe('Export und Import (ZIP)', () => {
       end: '2026-10-19T11:45',
       repeat: { weeks: 1, until: null },
       exdates: [],
+      exam: null,
     }
     expect((await call(calendar.POST, '/api/calendar', { cookie: token, body: lecture })).status).toBe(201)
     const r = await call(exportRoute.GET, '/', { cookie: token })

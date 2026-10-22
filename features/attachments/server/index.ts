@@ -56,7 +56,7 @@ async function run() {
   queue.running = null
 }
 
-/** Beim Serverstart: Anhänge nachholen, die noch nie gelesen wurden (z. B. von vor dieser Funktion) */
+/** Beim Serverstart: Anhänge nachholen, die noch nie gelesen wurden (die Warteschlange überlebt keinen Neustart) */
 export function indexMissing(): number {
   const rows = getDb()
     .prepare(

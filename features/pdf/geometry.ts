@@ -10,7 +10,7 @@ export type ViewRect = { left: number; top: number; width: number; height: numbe
  * Transformationsmatrix eines pdf.js-Viewports [a, b, c, d, e, f]: PDF-Punkt (x, y) → Bildschirm
  * (a·x + c·y + e, b·x + d·y + f). Enthält Zoom, Drehung und die nach unten zeigende y-Achse des Bildschirms.
  */
-export type Transform = number[]
+type Transform = number[]
 
 /** Bildschirm-Punkt → PDF-Koordinaten (Umkehrung der Transformation) */
 export function toPdfPoint([a, b, c, d, e, f]: Transform, x: number, y: number): [number, number] {

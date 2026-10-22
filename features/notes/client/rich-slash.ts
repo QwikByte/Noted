@@ -11,7 +11,7 @@ import { pickFiles } from './pick-files'
 type Range = { from: number; to: number }
 
 /** „/befehl“ vor dem Cursor – nicht in Code-Blöcken und Inline-Code */
-export function richSlashAt(state: EditorState): (Range & { query: string }) | null {
+function richSlashAt(state: EditorState): (Range & { query: string }) | null {
   const { selection } = state
   if (!selection.empty) return null
   const { $from } = selection

@@ -10,8 +10,7 @@ export const calendarKey = ['calendar'] as const
 export function useEvents() {
   return useQuery({
     queryKey: calendarKey,
-    // Bis Version 1.6.0 lieferte dieselbe Adresse den Stand der Microsoft-Anbindung – der kann noch im Cache liegen
-    queryFn: () => api<{ events?: unknown }>('/api/calendar').then((r) => (Array.isArray(r.events) ? (r.events as CalendarEvent[]) : [])),
+    queryFn: () => api<{ events: CalendarEvent[] }>('/api/calendar').then((r) => r.events),
   })
 }
 

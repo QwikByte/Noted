@@ -157,18 +157,6 @@ ensure_request_dir() {
   fi
 }
 
-# Befehle einer Installation per Installer aktuell halten (neuere Releases bringen z. B. noted-domain mit)
-ensure_links() {
-  local bin=${NOTED_BIN_DIR:-/usr/local/bin}
-  # Nur wenn wir dort schreiben dürfen (als root in /usr/local/bin – oder in einem eigenen NOTED_BIN_DIR)
-  [[ -w $bin && -L $bin/noted-update ]] || return 0
-  [[ $(readlink -f "$bin/noted-update") == "$ROOT/scripts/auto-update.sh" ]] || return 0
-  if [[ -x $ROOT/scripts/domain.sh && ! -e $bin/noted-domain ]]; then
-    ln -s "$ROOT/scripts/domain.sh" "$bin/noted-domain" && log 'Befehl noted-domain eingerichtet'
-  fi
-  return 0
-}
-
 # ---- Versionen -------------------------------------------------------------------
 
 latest_tag() {
@@ -453,10 +441,7 @@ main() {
     warn "${S[MESSAGE]}"
     return 1
   fi
-  local rc=0
-  check_and_update || rc=$?
-  ensure_links
-  return "$rc"
+  check_and_update
 }
 
 main "$@"; exit $?

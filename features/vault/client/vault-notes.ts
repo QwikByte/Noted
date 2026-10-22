@@ -113,7 +113,7 @@ export async function revealNote(note: Note): Promise<Note> {
   return { ...note, title, content }
 }
 
-export type RevealedNote =
+type RevealedNote =
   | { state: 'locked' }
   | { state: 'loading' }
   | { state: 'corrupt'; message: string }

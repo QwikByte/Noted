@@ -28,7 +28,7 @@ const MESSAGES = {
   locked: 'Der Tresor ist gesperrt.',
 }
 
-export type VaultErrorCode = keyof typeof MESSAGES
+type VaultErrorCode = keyof typeof MESSAGES
 
 export class VaultError extends Error {
   constructor(public code: VaultErrorCode) {
@@ -37,7 +37,7 @@ export class VaultError extends Error {
 }
 
 /** Zum Entsperren beim Neu-Verpacken: Passwort oder Wiederherstellungsschlüssel */
-export type VaultSecret = { password: string } | { recoveryKey: string }
+type VaultSecret = { password: string } | { recoveryKey: string }
 
 const RECOVERY_BYTES = 20
 const RECOVERY_INFO = 'noted-vault/1/recovery'

@@ -20,7 +20,7 @@ export async function register() {
   }
   cleanup()
   setInterval(cleanup, 6 * 60 * 60 * 1000).unref()
-  // Anhänge aus der Zeit vor der Volltextsuche nach und nach lesen
+  // Anhänge, die noch nie gelesen wurden (z. B. wegen eines Neustarts mitten im Lesen), nach und nach lesen
   try {
     const { indexMissing } = await import('@/features/attachments/server/index')
     indexMissing()

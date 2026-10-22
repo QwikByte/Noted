@@ -164,7 +164,7 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
   return zipStream(entries)
 }
 
-export type ImportResult = {
+type ImportResult = {
   notes: number
   attachments: number
   folders: number

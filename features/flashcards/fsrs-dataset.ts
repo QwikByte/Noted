@@ -96,7 +96,7 @@ function outliers(entries: PretrainEntry[]): Set<string> {
   return removed
 }
 
-export type TrainingData = {
+type TrainingData = {
   /** Anteil erinnerter Wiederholungen – vor dem Ausreißer-Filter */
   averageRecall: number
   pretrain: PretrainEntry[]

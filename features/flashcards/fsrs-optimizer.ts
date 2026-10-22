@@ -251,7 +251,7 @@ async function train(
   return best.w
 }
 
-export type OptimizeOutcome =
+type OptimizeOutcome =
   | { status: 'not_enough'; reviews: number }
   | { status: 'done'; reviews: number; weights: number[] }
 
