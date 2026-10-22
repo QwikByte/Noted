@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { annotationAt, annotationsMarkdown, cleanQuote, mergeLineRects, sortAnnotations, toPdfRect, toViewRect } from './geometry'
+import {
+  annotationAt,
+  annotationsMarkdown,
+  cleanQuote,
+  joinSelection,
+  mergeLineRects,
+  sortAnnotations,
+  toPdfRect,
+  toViewRect,
+} from './geometry'
 import { MAX_QUOTE, MAX_RECTS } from './limits'
 import type { PdfAnnotation } from './types'
 
@@ -64,6 +73,40 @@ describe('Textauswahl', () => {
     const long = cleanQuote('x'.repeat(MAX_QUOTE + 5))
     expect(long).toHaveLength(MAX_QUOTE)
     expect(long.endsWith('…')).toBe(true)
+  })
+})
+
+describe('Auswahl über Seitengrenzen', () => {
+  const rect: PdfAnnotation['rects'][number] = [60, 700, 300, 720]
+
+  it('setzt die Seiten in ihrer Reihenfolge zusammen – auch rückwärts ausgewählt', () => {
+    const joined = joinSelection(
+      [
+        { page: 5, text: 'Anfang auf Seite fünf', rects: [rect] },
+        { page: 4, text: 'Ende des Satzes  auf vier', rects: [rect] },
+      ],
+      'egal',
+    )
+    expect(joined.text).toBe('Ende des Satzes auf vier\nAnfang auf Seite fünf')
+    expect(joined.parts.map((p) => p.page)).toEqual([4, 5])
+  })
+
+  it('lässt Seiten ohne Auswahl weg und nimmt den ganzen Text, wenn eine Seite dazwischen fehlt', () => {
+    const empty = { page: 2, text: '', rects: [] }
+    expect(joinSelection([{ page: 1, text: 'Eins', rects: [rect] }, empty], 'x').parts.map((p) => p.page)).toEqual([1])
+    const gap = joinSelection(
+      [
+        { page: 1, text: 'Eins', rects: [rect] },
+        { page: 3, text: 'Drei', rects: [rect] },
+      ],
+      'Eins \nZwei\nDrei',
+    )
+    expect(gap.text).toBe('Eins\nZwei\nDrei')
+    expect(gap.parts.map((p) => p.page)).toEqual([1, 3])
+  })
+
+  it('nimmt ohne Text-Layer den Text des Browsers', () => {
+    expect(joinSelection([], '  Text  ohne   Ebene ')).toEqual({ text: 'Text ohne Ebene', parts: [] })
   })
 })
 

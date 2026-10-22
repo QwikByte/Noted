@@ -45,9 +45,9 @@ import { usePref } from '@/shared/client/prefs'
 import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, renderPdfPage } from '../client/pdfjs'
 import { pdfAnnotations, useAnnotations } from '../client/annotations'
 import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
-import { cleanQuote, sortAnnotations } from '../geometry'
+import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
-import type { AnnotationColor, PdfAnnotation, PdfRect } from '../types'
+import type { AnnotationColor, PdfAnnotation } from '../types'
 import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
 
@@ -140,7 +140,8 @@ export default function PdfPanel({
   const [findOpen, setFindOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<Matches | null>(null)
-  const [selection, setSelection] = useState<{ text: string; page: number; rects: PdfRect[] } | null>(null)
+  // page: erste Seite der Auswahl (für Seitenlinks), parts: je Seite Text und Rechtecke
+  const [selection, setSelection] = useState<{ text: string; page: number; parts: SelectionPart[] } | null>(null)
   const [listOpen, setListOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [focusComment, setFocusComment] = useState(false)
@@ -356,13 +357,23 @@ export default function PdfPanel({
         setSelection(null)
         return
       }
+      // Text und Rechtecke gleich festhalten: Auf dem Handy hebt der Tipp auf „Markieren“ die Auswahl womöglich auf.
+      // Jede Seite, die die Auswahl berührt – sie darf über Seitengrenzen gehen.
+      const viewer = viewerRef.current
+      const parts: SelectionPart[] = []
+      if (viewer && sel.rangeCount) {
+        const range = sel.getRangeAt(0)
+        for (const el of container.querySelectorAll<HTMLElement>('.page')) {
+          const n = Number(el.dataset.pageNumber)
+          if (!n || !range.intersectsNode(el)) continue
+          const view = viewer.getPageView(n - 1) as PageView | undefined
+          if (view?.div) parts.push({ page: n, ...selectionOnPage(range, view) })
+        }
+      }
+      const joined = joinSelection(parts, sel.toString())
       const pageEl = (sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement)?.closest<HTMLElement>('.page')
-      const pageNo = Number(pageEl?.dataset.pageNumber) || viewerRef.current?.currentPageNumber || 1
-      // Text und Rechtecke gleich festhalten: Auf dem Handy hebt der Tipp auf „Markieren“ die Auswahl womöglich auf
-      const view = viewerRef.current?.getPageView(pageNo - 1) as PageView | undefined
-      const onPage = view?.div && sel.rangeCount ? selectionOnPage(sel.getRangeAt(0), view) : { text: '', rects: [] }
-      const text = (onPage.text || sel.toString()).replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim()
-      setSelection(text ? { text, page: pageNo, rects: onPage.rects } : null)
+      const pageNo = joined.parts[0]?.page ?? (Number(pageEl?.dataset.pageNumber) || viewer?.currentPageNumber || 1)
+      setSelection(joined.text ? { text: joined.text, page: pageNo, parts: joined.parts } : null)
     }
     document.addEventListener('selectionchange', onChange)
     return () => {
@@ -418,21 +429,28 @@ export default function PdfPanel({
 
   const pageLink = (n: number, label?: string) => pdfPageLink({ file, page: n }, label)
 
+  const canMark = !!attachment && !!selection?.parts.some((p) => p.rects.length > 0)
+
   /** Ausgewählten Text markieren – mit Kommentar: gleich das Kommentarfeld öffnen */
   function markSelection(withComment: boolean) {
-    if (!selection || !attachment || selection.rects.length === 0) return
+    const parts = selection?.parts.filter((p) => p.rects.length > 0) ?? []
+    if (!selection || !attachment || parts.length === 0) return
     const pref = Number(colorPref)
-    const annotation = pdfAnnotations.create({
-      attachmentId: attachment.id,
-      page: selection.page,
-      rects: selection.rects,
-      quote: cleanQuote(selection.text),
-      comment: '',
-      color: (pref >= 1 && pref <= 6 ? pref : DEFAULT_ANNOTATION_COLOR) as AnnotationColor,
-    })
+    const color = (pref >= 1 && pref <= 6 ? pref : DEFAULT_ANNOTATION_COLOR) as AnnotationColor
+    // Über Seitengrenzen: eine Markierung je Seite (Rechtecke gelten immer für eine Seite)
+    const created = parts.map((p) =>
+      pdfAnnotations.create({
+        attachmentId: attachment.id,
+        page: p.page,
+        rects: p.rects,
+        quote: cleanQuote(p.text || selection.text),
+        comment: '',
+        color,
+      }),
+    )
     document.getSelection()?.removeAllRanges()
     setSelection(null)
-    setActiveId(withComment ? annotation.id : null)
+    setActiveId(withComment ? created[0].id : null)
     setFocusComment(withComment)
   }
 
@@ -660,7 +678,7 @@ export default function PdfPanel({
     if (!ready || (e.target instanceof Element && e.target.closest('a[href]'))) return
     const live = document.getSelection()
     if (selection && live && !live.isCollapsed) {
-      openContextMenu(e, selectionMenu(!!attachment && selection.rects.length > 0), { text: true })
+      openContextMenu(e, selectionMenu(canMark), { text: true })
       return
     }
     const { page, annotation } = pointedAt(viewerRef.current, annotations, e)
@@ -900,7 +918,7 @@ export default function PdfPanel({
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => markSelection(false)}
-            disabled={!attachment || selection.rects.length === 0}
+            disabled={!canMark}
             aria-label="Markieren"
             title="Markieren"
           >
@@ -911,7 +929,7 @@ export default function PdfPanel({
             variant="ghost"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => markSelection(true)}
-            disabled={!attachment || selection.rects.length === 0}
+            disabled={!canMark}
             aria-label="Kommentieren"
             title="Markieren und kommentieren"
           >

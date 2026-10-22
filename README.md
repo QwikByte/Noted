@@ -58,7 +58,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Dateien**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
 - Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
-- Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen.
+- Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen. Die Auswahl darf über eine Seitengrenze gehen; der Seitenlink zeigt dann auf die erste Seite, markiert wird auf jeder Seite.
 - **Anmerkungen:** Ausgewählten Text **markieren** oder **kommentieren** – wie mit einem Textmarker, in sechs Farben. Ein Klick auf eine Markierung öffnet Kommentar, Farbe, **Als Zitat einfügen** und Löschen. Die Seitenleiste **Anmerkungen** (Textmarker-Knopf oben) listet alle Markierungen des PDFs nach Seite; ein Klick springt zur Stelle, **Alle als Zitate einfügen** übernimmt sie mit Seitenlinks in die Notiz. Markierungen liegen auf dem Server (auf jedem Gerät an derselben Textstelle, auch nach dem Zoomen) und entstehen auch offline – sie werden gesendet, sobald wieder Verbindung besteht. Gescannte PDFs ohne Textebene lassen sich nicht markieren.
 - Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
 
