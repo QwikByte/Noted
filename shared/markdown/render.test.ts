@@ -120,4 +120,20 @@ describe('Vorschau', () => {
     const { html } = renderMarkdown('Sichtbar %%unsichtbar%%')
     expect(html).not.toContain('unsichtbar')
   })
+
+  it('druckt einklappbare Callouts aufgeklappt, Audio als Dateiverweis und nackte Adressen markiert', () => {
+    const md = '> [!faq]- Frage\n> Antwort\n\n![[aufnahme.m4a]]\n\nhttps://example.org/a und [Quelle](https://example.org)\n\n%%geheim%%'
+    const print = renderMarkdown(md, { print: true }).html
+    expect(print).toMatch(/<details class="callout callout-question" data-callout="faq" open/)
+    expect(print).not.toContain('<audio')
+    expect(print).toContain('class="embed-file embed-file" href="/api/files/aufnahme.m4a"')
+    expect(print).toContain('<a href="https://example.org/a" class="url-link">')
+    expect(print).toContain('<a href="https://example.org">Quelle</a>')
+    expect(print).not.toContain('geheim')
+    // Ohne print bleibt alles wie bisher
+    const screen = renderMarkdown(md).html
+    expect(screen).not.toMatch(/data-callout="faq" open/)
+    expect(screen).toContain('<audio controls')
+    expect(screen).not.toContain('url-link')
+  })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clozeAnswer, clozeCount, clozeQuestion, clozeText, hasCloze, normalizeCloze } from './cloze'
+import { clozeAnswer, clozeBlanks, clozeCount, clozeQuestion, clozeText, hasCloze, normalizeCloze } from './cloze'
 
 describe('Lückentext', () => {
   const text = 'Die Ableitung von ==sin== ist ==cos==, `a == b` ist Code.'
@@ -23,5 +23,12 @@ describe('Lückentext', () => {
     expect(clozeAnswer(text, 1)).toBe('Die Ableitung von sin ist ==cos==, `a == b` ist Code.')
     expect(clozeText(text, 0)).toBe('sin')
     expect(clozeText(text, 5)).toBe('')
+  })
+
+  it('macht für den Druck alle Lücken zu Platzhaltern – Inline-Code bleibt', () => {
+    expect(clozeBlanks('Die Ableitung von ==sin== ist ==cos==, `a ==b== c` ist Code.')).toBe(
+      'Die Ableitung von <span class="cloze-gap">[…]</span> ist <span class="cloze-gap">[…]</span>, `a ==b== c` ist Code.',
+    )
+    expect(clozeBlanks('Ohne Lücke')).toBe('Ohne Lücke')
   })
 })

@@ -29,6 +29,7 @@ import {
   PenLine,
   Pin,
   PinOff,
+  Printer,
   Share2,
   Trash2,
   Type,
@@ -39,6 +40,7 @@ import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
+import { NotePrint } from './NotePrint'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { HistoryDialog } from './dialogs'
@@ -49,6 +51,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shar
 import { MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
+import { usePrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { useBacklinks, useDrafts, useFolders, useNote, useNotes, useTags } from '../client/queries'
@@ -235,6 +238,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [formatOpen, setFormatOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  // Strg/⌘+P: Druckansicht statt Schnellwechsler
+  usePrintShortcut(() => setPrintOpen(true))
   const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
@@ -632,6 +638,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <MenuItem icon={<Download />} onSelect={download}>
         Als {noteExtension(format)} herunterladen
       </MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => setPrintOpen(true)} hint="Strg+P">
+        Drucken …
+      </MenuItem>
       <MenuSeparator />
       <MenuItem
         icon={summaryForActions.pinned ? <PinOff /> : <Pin />}
@@ -948,6 +957,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }}
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
+      {printOpen ? (
+        <NotePrint title={title} format={format} content={content} links={previewLinks} onClose={() => setPrintOpen(false)} />
+      ) : null}
       {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
       <HistoryDialog
         noteId={note.id}

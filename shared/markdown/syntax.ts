@@ -15,6 +15,11 @@ export type RenderEnv = {
   lineOffset?: number
   /** Links auf Notizen nur als Text – ohne Ziel, ID oder „anlegen“ (geteilte Ansicht für Gäste) */
   plainNoteLinks?: boolean
+  /**
+   * Für den Druck: einklappbare Callouts aufgeklappt, Audio und Video als Dateiverweis, nackte Adressen mit der Klasse
+   * `url-link` (die Druckansicht schreibt hinter andere Links ihre Adresse)
+   */
+  print?: boolean
 }
 
 function slugify(text: string): string {
@@ -94,8 +99,13 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
       const alt = alias && !m ? escapeHtml(alias) : name
       return `<img src="${url}" alt="${alt}" loading="lazy" class="embed-image"${size}>`
     }
-    if (AUDIO_EXT.test(target)) return `<audio controls preload="metadata" src="${url}" class="embed-audio"></audio>`
-    if (VIDEO_EXT.test(target)) return `<video controls preload="metadata" src="${url}" class="embed-video"></video>`
+    // Auf Papier gibt es keinen Player
+    if (AUDIO_EXT.test(target) && !env.print) {
+      return `<audio controls preload="metadata" src="${url}" class="embed-audio"></audio>`
+    }
+    if (VIDEO_EXT.test(target) && !env.print) {
+      return `<video controls preload="metadata" src="${url}" class="embed-video"></video>`
+    }
     const kind = isPdf ? 'pdf' : 'file'
     const label = page ? `${name} · Seite ${page}` : name
     return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}><span class="embed-file-icon"></span><span>${label}</span></a>`
@@ -284,7 +294,7 @@ function calloutsRule(state: StateCore) {
     open.tag = tag
     open.attrSet('class', `callout callout-${kind}`)
     open.attrSet('data-callout', rawType)
-    if (fold === '+') open.attrSet('open', '')
+    if (fold === '+' || (fold && (state.env as RenderEnv)?.print)) open.attrSet('open', '')
     tokens[closeIdx].tag = tag
 
     const titleToken = new state.Token('html_block', '', 0)
@@ -377,6 +387,14 @@ export function syntaxPlugin(md: MarkdownIt) {
   md.core.ruler.before('inline', 'callouts', calloutsRule)
   md.core.ruler.after('inline', 'tasks', tasksRule)
   md.core.ruler.push('heading_ids', headingIdsRule)
+
+  // Im Druck: Links, deren Text schon die Adresse ist (linkify, <https://…>), bekommen sie nicht noch einmal dahinter
+  const defaultLinkOpen = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+  md.renderer.rules.link_open = (tokens, idx, options, env: RenderEnv, self) => {
+    const token = tokens[idx]
+    if (env.print && (token.markup === 'linkify' || token.markup === 'autolink')) token.attrJoin('class', 'url-link')
+    return defaultLinkOpen(tokens, idx, options, env, self)
+  }
 
   // Relative Bild-Links (![](bild.png)) auf Anhänge umleiten
   const defaultImage = md.renderer.rules.image!

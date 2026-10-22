@@ -1,7 +1,7 @@
 'use client'
 // Glossar und Formelsammlung: Definitionen und LaTeX-Formeln aus den Notizen eines Ordners (oder aller Notizen)
 import { useMemo, useState } from 'react'
-import { Copy, Download, FileText, Loader2, MoreVertical, Search } from 'lucide-react'
+import { Copy, Download, FileText, Loader2, MoreVertical, Printer, Search } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import type { View } from '@/features/workspace/client/nav'
 import { useFolders } from '@/features/notes/client/queries'
@@ -11,9 +11,11 @@ import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { Select } from '@/shared/ui/input'
 import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
+import { PrintOption, PrintView, usePrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { copyText } from '@/shared/client/clipboard'
+import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
 import { useGlossary } from '../client/glossary'
 import { glossaryToMarkdown, initialOf } from '../glossary'
@@ -37,6 +39,7 @@ export function GlossaryView({ folder }: { folder?: string }) {
   const { data, isLoading, error } = useGlossary(folder ?? null)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<Tab>('terms')
+  const [printOpen, setPrintOpen] = useState(false)
   const openContextMenu = useContextMenu()
 
   const options = useMemo(
@@ -59,6 +62,8 @@ export function GlossaryView({ folder }: { folder?: string }) {
   )
 
   const markdown = () => glossaryToMarkdown(`Glossar – ${scopeName}`, terms, formulas)
+  const empty = terms.length + formulas.length === 0
+  usePrintShortcut(empty ? null : () => setPrintOpen(true))
 
   async function copy() {
     if (await copyText(markdown())) toast.success('Als Markdown kopiert.')
@@ -77,11 +82,14 @@ export function GlossaryView({ folder }: { folder?: string }) {
   // Dieselben Einträge im Menü „…“ und beim Rechtsklick auf die freie Fläche
   const exportItems = (
     <>
-      <MenuItem icon={<Copy />} onSelect={() => void copy()} disabled={terms.length + formulas.length === 0}>
+      <MenuItem icon={<Copy />} onSelect={() => void copy()} disabled={empty}>
         Als Markdown kopieren
       </MenuItem>
-      <MenuItem icon={<Download />} onSelect={download} disabled={terms.length + formulas.length === 0}>
+      <MenuItem icon={<Download />} onSelect={download} disabled={empty}>
         Als .md herunterladen
+      </MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => setPrintOpen(true)} disabled={empty} hint="Strg+P">
+        Drucken …
       </MenuItem>
     </>
   )
@@ -169,7 +177,61 @@ export function GlossaryView({ folder }: { folder?: string }) {
           {tab === 'terms' ? <Terms terms={terms} searching={!!q} /> : <Formulas formulas={formulas} searching={!!q} />}
         </>
       )}
+      {printOpen ? (
+        <GlossaryPrint scopeName={scopeName} query={query.trim()} terms={terms} formulas={formulas} onClose={() => setPrintOpen(false)} />
+      ) : null}
     </Page>
+  )
+}
+
+/** Druckansicht: was gerade zu sehen ist – gewählter Ordner und Suche; leere Abschnitte entfallen */
+function GlossaryPrint({
+  scopeName,
+  query,
+  terms,
+  formulas,
+  onClose,
+}: {
+  scopeName: string
+  query: string
+  terms: GlossaryTerm[]
+  formulas: GlossaryFormula[]
+  onClose: () => void
+}) {
+  const [showTerms, setShowTerms] = usePref<'1' | '0'>('noted:print:terms', '1')
+  const [showFormulas, setShowFormulas] = usePref<'1' | '0'>('noted:print:formulas', '1')
+  const [sources, setSources] = usePref<'1' | '0'>('noted:print:sources', '1')
+  const [compact, setCompact] = usePref<'1' | '0'>('noted:print:compact', '0')
+  const title = `Glossar – ${scopeName}`
+  return (
+    <PrintView
+      title={title}
+      heading={title}
+      compact={compact === '1'}
+      onClose={onClose}
+      options={
+        <>
+          <PrintOption label="Begriffe" checked={showTerms === '1'} onChange={(v) => setShowTerms(v ? '1' : '0')} />
+          <PrintOption label="Formeln" checked={showFormulas === '1'} onChange={(v) => setShowFormulas(v ? '1' : '0')} />
+          <PrintOption label="Fundstellen" checked={sources === '1'} onChange={(v) => setSources(v ? '1' : '0')} />
+          <PrintOption label="Kompakt" checked={compact === '1'} onChange={(v) => setCompact(v ? '1' : '0')} />
+        </>
+      }
+    >
+      {query ? <p className="print-meta">Suche: {query}</p> : null}
+      {showTerms === '1' && terms.length > 0 ? (
+        <section>
+          <h2 className="print-heading">Begriffe</h2>
+          <Terms terms={terms} searching={false} sources={sources === '1'} />
+        </section>
+      ) : null}
+      {showFormulas === '1' && formulas.length > 0 ? (
+        <section>
+          <h2 className="print-heading">Formeln</h2>
+          <Formulas formulas={formulas} searching={false} sources={sources === '1'} />
+        </section>
+      ) : null}
+    </PrintView>
   )
 }
 
@@ -198,7 +260,8 @@ function Empty({ searching, children }: { searching: boolean; children: React.Re
   )
 }
 
-function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean }) {
+/** `sources`: mit Fundstelle (Notiz › Überschrift) */
+function Terms({ terms, searching, sources = true }: { terms: GlossaryTerm[]; searching: boolean; sources?: boolean }) {
   const app = useApp()
   const openContextMenu = useContextMenu()
   if (terms.length === 0) {
@@ -242,7 +305,7 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
                 </dt>
                 <dd className="mt-0.5 space-y-1">
                   <CardMarkdown text={t.definition} className="text-[0.9375rem]" />
-                  <SourceLink source={t} />
+                  {sources ? <SourceLink source={t} /> : null}
                 </dd>
               </div>
             ))}
@@ -253,7 +316,15 @@ function Terms({ terms, searching }: { terms: GlossaryTerm[]; searching: boolean
   )
 }
 
-function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; searching: boolean }) {
+function Formulas({
+  formulas,
+  searching,
+  sources = true,
+}: {
+  formulas: GlossaryFormula[]
+  searching: boolean
+  sources?: boolean
+}) {
   const app = useApp()
   const openContextMenu = useContextMenu()
   if (formulas.length === 0) {
@@ -300,7 +371,7 @@ function Formulas({ formulas, searching }: { formulas: GlossaryFormula[]; search
                   )
                 }
               >
-                <SourceLink source={f} withNote={false} />
+                {sources ? <SourceLink source={f} withNote={false} /> : null}
                 <CardMarkdown text={`$$\n${f.tex}\n$$`} className="overflow-x-auto" />
               </li>
             ))}

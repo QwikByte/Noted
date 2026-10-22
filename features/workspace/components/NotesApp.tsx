@@ -34,6 +34,7 @@ import { Button } from '@/shared/ui/button'
 import { ContextMenuProvider, useContextMenu } from '@/shared/ui/menu'
 import { CreateMenuItems, isEmptySpot } from '@/features/notes/components/ItemMenus'
 import { ConfirmModal } from '@/shared/ui/modal'
+import { openPrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
@@ -260,6 +261,11 @@ export default function NotesApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
+      // In Notiz, Glossar und Stapel öffnet Strg/⌘+P die Druckansicht
+      if (mod && !e.shiftKey && e.key === 'p' && openPrintShortcut()) {
+        e.preventDefault()
+        return
+      }
       if (mod && !e.shiftKey && (e.key === 'k' || e.key === 'o' || e.key === 'p')) {
         e.preventDefault()
         setSwitcherOpen(true)

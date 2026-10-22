@@ -40,22 +40,27 @@ export const clozeCount = (text: string) => spans(text, MARK_RE).length
 /** Enthält der Text Lücken – als ==Markierung== oder {{…}}? */
 export const hasCloze = (text: string) => clozeCount(normalizeCloze(text)) > 0
 
-/** Text, in dem Lücke `index` durch `gap` ersetzt ist und alle anderen Lücken aufgelöst sind */
-function render(text: string, index: number, gap: (inner: string) => string): string {
+/** Text, in dem jede Lücke durch `replace` ersetzt ist */
+function render(text: string, replace: (inner: string, index: number) => string): string {
   let out = ''
   let pos = 0
   spans(text, MARK_RE).forEach((s, i) => {
-    out += text.slice(pos, s.start) + (i === index ? gap(s.inner) : s.inner)
+    out += text.slice(pos, s.start) + replace(s.inner, i)
     pos = s.end
   })
   return out + text.slice(pos)
 }
 
+const GAP = '<span class="cloze-gap">[…]</span>'
+
 /** Frage: die abgefragte Lücke als Platzhalter, die übrigen ausgefüllt */
-export const clozeQuestion = (text: string, index: number) => render(text, index, () => '<span class="cloze-gap">[…]</span>')
+export const clozeQuestion = (text: string, index: number) => render(text, (inner, i) => (i === index ? GAP : inner))
 
 /** Antwort: der ganze Text, die abgefragte Lücke hervorgehoben */
-export const clozeAnswer = (text: string, index: number) => render(text, index, (inner) => `==${inner}==`)
+export const clozeAnswer = (text: string, index: number) => render(text, (inner, i) => (i === index ? `==${inner}==` : inner))
+
+/** Alle Lücken als Platzhalter – z. B. für einen Fragebogen auf Papier */
+export const clozeBlanks = (text: string) => render(text, () => GAP)
 
 /** Inhalt der abgefragten Lücke (z. B. zum Vergleich beim Eintippen) */
 export const clozeText = (text: string, index: number) => spans(text, MARK_RE)[index]?.inner ?? ''

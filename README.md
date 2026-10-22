@@ -21,6 +21,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
 - **Befehle mit `/`:** Ein `/` am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü: Überschriften, Listen, Aufgaben, Zitat, Callout, Tabelle, Formeln, Code, Mermaid-Diagramm, Trennlinie, Wikilink, Karteikarte, Datum von heute sowie Bild oder Datei. Weitertippen filtert (`/tab`, `/h2`, `/formel`), `Enter`, Klick oder Antippen fügt ein, `Esc` schließt. In Code, Formeln, Properties und Tabellenzeilen bleibt das `/` einfach ein Zeichen. Abschaltbar unter **Einstellungen → Darstellung**.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
+- **Drucken** (**⋮ → Drucken …** oder `Strg/⌘ + P`): eine Druckansicht mit der Notiz auf hellem Blatt – auch im dunklen Design –, im Druckdialog auch „Als PDF speichern“. Formeln, Diagramme, Callouts (eingeklappte aufgeklappt), Code, Tabellen, Bilder und Fußnoten kommen mit, `%%Kommentare%%` nicht; externe Links bekommen ihre Adresse dahinter. Wählbar: Titel, Properties und **Kompakt** (kleinere Schrift, zwei Spalten – für Spickzettel). Gedruckt wird der aktuelle Stand, auch offline. Mindmaps erscheinen als Gliederung, Canvas als Text der Karten.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
 - Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter; findet auch Text in PDFs und Textdateien, siehe **Dateien**), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
@@ -42,7 +43,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **Glossar und Formelsammlung**
 - Seitenleiste → **Glossar** (oder im Ordner unter **⋯ → Glossar und Formeln**): alle Definitionen und Formeln deiner Notizen auf einen Blick – z. B. als Spickzettel-Vorlage oder zum Nachschlagen vor der Klausur.
 - **Begriffe** alphabetisch: Info-Callouts (`> [!info] Begriff`) und fett gedruckte Begriffe mit Erklärung (`**Begriff**: …`). **Formeln**: alle LaTeX-Blöcke (`$$…$$`), je Notiz mit der Überschrift darüber.
-- Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen).
+- Für alle Notizen oder einen Ordner samt Unterordnern, durchsuchbar; ein Klick führt an die Stelle in der Notiz. Über ⋮ als Markdown kopieren oder als `.md` herunterladen (mit Links zurück in die Notizen) oder **drucken** – was gerade zu sehen ist (Ordner und Suche), wahlweise nur Begriffe oder Formeln, mit oder ohne Fundstellen, auf Wunsch kompakt in zwei Spalten.
 - Wird bei jedem Öffnen aus den Notizen berechnet (Markdown, Mindmaps und Canvas) und ist danach auch offline lesbar.
 
 **Dateien**
@@ -72,6 +73,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Problemkarten:** Eine Karte, die du mindestens 6-mal vergessen hast, wird markiert – meist ist sie zu umfangreich oder unklar formuliert. Im Stapel stehen alle unter dem Filter **Problemkarten**. Du kannst sie **aussetzen** (sie kommt dann beim Lernen und Üben nicht mehr dran, bis du sie fortsetzt) und nach dem Überarbeiten mit **Neu lernen** wieder von vorn beginnen.
 - **Notiz abfragen** (**⋮ → Abfragen** in einer Notiz): ein Selbsttest direkt aus der Mitschrift, ohne vorher Karten anzulegen. Jede Überschrift mit Text darunter wird zur Frage, der Abschnitt ist verdeckt, bis du ihn aufdeckst und selbst bewertest. Am Ende siehst du, was du nicht wusstest – ein Klick öffnet die Notiz an dieser Stelle –, kannst es wiederholen oder als Karteikarten übernehmen. Ohne Einfluss auf den Wiederholungsplan; geht mit Markdown, formatiertem Text, Mindmaps und Canvas.
 - Übersicht mit fälligen Karten (auch in der Seitenleiste), Fortschritt je Stapel (neu, lernend, gelernt, sicher), Suche in den Karten, Import ganzer Listen (`Frage::Antwort`, tabulatorgetrennt – z. B. aus Quizlet oder Anki kopiert – oder Lückentexte mit `{{…}}`).
+- **Stapel drucken** (Stapel → ⋮ → **Drucken …** oder `Strg/⌘ + P`): die Karten als nummerierte Liste, mit Suche und Filter so, wie sie im Stapel stehen. Ohne **Antworten** wird daraus ein Fragebogen zum Abfragen auf Papier – Lücken erscheinen als „[…]“, bei Multiple Choice fehlt das „✓“, Bildverdeckungen sind ganz verdeckt.
 - **Stapel weitergeben** (Stapel → ⋮ → **Als Datei exportieren**): eine `.noted-deck.zip` mit allen Karten (alle Kartenarten, Antworten, Lückentexte, Bildverdeckungen), den verwendeten Bildern und den Einstellungen des Stapels – ohne Lernstand. Importieren lässt sie sich in jedem Noted-Konto über Karteikarten → ⋮ → **Stapel importieren** (als neuer Stapel oder in einen bestehenden) oder über den allgemeinen Import. Karten, die es im Stapel schon gibt, kommen nicht doppelt.
 - **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (unter **Dateien**). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
 - **Lernstatistik** (Karteikarten → **Statistik**): Lerntage als Heatmap über das letzte Jahr, Serie (Tage am Stück), Bewertungen heute, Trefferquote und Zeit pro Karte (30 Tage, auch je Stapel), eine Vorschau, wie viele Karten in den nächsten 7 bzw. 30 Tagen fällig werden, und die Lernzeit je Fach aus dem Fokus-Timer. Grundlage ist ein Protokoll aller Bewertungen – auch offline gesammelte werden beim Hochladen mitprotokolliert. Über ⋮ lässt es sich als CSV herunterladen (für Excel oder LibreOffice).
@@ -332,6 +334,7 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Strg/⌘ + F` | Im Editor suchen und ersetzen |
 | `Strg/⌘ + B` / `I` | Fett / kursiv |
 | `Strg/⌘ + Shift + H` | ==Markieren== |
+| `Strg/⌘ + P` | Drucken (Notiz, Glossar, Stapel) – sonst Schnellwechsler |
 | `/` (am Zeilenanfang oder nach einem Leerzeichen) | Im Editor: Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … |
 | `Strg/⌘ + Klick` | In Notizlisten: Notiz auswählen bzw. abwählen |
 | `Umschalt + Klick` | In Notizlisten: Bereich bis hierher auswählen (mit `Strg/⌘` dazu) |
@@ -384,7 +387,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   settings/             Einstellungsseite
   updates/              Version, Update-Erkennung im Browser, Status der automatischen Updates
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
-  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten
+  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten, Druckansicht
   client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
   server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll, ZIP, Volltextsuche
   markdown/             Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
