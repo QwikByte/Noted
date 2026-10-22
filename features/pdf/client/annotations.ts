@@ -20,7 +20,7 @@ const annotationsKey = (attachmentId: string) => ['pdf-annotations', attachmentI
 /** Abgelehnt (ungültig, zu groß) oder das PDF gibt es nicht mehr: nicht erneut senden, sonst hinge es ewig fest */
 const isFinal = (err: unknown) => err instanceof ApiError && [400, 404, 413].includes(err.status)
 
-class AnnotationStore {
+export class AnnotationStore {
   private key = ''
   private state: Stored = EMPTY
   private listeners = new Set<() => void>()
@@ -162,6 +162,12 @@ class AnnotationStore {
   /** Ergebnis gleich in den Cache übernehmen, damit die Ansicht beim Leeren der Warteschlange nicht flackert */
   private patchCache(attachmentId: string, fn: (all: PdfAnnotation[]) => PdfAnnotation[]) {
     this.qc?.setQueryData<AnnotationList>(annotationsKey(attachmentId), (cur) => cur && { annotations: fn(cur.annotations) })
+  }
+
+  /** Noch nicht gesendete Änderungen – frisch gelesen, damit auch die aus anderen Tabs zählen */
+  hasPending(): boolean {
+    const { upserts, deletes } = this.key ? this.read() : this.state
+    return upserts.length > 0 || deletes.length > 0
   }
 
   clearAll() {

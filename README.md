@@ -133,7 +133,7 @@ Notizen im Tresor werden in deinem Browser verschlüsselt, bevor sie den Server 
 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
-- Jede Änderung wird zuerst lokal auf dem Gerät gesichert und dann synchronisiert. Ohne Netz schreibst du einfach weiter, die Änderungen werden später automatisch nachgesendet.
+- Jede Änderung wird zuerst lokal auf dem Gerät gesichert und dann synchronisiert. Ohne Netz schreibst du einfach weiter, die Änderungen werden später automatisch nachgesendet. Sind beim Abmelden noch Notizen, der Schmierzettel oder PDF-Anmerkungen nicht gesendet, fragt Noted vorher nach.
 - Die App startet auch offline. Zuletzt geladene Notizen sind lesbar – auch die im Tresor, nach dem Entsperren (auf dem Gerät liegen sie nur verschlüsselt).
 - Bearbeitest du dieselbe Notiz auf zwei Geräten, erkennt Noted den Konflikt. Du wählst „Meine Version“, „Andere Version“ oder „Beide behalten“, es geht nichts verloren.
 
