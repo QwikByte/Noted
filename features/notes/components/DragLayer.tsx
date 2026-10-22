@@ -2,14 +2,15 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { FileText, Folder as FolderIcon } from 'lucide-react'
+import { FileText, Files, Folder as FolderIcon } from 'lucide-react'
 import { useToast } from '@/shared/ui/toast'
 import { api, errorMessage } from '@/shared/client/api'
 import { registerDropHandler, ROOT, useDragState, type DragItem } from '../client/drag'
 import { useExpanded } from '../client/expanded'
 import { keys, useFolders, useNotes } from '../client/queries'
-import { sync } from '../client/sync'
+import { useMoveNotes } from '../client/bulk'
 import { canMoveTo } from '../tree'
+import { MAX_BATCH_NOTES } from '../limits'
 
 /** Vorschau am Zeiger beim Ziehen – und das eigentliche Verschieben beim Ablegen */
 export function DragLayer() {
@@ -19,9 +20,10 @@ export function DragLayer() {
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
   const { toggle } = useExpanded()
-  const latest = useRef({ notes, folders, toggle })
+  const moveNotes = useMoveNotes()
+  const latest = useRef({ notes, folders, toggle, moveNotes })
   useEffect(() => {
-    latest.current = { notes, folders, toggle }
+    latest.current = { notes, folders, toggle, moveNotes }
   })
 
   useEffect(() => {
@@ -33,25 +35,18 @@ export function DragLayer() {
     }
 
     async function drop(item: DragItem, target: string) {
-      const { notes, folders, toggle } = latest.current
+      const { notes, folders, toggle, moveNotes } = latest.current
       const to = folderOf(target)
-      const name = to ? folders.find((f) => f.id === to)?.name : null
-      const where = name ? `nach „${name}“` : 'auf die oberste Ebene'
-      if (item.kind === 'note') {
-        const note = notes.find((n) => n.id === item.id)
-        if (!note) return
-        const from = note.folderId
-        sync.update(note.id, note.version, { folderId: to }, { immediate: true })
-        toast.show(`„${note.title}“ ${where} verschoben.`, {
-          action: {
-            label: 'Rückgängig',
-            onClick: () => sync.update(note.id, note.version, { folderId: from }, { immediate: true }),
-          },
-        })
+      if (item.kind === 'notes') {
+        const ids = new Set(item.ids)
+        moveNotes(notes.filter((n) => ids.has(n.id)), to)
+        item.onMoved?.()
       } else {
         const folder = folders.find((f) => f.id === item.id)
         if (!folder) return
         const from = folder.parentId
+        const name = to ? folders.find((f) => f.id === to)?.name : null
+        const where = name ? `nach „${name}“` : 'auf die oberste Ebene'
         try {
           await moveFolder(folder.id, to)
           toast.show(`Ordner „${folder.name}“ ${where} verschoben.`, {
@@ -69,7 +64,10 @@ export function DragLayer() {
     }
 
     return registerDropHandler({
-      canDrop: (item, target) => canMoveTo(item, folderOf(target), latest.current.notes, latest.current.folders),
+      // Mehr Notizen auf einmal gingen als einzelne Anfragen gleichzeitig hinaus
+      canDrop: (item, target) =>
+        (item.kind !== 'notes' || item.ids.length <= MAX_BATCH_NOTES) &&
+        canMoveTo(item, folderOf(target), latest.current.notes, latest.current.folders),
       drop: (item, target) => void drop(item, target),
     })
   }, [qc, toast])
@@ -83,12 +81,14 @@ export function DragLayer() {
       style={offset}
       data-testid="drag-preview"
     >
-      {drag.item.kind === 'note' ? (
-        <FileText className="size-4 shrink-0 text-muted" />
-      ) : (
+      {drag.item.kind === 'folder' ? (
         <FolderIcon className="size-4 shrink-0 text-muted" />
+      ) : drag.item.ids.length > 1 ? (
+        <Files className="size-4 shrink-0 text-muted" />
+      ) : (
+        <FileText className="size-4 shrink-0 text-muted" />
       )}
-      <span className="truncate">{drag.item.kind === 'note' ? drag.item.title : drag.item.name}</span>
+      <span className="truncate">{drag.item.kind === 'notes' ? drag.item.title : drag.item.name}</span>
     </div>,
     document.body,
   )

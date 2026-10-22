@@ -17,6 +17,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Printer,
   RotateCcw,
   Search,
   Settings2,
@@ -25,7 +26,9 @@ import {
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
+import { usePrintShortcut } from '@/shared/ui/print-view'
 import { CardMarkdown } from './CardMarkdown'
+import { DeckPrint } from './DeckPrint'
 import { OcclusionThumb } from './Occlusion'
 import { Legend, ProgressBar, statusCounts } from './common'
 import { useNow } from '@/shared/client/now'
@@ -89,7 +92,7 @@ export function DeckView({ id }: { id: string }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<CardFilter>('all')
   const [limit, setLimit] = useState(PAGE)
-  const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | null>(null)
+  const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | 'print' | null>(null)
   const [toDelete, setToDelete] = useState<Card | null>(null)
   const [busy, setBusy] = useState(false)
   const openContextMenu = useContextMenu()
@@ -114,6 +117,7 @@ export function DeckView({ id }: { id: string }) {
     const texts = (c: Card) => [c.front, c.back, ...c.options.map((o) => o.text), ...(c.occlusion?.masks.map((m) => m.label) ?? [])]
     return pool.filter((c) => texts(c).some((t) => t.toLowerCase().includes(q)))
   }, [cards, query, shownFilter, problems])
+  usePrintShortcut(cards.length > 0 ? () => setDialog('print') : null)
 
   if (!deck || !data || !counts) {
     return (
@@ -184,6 +188,9 @@ export function DeckView({ id }: { id: string }) {
         }}
       >
         Als Datei exportieren
+      </MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => setDialog('print')} disabled={cards.length === 0} hint="Strg+P">
+        Drucken …
       </MenuItem>
       <MenuSeparator />
       <MenuItem icon={<RotateCcw />} onSelect={() => setDialog('reset')}>
@@ -471,6 +478,8 @@ export function DeckView({ id }: { id: string }) {
 
       {dialog === 'settings' ? <DeckSettingsDialog deck={deck} onClose={() => setDialog(null)} /> : null}
       {dialog === 'import' ? <ImportCardsDialog deck={deck} onClose={() => setDialog(null)} /> : null}
+      {/* Gedruckt wird, was die Liste zeigt – mit Suche und Filter, aber alle Karten statt der ersten 100 */}
+      {dialog === 'print' ? <DeckPrint deck={deck} cards={filtered} onClose={() => setDialog(null)} /> : null}
       <ConfirmModal
         open={dialog === 'reset'}
         onClose={() => setDialog(null)}

@@ -23,6 +23,9 @@ export type CardEditorInit = {
 
 export type CardsFromNoteInit = { id: string; title: string; content: string; preselect?: number[] }
 
+/** Was der Dialog „Verschieben“ verschiebt: eine oder mehrere Notizen oder einen Ordner */
+export type MoveTarget = { kind: 'notes'; notes: NoteSummary[] } | { kind: 'folder'; folder: Folder }
+
 export type AppActions = {
   view: View
   go: (view: View, opts?: { replace?: boolean }) => void
@@ -31,16 +34,19 @@ export type AppActions = {
   /** Notiz direkt anlegen und öffnen – ohne Format im zuletzt gewählten Standardformat */
   createNote: (input: { title: string; folderId: string | null; content?: string; format?: NoteFormat }) => Promise<string>
   openQuickSwitcher: () => void
-  openMove: (target: { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder }) => void
+  /** `onMoved`: nach dem Verschieben, z. B. um die Auswahl aufzuheben */
+  openMove: (target: MoveTarget, opts?: { onMoved?: () => void }) => void
   openNewFolder: (parentId: string | null) => void
   openRenameFolder: (folder: Folder) => void
   deleteFolder: (folder: Folder) => void
-  trashNote: (note: Pick<NoteSummary, 'id' | 'title'>) => void
-  togglePin: (note: NoteSummary) => void
+  /** In den Papierkorb (mit „Rückgängig“) – `true`, wenn es geklappt hat */
+  trashNotes: (notes: Pick<NoteSummary, 'id' | 'title'>[]) => Promise<boolean>
+  /** Anheften bzw. lösen – `true`, wenn es geklappt hat */
+  pinNotes: (notes: Pick<NoteSummary, 'id'>[], pinned: boolean) => Promise<boolean>
   renameNote: (note: NoteSummary) => void
   closeSidebar: () => void
-  /** Notiz per Titel (Wikilink-Ziel) auflösen */
-  resolveTitle: (target: string) => NoteSummary | null
+  /** Notiz per Titel (Wikilink-Ziel) auflösen – Tresor-Notizen nur mit `vault` (Links aus dem Tresor) */
+  resolveTitle: (target: string, opts?: { vault?: boolean }) => NoteSummary | null
   openCardEditor: (init?: CardEditorInit) => void
   /** Dialog „Karteikarten aus Notiz erstellen“ – `preselect`: Zeilen der Überschriften, deren Abschnitte vorausgewählt sind */
   openCardsFromNote: (note: CardsFromNoteInit) => void

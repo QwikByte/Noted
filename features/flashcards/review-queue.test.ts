@@ -60,6 +60,7 @@ describe('Warteschlange für Bewertungen', () => {
       decks: [],
       cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], occlusion: null, position: 0, suspended: false, createdAt: 0, updatedAt: 0 }],
       reviews,
+      fsrs: null,
     })
     // Veraltete Daten (z. B. aus dem Offline-Cache): Überlagerung bleibt
     q.prune(data([review('a', 1000)]))

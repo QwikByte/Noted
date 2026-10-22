@@ -29,6 +29,9 @@ export function getDb(): DB {
   db.pragma('synchronous = NORMAL')
   db.pragma('foreign_keys = ON')
   db.pragma('busy_timeout = 5000')
+  // Gelöschtes wird überschrieben statt nur freigegeben – sonst stünde der Klartext in den Tresor verschobener Notizen
+  // weiter in der Datei
+  db.pragma('secure_delete = ON')
   migrate(db)
 
   globalForDb.__notedDb = db

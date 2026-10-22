@@ -41,7 +41,11 @@ export function LectureCardsHint() {
   const [stored, setStored] = usePref<string>('noted:lecture-hints', '')
   const dismissed = readDismissed(stored, today)
 
-  const byTitle = useMemo(() => new Map(notes.map((n) => [n.title.toLowerCase(), n])), [notes])
+  // Aus Tresor-Notizen gibt es keine Karteikarten
+  const byTitle = useMemo(
+    () => new Map(notes.filter((n) => !n.vault).map((n) => [n.title.toLowerCase(), n])),
+    [notes],
+  )
   const withCards = useMemo(() => new Set(flashcards?.cards.map((c) => c.noteId)), [flashcards])
   const hints =
     events && flashcards

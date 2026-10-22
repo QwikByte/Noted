@@ -162,6 +162,113 @@ test('Notizen und Ordner ziehen, Dateien folgen ihren Notizen', async ({ page, b
   await context.close()
 })
 
+test('Mehrfachauswahl: auswählen, gemeinsam ziehen, in den Papierkorb und zurück', async ({ page, browser, context }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = async (name: string, parentId: string | null = null) => {
+    const f = (await (await page.request.post('/api/folders', { headers, data: { name, parentId } })).json()).folder
+    cleanup.unshift(`/api/folders/${f.id}`)
+    return f as { id: string }
+  }
+  const semester = await folder('Auswahl Semester')
+  const ziel = await folder('Auswahl Ziel', semester.id)
+  const ids: string[] = []
+  for (const title of ['Auswahl A', 'Auswahl B', 'Auswahl C']) {
+    const data = { title, content: `Inhalt von ${title}`, folderId: semester.id }
+    const note = (await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }
+    cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+    ids.push(note.id)
+  }
+  const note = async (id: string) => (await (await page.request.get(`/api/notes/${id}`)).json()).note
+  const folderIds = () => Promise.all(ids.map(async (id) => (await note(id))?.folderId ?? null))
+
+  await page.goto(`/?f=${semester.id}`)
+  const main = page.getByRole('main')
+  const card = (title: string) => main.getByRole('link', { name: new RegExp(`^${title}`) })
+  const bar = page.getByRole('toolbar', { name: 'Auswahl' })
+  let tabs = 0
+  context.on('page', () => tabs++)
+
+  // Strg/⌘-Klick wählt aus statt die Notiz oder einen neuen Tab zu öffnen, Umschalt-Klick wählt einen Bereich
+  await card('Auswahl A').click({ modifiers: ['ControlOrMeta'] })
+  await expect(bar).toContainText('1 ausgewählt')
+  await card('Auswahl C').click({ modifiers: ['Shift'] })
+  await expect(bar).toContainText('3 ausgewählt')
+  await card('Auswahl B').click({ modifiers: ['ControlOrMeta'] })
+  await expect(bar).toContainText('2 ausgewählt')
+  await card('Auswahl B').click({ modifiers: ['ControlOrMeta', 'Shift'] })
+  await expect(bar).toContainText('3 ausgewählt')
+  await expect(page).toHaveURL(new RegExp(`f=${semester.id}`))
+  expect(tabs).toBe(0)
+  await expect(main.getByRole('checkbox', { name: '„Auswahl B“ auswählen' })).toHaveAttribute('aria-checked', 'true')
+  await shot(page, '95-selection')
+
+  // Rechtsklick auf eine ausgewählte Notiz: die Sammelaktionen
+  const menu = page.getByRole('menu', { name: 'Kontextmenü' })
+  await card('Auswahl A').click({ button: 'right' })
+  await expect(menu).toContainText('3 Notizen')
+  await expect(menu.getByRole('menuitem', { name: 'Auswahl aufheben' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  // Esc schließt erst das Menü – die Auswahl bleibt
+  await expect(bar).toContainText('3 ausgewählt')
+
+  // Eine ausgewählte Notiz zieht alle mit – „Rückgängig“ legt jede zurück
+  await mouseDrag(page, card('Auswahl B'), main.getByRole('link', { name: /^Auswahl Ziel/ }))
+  await expect(page.getByText('3 Notizen nach „Auswahl Ziel“ verschoben.')).toBeVisible()
+  await expect.poll(folderIds).toEqual([ziel.id, ziel.id, ziel.id])
+  await expect(bar).toHaveCount(0)
+  await page.getByRole('button', { name: 'Rückgängig' }).last().click()
+  await expect.poll(folderIds).toEqual([semester.id, semester.id, semester.id])
+
+  // Strg/⌘+A wählt alle Notizen (nicht den Unterordner), Esc hebt die Auswahl auf
+  await main.getByRole('heading', { level: 1 }).click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await expect(bar).toContainText('3 ausgewählt')
+  await page.keyboard.press('Escape')
+  await expect(bar).toHaveCount(0)
+
+  // Über „Auswählen“: Klick auf die Karte schaltet um, zwei Notizen in den Papierkorb
+  await main.getByRole('button', { name: 'Auswählen' }).click()
+  await card('Auswahl A').click()
+  await main.getByRole('checkbox', { name: '„Auswahl B“ auswählen' }).click()
+  await expect(bar).toContainText('2 ausgewählt')
+  await expect(page).toHaveURL(new RegExp(`f=${semester.id}`))
+  await bar.getByRole('button', { name: 'In den Papierkorb' }).click()
+  await expect(page.getByText('2 Notizen in den Papierkorb verschoben.')).toBeVisible()
+  await expect(card('Auswahl A')).toHaveCount(0)
+  expect((await page.request.get(`/api/notes/${ids[0]}`)).status()).toBe(404)
+
+  // Im Papierkorb genau diese beiden auswählen und wiederherstellen
+  await page.goto('/?v=trash')
+  await main.getByRole('button', { name: 'Auswählen' }).click()
+  await main.getByRole('checkbox', { name: '„Auswahl A“ auswählen' }).click()
+  await main.getByRole('checkbox', { name: '„Auswahl B“ auswählen' }).click()
+  await expect(bar).toContainText('2 ausgewählt')
+  await bar.getByRole('button', { name: 'Wiederherstellen' }).click()
+  await expect(page.getByText('2 Notizen wiederhergestellt.')).toBeVisible()
+  await expect.poll(folderIds).toEqual([semester.id, semester.id, semester.id])
+
+  // Handy: „Auswählen“, dann schaltet Tippen um, statt die Notiz zu öffnen
+  const mobileContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    locale: 'de-DE',
+    storageState: await page.context().storageState(),
+  })
+  const mobile = await mobileContext.newPage()
+  await mobile.goto(`/?f=${semester.id}`)
+  const mobileMain = mobile.getByRole('main')
+  await mobileMain.getByRole('button', { name: 'Auswählen' }).tap()
+  await mobileMain.getByRole('link', { name: /^Auswahl A/ }).tap()
+  await mobileMain.getByRole('link', { name: /^Auswahl C/ }).tap()
+  await expect(mobile.getByRole('toolbar', { name: 'Auswahl' })).toContainText('2 ausgewählt')
+  await expect(mobile).toHaveURL(new RegExp(`f=${semester.id}`))
+  await shot(mobile, '96-mobile-selection')
+  await mobileContext.close()
+})
+
 test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

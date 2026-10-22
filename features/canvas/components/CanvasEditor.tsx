@@ -86,6 +86,8 @@ type Props = {
   onCreateCard: () => void
   /** Über der Fläche, z. B. das Titelfeld */
   header?: React.ReactNode
+  /** Canvas im Tresor: bietet auch Tresor-Notizen als Karten an */
+  vault?: boolean
 }
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -153,7 +155,18 @@ export default function CanvasEditor(props: Props) {
   )
 }
 
-function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUpload, onCreateCard, header }: Props) {
+function CanvasFlow({
+  handleRef,
+  content,
+  title,
+  onChange,
+  readOnly,
+  links,
+  onUpload,
+  onCreateCard,
+  header,
+  vault,
+}: Props) {
   const flow = useReactFlow<CardNode, ArrowEdge>()
   const openContextMenu = useContextMenu()
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -1071,6 +1084,7 @@ function CanvasFlow({ handleRef, content, title, onChange, readOnly, links, onUp
       <FilePicker
         open={dialog === 'file'}
         excludeTitle={title}
+        vault={vault}
         onClose={() => setDialog(null)}
         onPick={(file) => {
           setDialog(null)

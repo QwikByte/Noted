@@ -1,6 +1,6 @@
 'use client'
-// Verbindung zwischen PDF-Viewer und der gerade geöffneten Notiz: Seitenlinks und Zitate aus dem PDF landen
-// an der Cursorposition im Editor – im Format der Notiz.
+// Verbindung zwischen PDF-Viewer und Schmierzettel und der gerade geöffneten Notiz: Seitenlinks und Zitate aus dem PDF
+// sowie Text vom Schmierzettel landen an der Cursorposition im Editor – im Format der Notiz.
 
 /** Stelle in einem PDF-Anhang */
 export type PdfRef = { file: string; page: number }
@@ -8,8 +8,15 @@ export type PdfRef = { file: string; page: number }
 /** Zitat aus einem PDF samt Stelle */
 export type PdfQuote = { text: string; ref: PdfRef }
 
-/** Was der PDF-Viewer in eine Notiz einfügt – „quotes“: mehrere Zitate auf einmal (z. B. alle Anmerkungen) */
-export type Insertion = { kind: 'page-link'; ref: PdfRef } | ({ kind: 'quote' } & PdfQuote) | { kind: 'quotes'; quotes: PdfQuote[] }
+/**
+ * Was PDF-Viewer und Schmierzettel in eine Notiz einfügen – „quotes“: mehrere Zitate auf einmal (z. B. alle
+ * Anmerkungen), „text“: einfacher Text vom Schmierzettel
+ */
+export type Insertion =
+  | { kind: 'page-link'; ref: PdfRef }
+  | ({ kind: 'quote' } & PdfQuote)
+  | { kind: 'quotes'; quotes: PdfQuote[] }
+  | { kind: 'text'; text: string }
 
 export type ActiveEditor = {
   noteId: string
@@ -41,6 +48,7 @@ const quoteMarkdown = ({ text, ref }: PdfQuote) =>
 
 /** Einfügen in Markdown und einfachen Text */
 export function insertionToMarkdown(insertion: Insertion): string {
+  if (insertion.kind === 'text') return insertion.text
   if (insertion.kind === 'page-link') return pdfPageLink(insertion.ref)
   if (insertion.kind === 'quotes') return insertion.quotes.map(quoteMarkdown).join('\n\n')
   return quoteMarkdown(insertion)

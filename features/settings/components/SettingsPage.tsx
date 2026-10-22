@@ -28,6 +28,7 @@ import type { SessionInfo } from '@/features/auth/types'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { useShares } from '@/features/sharing/client/queries'
 import { ShareList } from '@/features/sharing/components/ShareList'
+import { VaultSettings } from '@/features/vault/components/VaultSettings'
 
 export function SettingsPage() {
   const user = useUser()
@@ -40,6 +41,7 @@ export function SettingsPage() {
           <PasswordForm />
         </Section>
         <MfaSection />
+        <VaultSettings />
         <SessionsSection />
         <AppearanceSection />
         <SharesSection />
@@ -331,6 +333,7 @@ function AppearanceSection() {
   const [fontSize, setFontSize] = useFontSize()
   const [mode, setMode] = usePref<EditorMode>('noted:mode', 'edit')
   const [spellcheck, setSpellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
+  const [slashCommands, setSlashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   return (
     <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
@@ -360,6 +363,14 @@ function AppearanceSection() {
             onChange={(v) => setSpellcheck(v ? '1' : '0')}
             label="Rechtschreibprüfung im Editor"
             description="Auf dem Handy auch Autokorrektur. Wirkt beim nächsten Öffnen einer Notiz."
+          />
+        </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={slashCommands === '1'}
+            onChange={(v) => setSlashCommands(v ? '1' : '0')}
+            label="Befehle mit „/“"
+            description="Ein „/“ am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … Wirkt beim nächsten Öffnen einer Notiz."
           />
         </div>
         <Field label="Notizen öffnen im Modus" className="max-w-sm">
@@ -444,7 +455,8 @@ function DataSection() {
               {(id) => (
                 <Select id={id} value={targetFolder} onChange={(e) => setTargetFolder(e.target.value)}>
                   <option value="">— Oberste Ebene —</option>
-                  {folders.map((f) => (
+                  {/* In den Tresor lässt sich (noch) nicht importieren – der Server kann nicht verschlüsseln */}
+                  {folders.filter((f) => !f.vault).map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name}
                     </option>

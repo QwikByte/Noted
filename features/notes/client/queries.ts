@@ -6,6 +6,8 @@ import { sync, type Draft } from './sync'
 import type { Folder, Note, NoteSummary, NoteVersion, NoteVersionWithContent, TagCount, TrashedNote } from '../types'
 import { extractTags, makeExcerpt } from '@/shared/markdown/meta'
 import { noteText } from '../format'
+import { useRevealRequest, useVaultState, vault, type Reveal } from '@/features/vault/client/vault'
+import { VaultError } from '@/features/vault/crypto'
 
 export const keys = {
   notes: ['notes'] as const,
@@ -19,11 +21,49 @@ export const keys = {
   version: (id: string, versionId: number) => ['versions', id, versionId] as const,
 }
 
+type VaultState = ReturnType<typeof useVaultState>
+
+/** Entschlüsselter Titel bzw. Name – solange er noch entschlüsselt wird „…“ */
+function revealed(reveal: Reveal): string {
+  const value = vault.peek(reveal)
+  return typeof value === 'string' ? value : value instanceof VaultError ? 'Beschädigt' : '…'
+}
+
+/** Gesperrt bleibt vom Tresor nur der Wurzelordner „Tresor“ sichtbar, entsperrt kommen die echten Namen dazu */
+function revealFolders(folders: Folder[], state: VaultState): Folder[] {
+  if (!folders.some((f) => f.vault)) return folders
+  if (!state.unlocked) return folders.filter((f) => !f.vault || f.nameEnc === null)
+  return folders.map((f) =>
+    f.nameEnc ? { ...f, name: revealed({ id: f.id, field: 'name', envelope: f.nameEnc }) } : f,
+  )
+}
+
+/** Tresor-Notizen gibt es nur entsperrt – dann mit ihrem echten Titel */
+function revealNotes(notes: NoteSummary[], state: VaultState): NoteSummary[] {
+  if (!notes.some((n) => n.vault)) return notes
+  if (!state.unlocked) return notes.filter((n) => !n.vault)
+  return notes.map((n) =>
+    n.vault && n.titleEnc ? { ...n, title: revealed({ id: n.id, field: 'title', envelope: n.titleEnc }) } : n,
+  )
+}
+
+const titleReveals = (items: { id: string; vault: boolean; titleEnc: string | null }[]): Reveal[] =>
+  items.flatMap((n) => (n.vault && n.titleEnc ? [{ id: n.id, field: 'title' as const, envelope: n.titleEnc }] : []))
+
 export function useFolders() {
-  return useQuery({
+  const query = useQuery({
     queryKey: keys.folders,
     queryFn: () => api<{ folders: Folder[] }>('/api/folders').then((r) => r.folders),
   })
+  const state = useVaultState()
+  const reveals = useMemo(
+    () =>
+      (query.data ?? []).flatMap((f) => (f.nameEnc ? [{ id: f.id, field: 'name' as const, envelope: f.nameEnc }] : [])),
+    [query.data],
+  )
+  useRevealRequest(reveals)
+  const data = useMemo(() => query.data && revealFolders(query.data, state), [query.data, state])
+  return { ...query, data }
 }
 
 function useServerNotes() {
@@ -33,16 +73,30 @@ function useServerNotes() {
   })
 }
 
+/** IDs der Tresor-Notizen – auch gesperrt (zum Aufräumen von Klartext auf diesem Gerät) */
+export function useVaultNoteIds(): string[] {
+  const { data } = useServerNotes()
+  const joined = useMemo(() => (data ?? []).flatMap((n) => (n.vault ? [n.id] : [])).join(','), [data])
+  return useMemo(() => (joined ? joined.split(',') : []), [joined])
+}
+
 export function useDrafts(): Draft[] {
   return useSyncExternalStore(sync.subscribe, sync.getDrafts, () => EMPTY)
 }
 const EMPTY: Draft[] = []
 
-/** Notizliste vom Server, ergänzt um lokale (noch nicht synchronisierte) Änderungen. */
+/**
+ * Notizliste vom Server, ergänzt um lokale (noch nicht synchronisierte) Änderungen – Tresor-Notizen nur entsperrt,
+ * mit entschlüsseltem Titel.
+ */
 export function useNotes() {
   const query = useServerNotes()
   const drafts = useDrafts()
-  const notes = useMemo(() => mergeDrafts(query.data ?? [], drafts), [query.data, drafts])
+  const state = useVaultState()
+  const merged = useMemo(() => mergeDrafts(query.data ?? [], drafts), [query.data, drafts])
+  const reveals = useMemo(() => titleReveals(merged), [merged])
+  useRevealRequest(reveals)
+  const notes = useMemo(() => revealNotes(merged, state), [merged, state])
   return { ...query, notes }
 }
 
@@ -54,10 +108,12 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
     if (!d) return n
     byId.delete(n.id)
     const format = d.format ?? n.format
-    const text = d.content !== undefined ? noteText(format, d.content) : null
+    // Im Tresor ist der Inhalt ein Umschlag: kein Auszug, keine Tags
+    const text = d.content !== undefined && !n.vault ? noteText(format, d.content) : null
     return {
       ...n,
       title: d.title ?? n.title,
+      titleEnc: d.titleEnc ?? n.titleEnc,
       folderId: d.folderId !== undefined ? d.folderId : n.folderId,
       format,
       updatedAt: Math.max(n.updatedAt, d.updatedAt),
@@ -67,10 +123,10 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
   for (const d of byId.values()) {
     if (!d.isNew) continue
     const format = d.format ?? 'markdown'
-    const text = noteText(format, d.content ?? '')
+    const text = d.vault ? '' : noteText(format, d.content ?? '')
     result.unshift({
       id: d.id,
-      title: d.title ?? 'Unbenannt',
+      title: d.vault ? d.id : (d.title ?? 'Unbenannt'),
       folderId: d.folderId ?? null,
       format,
       pinned: false,
@@ -79,6 +135,8 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
       updatedAt: d.updatedAt,
       tags: extractTags(text),
       excerpt: makeExcerpt(text),
+      vault: !!d.vault,
+      titleEnc: d.titleEnc ?? null,
     })
   }
   return result
@@ -100,11 +158,31 @@ export function useTags() {
   })
 }
 
+/** Papierkorb – Tresor-Notizen gesperrt als „Gesperrte Notiz“, entsperrt mit ihrem Titel */
 export function useTrash() {
-  return useQuery({
+  const query = useQuery({
     queryKey: keys.trash,
     queryFn: () => api<{ notes: TrashedNote[] }>('/api/trash').then((r) => r.notes),
   })
+  const state = useVaultState()
+  const reveals = useMemo(() => titleReveals(query.data ?? []), [query.data])
+  useRevealRequest(reveals)
+  const data = useMemo(
+    () =>
+      query.data?.map((n) =>
+        !n.vault
+          ? n
+          : {
+              ...n,
+              title:
+                state.unlocked && n.titleEnc
+                  ? revealed({ id: n.id, field: 'title', envelope: n.titleEnc })
+                  : 'Gesperrte Notiz',
+            },
+      ),
+    [query.data, state],
+  )
+  return { ...query, data }
 }
 
 export function useBacklinks(id: string | null) {
@@ -118,14 +196,34 @@ export function useBacklinks(id: string | null) {
   })
 }
 
-/** Gesicherte Stände einer Notiz – bei jedem Öffnen des Verlaufs neu laden, es kann inzwischen einer dazugekommen sein */
+/**
+ * Gesicherte Stände einer Notiz – bei jedem Öffnen des Verlaufs neu laden, es kann inzwischen einer dazugekommen sein.
+ * Im Tresor mit entschlüsseltem Titel.
+ */
 export function useNoteVersions(id: string, enabled: boolean) {
-  return useQuery({
+  const query = useQuery({
     queryKey: keys.versions(id),
     queryFn: () => api<{ versions: NoteVersion[] }>(`/api/notes/${id}/versions`).then((r) => r.versions),
     enabled,
     staleTime: 0,
   })
+  const state = useVaultState()
+  const reveals = useMemo(
+    () =>
+      (query.data ?? []).flatMap((v) => (v.titleEnc ? [{ id, field: 'title' as const, envelope: v.titleEnc }] : [])),
+    [query.data, id],
+  )
+  useRevealRequest(reveals)
+  const data = useMemo(
+    () =>
+      query.data?.map((v) =>
+        v.titleEnc
+          ? { ...v, title: state.unlocked ? revealed({ id, field: 'title', envelope: v.titleEnc }) : 'Gesperrt' }
+          : v,
+      ),
+    [query.data, state, id],
+  )
+  return { ...query, data }
 }
 
 export function useNoteVersion(id: string, versionId: number | null) {

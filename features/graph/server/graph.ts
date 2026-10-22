@@ -4,7 +4,7 @@ import { linkKey } from '@/shared/markdown/meta'
 import type { GraphData, GraphEdge, GraphNode } from '../types'
 
 /**
- * Alle Notizen eines Nutzers (ohne Papierkorb) mit den Wikilinks zwischen ihnen. Links auf Notizen, die es nicht gibt,
+ * Alle Notizen (ohne Papierkorb und Tresor) mit den Wikilinks zwischen ihnen. Links auf Notizen, die es nicht gibt,
  * fallen weg. Die Ziele werden wie bei „Verlinkt in“ über linkKey(Titel) aufgelöst – in JavaScript statt per SQL
  * lower(), das Umlaute nicht kleinschreibt.
  */
@@ -14,14 +14,14 @@ export function getGraph(userId: number): GraphData {
     .prepare(
       `SELECT n.id, n.title, n.folder_id AS folderId,
               (SELECT GROUP_CONCAT(tag, char(31)) FROM note_tags t WHERE t.note_id = n.id) AS tags
-       FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL
+       FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0
        ORDER BY n.title COLLATE NOCASE, n.id`,
     )
     .all(userId) as { id: string; title: string; folderId: string | null; tags: string | null }[]
   const links = db
     .prepare(
       `SELECT l.note_id AS source, l.target FROM note_links l JOIN notes n ON n.id = l.note_id
-       WHERE n.user_id = ? AND n.deleted_at IS NULL ORDER BY l.note_id, l.target`,
+       WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ORDER BY l.note_id, l.target`,
     )
     .all(userId) as { source: string; target: string }[]
 

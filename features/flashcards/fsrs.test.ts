@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { fsrsInterval, initialMemory, memoryFromSm2, nextMemory, retrievability } from './fsrs'
+import {
+  DEFAULT_WEIGHTS,
+  clipWeights,
+  fsrsInterval,
+  initialMemory,
+  memoryFromSm2,
+  nextMemory,
+  retrievability,
+} from './fsrs'
 import { DAY, MINUTE, previewIntervals, schedule, type Plan, type Rating } from './srs'
 import type { SrsState } from './types'
 
@@ -36,6 +44,23 @@ describe('FSRS-Formeln', () => {
   it('rechnet SM-2-Lernstand in Stabilität und Schwierigkeit um', () => {
     expect(memoryFromSm2(30, 2.5)).toEqual({ stability: 30, difficulty: 4 })
     expect(memoryFromSm2(0, 1.3)).toEqual({ stability: 3.173, difficulty: 10 })
+  })
+})
+
+describe('Eigene FSRS-Gewichte', () => {
+  it('hält Gewichte in ihren Grenzen (wie fsrs-rs)', () => {
+    expect(clipWeights([0, -1000, 1000, 0, 1000, -1000, 1, 0.25, -0.1])).toEqual([0.01, 0.01, 100, 0.01, 10, 0.001, 1, 0.25, 0])
+    expect(clipWeights(DEFAULT_WEIGHTS)).toEqual(DEFAULT_WEIGHTS)
+  })
+
+  it('plant mit eigenen Gewichten – ohne bleibt alles wie bisher', () => {
+    const weights = [...DEFAULT_WEIGHTS]
+    weights[3] = 30
+    expect(initialMemory(4, weights).stability).toBe(30)
+    expect(initialMemory(4).stability).toBe(DEFAULT_WEIGHTS[3])
+    expect(days(schedule(null, 4, NOW, { kind: 'fsrs', retention: 0.9, weights }), NOW)).toBe(30)
+    expect(days(schedule(null, 4, NOW, FSRS), NOW)).toBe(Math.round(DEFAULT_WEIGHTS[3]))
+    expect(memoryFromSm2(0, 2.5, weights).stability).toBe(weights[2])
   })
 })
 

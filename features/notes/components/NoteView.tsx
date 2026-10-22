@@ -1,7 +1,7 @@
 'use client'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
-import { EditorView } from '@codemirror/view'
+import type { EditorView } from '@codemirror/view'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -24,12 +24,15 @@ import {
   Link2,
   ListChecks,
   Loader2,
+  Lock,
   Menu as MenuIcon,
   MoreVertical,
   PenLine,
   Pin,
   PinOff,
+  Printer,
   Share2,
+  TableOfContents,
   Trash2,
   Type,
   Upload,
@@ -39,21 +42,25 @@ import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
+import { NotePrint } from './NotePrint'
+import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { HistoryDialog } from './dialogs'
 import { ShareDialog } from '@/features/sharing/components/ShareDialog'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
+import { Badge } from '@/shared/ui/badge'
 import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
+import { usePrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { useBacklinks, useDrafts, useFolders, useNote, useNotes, useTags } from '../client/queries'
 import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
-import { sync, type NoteSyncStatus } from '../client/sync'
+import { conflictCopyTitle, sync, type NoteSyncStatus } from '../client/sync'
 import { usePref, type EditorMode } from '@/shared/client/prefs'
 import { copyHtml, copyText } from '@/shared/client/clipboard'
 import { folderPath } from '../tree'
@@ -63,7 +70,9 @@ import type { Attachment } from '@/features/attachments/types'
 import { errorMessage, ApiError } from '@/shared/client/api'
 import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
-import type { NoteEditorHandle } from '../client/editor-handle'
+import type { NoteEditorHandle, RichTextHandle } from '../client/editor-handle'
+import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
+import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
@@ -73,7 +82,21 @@ import { buildExportIndex } from '@/features/transfer/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { canQuiz } from '@/features/flashcards/note-quiz'
 import { validateName } from '@/shared/lib/names'
+import {
+  clearPendingHeading,
+  createVaultNote,
+  pendingHeading,
+  rememberPlain,
+  revealNote,
+  setPendingHeading,
+  updateVaultNote,
+  useRevealedNote,
+} from '@/features/vault/client/vault-notes'
+import { requestVault } from '@/features/vault/client/vault-ui'
+import { VaultMoveItem } from '@/features/vault/components/VaultMoveItem'
 import type { Note, NoteFormat } from '../types'
+
+const VAULT_UPLOAD_BLOCKED = 'Dateien lassen sich im Tresor noch nicht verschlüsselt speichern.'
 
 const editorLoading = () => (
   <div className="flex flex-1 items-center justify-center text-muted">
@@ -104,16 +127,19 @@ function useSyncStatus(id: string): NoteSyncStatus {
   )
 }
 
-/** Breit genug für Editor und Vorschau nebeneinander? Gemessen am eigenen Bereich (daneben kann ein PDF offen sein). */
-function useIsWide(ref: React.RefObject<HTMLElement | null>) {
+/**
+ * Breit genug, z. B. für Editor und Vorschau nebeneinander oder die Gliederung neben dem Blatt? Gemessen am eigenen
+ * Bereich (daneben kann ein PDF offen sein).
+ */
+function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   const [wide, setWide] = useState(false)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= 960))
+    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= minWidth))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ref])
+  }, [ref, minWidth])
   return wide
 }
 
@@ -163,6 +189,8 @@ export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?:
         updatedAt: draft.updatedAt,
         tags: [],
         excerpt: '',
+        vault: !!draft.vault,
+        titleEnc: draft.titleEnc ?? null,
       }
     }
     return null
@@ -173,29 +201,85 @@ export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?:
   if (!base) {
     const notFound = query.error instanceof ApiError && query.error.status === 404
     return (
-      <div className="flex h-full flex-col">
-        <div className="pt-safe border-b border-border lg:hidden">
-          <div className="flex h-12 items-center px-2">
-            <Button variant="ghost" size="icon" onClick={onOpenSidebar} aria-label="Menü öffnen">
-              <MenuIcon className="size-5" />
-            </Button>
+      <NoteMessage onOpenSidebar={onOpenSidebar}>
+        {query.isLoading ? (
+          <Loader2 className="size-6 animate-spin" />
+        ) : (
+          <div className="space-y-3">
+            <FileText className="mx-auto size-10 text-faint" />
+            <p>{notFound ? 'Diese Notiz gibt es nicht (mehr).' : `Die Notiz konnte nicht geladen werden. ${errorMessage(query.error)}`}</p>
+            <Button onClick={() => app.go({ kind: 'home' })}>Zur Startseite</Button>
           </div>
-        </div>
-        <div className="flex flex-1 items-center justify-center p-8 text-center text-muted">
-          {query.isLoading ? (
-            <Loader2 className="size-6 animate-spin" />
-          ) : (
-            <div className="space-y-3">
-              <FileText className="mx-auto size-10 text-faint" />
-              <p>{notFound ? 'Diese Notiz gibt es nicht (mehr).' : `Die Notiz konnte nicht geladen werden. ${errorMessage(query.error)}`}</p>
-              <Button onClick={() => app.go({ kind: 'home' })}>Zur Startseite</Button>
-            </div>
-          )}
-        </div>
-      </div>
+        )}
+      </NoteMessage>
     )
   }
+  if (base.vault) {
+    return <VaultNote note={base} serverNote={query.data ?? null} heading={heading} onOpenSidebar={onOpenSidebar} />
+  }
   return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} />
+}
+
+/** Statt der Notiz: Laden, Fehler, gesperrt */
+function NoteMessage({ onOpenSidebar, children }: { onOpenSidebar: () => void; children: React.ReactNode }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="pt-safe border-b border-border lg:hidden">
+        <div className="flex h-12 items-center px-2">
+          <Button variant="ghost" size="icon" onClick={onOpenSidebar} aria-label="Menü öffnen">
+            <MenuIcon className="size-5" />
+          </Button>
+        </div>
+      </div>
+      <div className="flex flex-1 items-center justify-center p-8 text-center text-muted">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * Tresor-Notiz: erst entschlüsseln, dann der Editor mit dem Klartext. Gesperrt (auch nach dem automatischen Sperren)
+ * wird sie geschlossen; beschädigt wird sie nicht geöffnet – sonst überschriebe das Speichern sie.
+ */
+function VaultNote({
+  note,
+  serverNote,
+  heading,
+  onOpenSidebar,
+}: {
+  note: Note
+  serverNote: Note | null
+  heading?: string
+  onOpenSidebar: () => void
+}) {
+  const revealed = useRevealedNote(note, serverNote)
+  const [jump] = useState(() => heading ?? pendingHeading(note.id))
+  useEffect(() => clearPendingHeading(note.id), [note.id])
+  // Basis für die Konflikterkennung, auch solange der neueste Stand noch entschlüsselt wird
+  useEffect(() => {
+    if (serverNote) sync.setKnownVersion(serverNote.id, serverNote.version)
+  }, [serverNote])
+
+  if (revealed.state === 'ready') return <NoteEditor note={revealed.note} serverNote={revealed.server} heading={jump} />
+  return (
+    <NoteMessage onOpenSidebar={onOpenSidebar}>
+      {revealed.state === 'loading' ? (
+        <Loader2 className="size-6 animate-spin" />
+      ) : revealed.state === 'locked' ? (
+        <div className="space-y-3" data-testid="vault-note-locked">
+          <Lock className="mx-auto size-10 text-faint" />
+          <p>Gesperrt – diese Notiz liegt im Tresor.</p>
+          <Button variant="primary" onClick={() => requestVault({ kind: 'unlock' })}>
+            Entsperren
+          </Button>
+        </div>
+      ) : (
+        <div className="max-w-md space-y-3" role="alert" data-testid="vault-note-corrupt">
+          <AlertTriangle className="mx-auto size-10 text-danger" />
+          <p>{revealed.message}</p>
+        </div>
+      )}
+    </NoteMessage>
+  )
 }
 
 /** Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz */
@@ -213,7 +297,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const toast = useToast()
   // Markdown und einfacher Text: CodeMirror · formatierter Text: TipTap · Mindmap und Canvas: React Flow
   const cmRef = useRef<EditorHandle>(null)
-  const richRef = useRef<NoteEditorHandle>(null)
+  const richRef = useRef<RichTextHandle>(null)
   const visualRef = useRef<NoteEditorHandle>(null)
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
@@ -221,10 +305,15 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const { data: attachments = [] } = useAttachments()
   const status = useSyncStatus(note.id)
   const rootRef = useRef<HTMLDivElement>(null)
-  const isWide = useIsWide(rootRef)
+  const isWide = useIsWide(rootRef, 960)
+  const outlineWide = useIsWide(rootRef, OUTLINE_BESIDE_WIDTH)
+  // Bereich unter dem Kopf: Gliederung, Werkzeugleiste, Editor und Vorschau
+  const contentRef = useRef<HTMLDivElement>(null)
   const pdfInput = useRef<HTMLInputElement>(null)
 
-  const initialDraft = sync.getDraft(note.id)
+  // Tresor-Notiz: Der Entwurf ist verschlüsselt und steckt schon entschlüsselt in `note`
+  const inVault = note.vault
+  const initialDraft = inVault ? undefined : sync.getDraft(note.id)
   const [content, setContent] = useState(initialDraft?.content ?? note.content)
   const [format, setFormat] = useState<NoteFormat>(initialDraft?.format ?? note.format)
   const [title, setTitle] = useState(initialDraft?.title ?? note.title)
@@ -235,8 +324,12 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [formatOpen, setFormatOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  // Strg/⌘+P: Druckansicht statt Schnellwechsler
+  usePrintShortcut(() => setPrintOpen(true))
   const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
+  const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -252,6 +345,39 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     setStoredMode(m)
   }
 
+  // Gliederung: auf breiten Flächen als Spalte neben dem Blatt (ein- und ausblendbar, auf dem Gerät gemerkt), sonst
+  // als Overlay darüber, das nach jedem Öffnen der Notiz zu ist
+  const [outlinePref, setOutlinePref] = usePref<'1' | '0'>('noted:outline', '0')
+  const [outlineOverlay, setOutlineOverlay] = useState(false)
+  // Per Tastatur geöffnet: Fokus auf den aktuellen Eintrag – nur bis die Liste wieder zu ist
+  const [outlineFocus, setOutlineFocus] = useState(false)
+  const outlineId = useId()
+  const outlineButton = useRef<HTMLButtonElement>(null)
+  const withOutline = hasOutline(format)
+  const outlineBeside = outlineWide && effectiveMode !== 'split'
+  const outlineOpen = withOutline && (outlineBeside ? outlinePref === '1' : outlineOverlay)
+  if (!outlineOpen && outlineFocus) setOutlineFocus(false)
+
+  function toggleOutline(e: React.MouseEvent) {
+    const opening = !outlineOpen
+    if (outlineBeside) setOutlinePref(opening ? '1' : '0')
+    else setOutlineOverlay(opening)
+    setOutlineFocus(opening && e.detail === 0)
+  }
+
+  const closeOutline = useCallback(() => {
+    if (outlineBeside) setOutlinePref('0')
+    else setOutlineOverlay(false)
+    outlineButton.current?.focus()
+  }, [outlineBeside, setOutlinePref])
+
+  function selectOutlineEntry(entry: OutlineEntry, byKeyboard: boolean) {
+    if (!outlineBeside) setOutlineOverlay(false)
+    const view = cmRef.current?.view() ?? null
+    const target = { root: contentRef.current, format, mode: effectiveMode, view, rich: richRef.current }
+    revealEntry(target, entry, byKeyboard)
+  }
+
   // Aktive Notiz merken (Konflikte hier nicht automatisch auflösen)
   useEffect(() => {
     sync.activeId = note.id
@@ -264,12 +390,15 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
 
   const version = serverNote?.version ?? note.version
 
+  // Verschlüsseln scheitert z. B., wenn der Tresor währenddessen gesperrt wurde
+  const vaultFailed = useCallback((err: unknown) => toast.error(errorMessage(err)), [toast])
   const onChange = useCallback(
     (doc: string) => {
       setContent(doc)
-      sync.update(note.id, version, { content: doc, format })
+      if (inVault) updateVaultNote(note.id, version, { content: doc }).catch(vaultFailed)
+      else sync.update(note.id, version, { content: doc, format })
     },
-    [note.id, version, format],
+    [note.id, version, format, inVault, vaultFailed],
   )
 
   // Für Aufrufe von außen (PDF-Viewer, Uploads): immer der aktuelle Stand
@@ -285,6 +414,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
 
   /** Stand von einem anderen Gerät übernehmen; bei anderem Format wird der Editor neu aufgebaut */
   function applyRemote(remote: Note) {
+    // Vergleichsstand fürs nächste Verschlüsseln – sonst ginge eine Rückänderung auf den alten Text verloren
+    if (inVault) rememberPlain(remote.id, remote.title, remote.content)
     if (remote.format !== latest.current.format) {
       setFormat(remote.format)
       setContent(remote.content)
@@ -308,23 +439,25 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverNote?.version])
 
-  // Vom Server automatisch angepasster Titel (z. B. „Titel 1“ bei Namensgleichheit)
+  // Vom Server automatisch angepasster Titel (z. B. „Titel 1“ bei Namensgleichheit) – im Tresor kennt er ihn nicht
   useEffect(
     () =>
       sync.onSaved((saved) => {
         if (saved.id !== note.id) return
         loadedVersion.current = Math.max(loadedVersion.current, saved.version)
         const d = sync.getDraft(note.id)
-        if (!d?.title && saved.title !== title && !titleError) setTitle(saved.title)
+        if (!inVault && !d?.title && saved.title !== title && !titleError) setTitle(saved.title)
       }),
-    [note.id, title, titleError],
+    [note.id, title, titleError, inVault],
   )
 
   const onTitleChange = (value: string) => {
     setTitle(value)
     const err = validateName(value)
     setTitleError(err)
-    if (!err) sync.update(note.id, version, { title: value.trim() })
+    if (err) return
+    if (inVault) updateVaultNote(note.id, version, { title: value.trim() }).catch(vaultFailed)
+    else sync.update(note.id, version, { title: value.trim() })
   }
 
   // Seitenlinks und Zitate aus dem PDF-Viewer an der Cursorposition einfügen – im Lesemodus ans Ende
@@ -358,6 +491,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
 
   const upload = useCallback(
     async (files: File[]) => {
+      if (inVault) return void toast.error(VAULT_UPLOAD_BLOCKED)
       for (const file of files) {
         const name = niceFileName(file)
         try {
@@ -371,24 +505,25 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }
       }
     },
-    [toast, qc, addAttachment],
+    [toast, qc, addAttachment, inVault],
   )
 
+  // Tresor-Notizen kennen nur Notizen im Tresor
   const completionData = useMemo(
     () => ({
-      titles: () => notes.filter((n) => n.id !== note.id).map((n) => n.title),
+      titles: () => notes.filter((n) => n.id !== note.id && (inVault || !n.vault)).map((n) => n.title),
       tags: () => tags.map((t) => t.tag),
       files: () => attachments.map((a) => a.filename),
     }),
-    [notes, tags, attachments, note.id],
+    [notes, tags, attachments, note.id, inVault],
   )
 
   const resolveNote = useCallback(
     (target: string) => {
-      const n = app.resolveTitle(target)
+      const n = app.resolveTitle(target, { vault: inVault })
       return n ? { id: n.id, title: n.title } : null
     },
-    [app],
+    [app, inVault],
   )
 
   // Sprung zu einer Überschrift ([[Notiz#Abschnitt]], Abfrage, Glossar): im Editor zur Zeile, sonst zum gerenderten
@@ -402,8 +537,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       const view = cmRef.current?.view()
       const line = view ? findHeadingLine(view.state.doc.toString(), heading) : null
       if (view && line !== null) {
-        const pos = view.state.doc.line(line + 1).from
-        view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 }) })
+        revealLine(view, line, false)
         done = true
       }
       const el = headingElement(rootRef.current, heading)
@@ -417,15 +551,22 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     return () => clearTimeout(timer)
   }, [heading])
 
+  const isVaultNote = useCallback((id: string) => !!notes.find((n) => n.id === id)?.vault, [notes])
   const previewLinks = useMemo<PreviewLinks>(
     () => ({
       resolveNote,
-      onOpenNote: (id, target) => app.go({ kind: 'note', id, heading: target }),
-      onCreateNote: (t) => void app.createNote({ title: t, folderId }),
+      onOpenNote: (id, target) => {
+        // Überschriften aus dem Tresor nicht in die Adresse (Browserverlauf)
+        if (target && isVaultNote(id)) setPendingHeading(id, target)
+        app.go({ kind: 'note', id, heading: isVaultNote(id) ? undefined : target })
+      },
+      isVaultNote,
+      // Ein unaufgelöster Link im Tresor legt die neue Notiz im selben Tresor-Ordner an
+      onCreateNote: (t) => void app.createNote({ title: t, folderId }).catch((err) => toast.error(errorMessage(err))),
       onOpenTag: (tag) => app.go({ kind: 'tag', tag }),
       onOpenPdf: app.openPdf,
     }),
-    [resolveNote, app, folderId],
+    [resolveNote, isVaultNote, app, folderId, toast],
   )
 
   /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */
@@ -446,8 +587,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     [content, onChange],
   )
 
-  /** Karteikarte aus der Markierung (Editor oder Lesemodus) */
+  /** Karteikarte aus der Markierung (Editor oder Lesemodus) – nicht im Tresor: Karten wären Klartext */
   function createCard() {
+    if (inVault) return void toast.error('Karteikarten aus dem Tresor lägen unverschlüsselt im Stapel.')
     const handle = editorHandle()
     const selected = handle ? handle.selectedText() : (document.getSelection()?.toString() ?? '')
     app.openCardEditor({ ...(selected.trim() ? cardFromSelection(selected) : {}), noteId: note.id, deckName: title })
@@ -466,6 +608,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   async function uploadPdf(files: File[]) {
     const file = files[0]
     if (!file) return
+    if (inVault) return void toast.error(VAULT_UPLOAD_BLOCKED)
     try {
       toast.show(`Lade „${file.name}“ hoch …`)
       const att = await uploadAttachment(file, niceFileName(file))
@@ -497,7 +640,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       ok = await copyText(kind === 'body' ? (splitFrontmatter(content)?.body ?? content).replace(/^\n+/, '') : content)
       message = 'Markdown kopiert.'
     }
-    if (ok) toast.success(message)
+    if (ok) toast.success(inVault && kind !== 'link' ? `${message} Die Kopie ist unverschlüsselt.` : message)
     else toast.error('Kopieren nicht möglich.')
   }
 
@@ -523,6 +666,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     a.download = `${name}${ext}`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+    if (inVault) toast.show('Die heruntergeladene Datei ist unverschlüsselt.')
   }
 
   async function changeFormat(next: NoteFormat) {
@@ -531,7 +675,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       const converted = await convertContent(content, format, next, title || 'Unbenannt')
       setFormat(next)
       setContent(converted)
-      sync.update(note.id, version, { content: converted, format: next }, { immediate: true })
+      if (inVault) await updateVaultNote(note.id, version, { content: converted, format: next }, { immediate: true })
+      else sync.update(note.id, version, { content: converted, format: next }, { immediate: true })
       setFormatOpen(false)
       toast.success(`Umgewandelt in „${NOTE_FORMAT_LABELS[next].label}“.`)
     } catch (err) {
@@ -539,25 +684,26 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     }
   }
 
-  // Lokaler Graph nur, wenn die Notiz mit anderen verbunden ist (ein- oder ausgehend)
-  const { data: backlinks = [] } = useBacklinks(mode === 'read' ? note.id : null)
+  // Lokaler Graph nur, wenn die Notiz mit anderen verbunden ist (ein- oder ausgehend) – im Tresor gar nicht
+  const { data: backlinks = [] } = useBacklinks(mode === 'read' && !inVault ? note.id : null)
   const hasLinks = useMemo(
     () =>
       mode === 'read' &&
+      !inVault &&
       (backlinks.length > 0 ||
         extractLinks(text).some((key) => {
           const target = app.resolveTitle(key)
           return !!target && target.id !== note.id
         })),
-    [mode, backlinks, text, app, note.id],
+    [mode, backlinks, text, app, note.id, inVault],
   )
 
   const { data: flashcards } = useFlashcards()
   const linkedCards = useMemo(() => flashcards?.cards.filter((c) => c.noteId === note.id).length ?? 0, [flashcards, note.id])
   // Im Lesemodus auf Karten in der Notiz hinweisen (Frage::Antwort, Frage-Callouts …)
   const cardsInNote = useMemo(
-    () => mode === 'read' && parseCardsFromNote(text).some((c) => EXPLICIT_SOURCES.includes(c.source)),
-    [mode, text],
+    () => mode === 'read' && !inVault && parseCardsFromNote(text).some((c) => EXPLICIT_SOURCES.includes(c.source)),
+    [mode, text, inVault],
   )
 
   const path = folderPath(folders, folderId)
@@ -631,17 +777,25 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <MenuItem icon={<Download />} onSelect={download}>
         Als {noteExtension(format)} herunterladen
       </MenuItem>
+      <MenuItem icon={<Printer />} onSelect={() => setPrintOpen(true)} hint="Strg+P">
+        Drucken …
+      </MenuItem>
       <MenuSeparator />
-      <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
+      <MenuItem
+        icon={summaryForActions.pinned ? <PinOff /> : <Pin />}
+        onSelect={() => void app.pinNotes([summaryForActions], !summaryForActions.pinned)}
+        disabled={!serverNote}
+      >
         {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
       </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'notes', notes: [summaryForActions] })}>
         Verschieben …
       </MenuItem>
+      <VaultMoveItem note={summaryForActions} disabled={!serverNote} />
       <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
         Format …
       </MenuItem>
-      {sharing && format !== 'canvas' ? (
+      {sharing && format !== 'canvas' && !inVault ? (
         <MenuItem icon={<Share2 />} onSelect={() => setShareOpen(true)} disabled={!serverNote}>
           Teilen …
         </MenuItem>
@@ -652,29 +806,71 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <MenuItem icon={<Info />} onSelect={() => setInfoOpen(true)}>
         Informationen
       </MenuItem>
+      {/* Karteikarten und Abfragen lägen im Klartext außerhalb des Tresors */}
+      {inVault ? null : (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={<Layers />} onSelect={createCard}>
+            Karteikarte erstellen
+          </MenuItem>
+          <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
+            Karteikarten aus Notiz …
+          </MenuItem>
+          {canQuiz(format) ? (
+            <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
+              Abfragen
+            </MenuItem>
+          ) : null}
+          {linkedCards > 0 ? (
+            <MenuItem
+              icon={<GraduationCap />}
+              onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}
+            >
+              {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
+            </MenuItem>
+          ) : null}
+        </>
+      )}
       <MenuSeparator />
-      <MenuItem icon={<Layers />} onSelect={createCard}>
-        Karteikarte erstellen
-      </MenuItem>
-      <MenuItem icon={<Layers />} onSelect={() => app.openCardsFromNote({ id: note.id, title, content: text })}>
-        Karteikarten aus Notiz …
-      </MenuItem>
-      {canQuiz(format) ? (
-        <MenuItem icon={<ListChecks />} onSelect={() => app.go({ kind: 'quiz', id: note.id })}>
-          Abfragen
-        </MenuItem>
-      ) : null}
-      {linkedCards > 0 ? (
-        <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' })}>
-          {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
-        </MenuItem>
-      ) : null}
-      <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
+      <MenuItem icon={<Trash2 />} danger onSelect={() => void app.trashNotes([{ id: note.id, title }])}>
         In den Papierkorb
       </MenuItem>
     </>
   )
+
+  /** Konflikt mit einem anderen Gerät auflösen – eine Tresor-Notiz erst entschlüsseln, ihre Kopie neu verschlüsseln */
+  async function resolveConflict(mode: 'mine' | 'theirs' | 'copy') {
+    if (mode === 'mine') return void sync.resolveConflict(note.id, 'mine')
+    const server = status.serverNote
+    try {
+      const remote = server && inVault ? await revealNote(server) : server
+      if (mode === 'copy' && inVault) {
+        const { content: mine, format: mineFormat, title: mineTitle } = latest.current
+        await createVaultNote({
+          title: conflictCopyTitle(mineTitle || 'Notiz'),
+          folderId: folderId!,
+          content: mine,
+          format: mineFormat,
+        })
+      }
+      if (remote) applyRemote(remote)
+      void sync.resolveConflict(note.id, mode === 'copy' && inVault ? 'theirs' : mode)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+
+  /** Auf einem anderen Gerät gelöscht: eigenen Stand als neue Notiz speichern */
+  async function recreate() {
+    if (!inVault) return void sync.recreate(note.id, { title, folderId, content, format })
+    try {
+      const id = await createVaultNote({ title: title || 'Unbenannt', folderId: folderId!, content, format })
+      sync.discard(note.id)
+      app.go({ kind: 'note', id }, { replace: true })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
 
   const titleInput = (
     <TitleInput value={title} error={titleError} onChange={onTitleChange} onEnter={() => editorHandle()?.focus()} />
@@ -711,6 +907,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         onUpload={upload}
         onCreateCard={createCard}
         header={visualHeader}
+        vault={inVault}
       />
     ) : null
   const readView =
@@ -749,6 +946,21 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           >
             <ArrowLeft className="size-5" />
           </Button>
+          {withOutline ? (
+            <Button
+              ref={outlineButton}
+              variant="ghost"
+              size="icon-sm"
+              className={cn('mr-1', outlineOpen && 'bg-active text-fg')}
+              onClick={toggleOutline}
+              title="Gliederung"
+              aria-label="Gliederung"
+              aria-expanded={outlineOpen}
+              aria-controls={outlineId}
+            >
+              <TableOfContents className="size-4" />
+            </Button>
+          ) : null}
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
             {path.map((f) => (
               <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
@@ -759,6 +971,11 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </span>
             ))}
             <span className="truncate font-medium text-fg">{title || 'Unbenannt'}</span>
+            {inVault ? (
+              <Badge tone="accent" className="ml-1 shrink-0">
+                <Lock className="size-3" /> <span className="@max-md:sr-only">Im Tresor</span>
+              </Badge>
+            ) : null}
           </nav>
           <StatusIndicator status={status} />
           <Menu
@@ -831,7 +1048,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         </div>
       </header>
 
-      {status.state === 'conflict' ? <ConflictBanner id={note.id} status={status} onResolved={applyRemote} /> : null}
+      {status.state === 'conflict' ? <ConflictBanner status={status} onResolve={resolveConflict} /> : null}
       {status.state === 'error' ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
           <AlertTriangle className="size-4 shrink-0" />
@@ -840,92 +1057,122 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             Erneut versuchen
           </Button>
           {status.error?.includes('gelöscht') ? (
-            <Button size="sm" onClick={() => void sync.recreate(note.id, { title, folderId, content, format })}>
+            <Button size="sm" onClick={() => void recreate()}>
               Als neue Notiz speichern
             </Button>
           ) : null}
         </div>
       ) : null}
 
-      {format === 'markdown' && effectiveMode !== 'read' ? (
-        <div className="border-b border-border">
-          <div className="mx-auto max-w-[50rem]">
-            <EditorToolbar getView={() => cmRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
-          </div>
-        </div>
-      ) : null}
-
-      <div className={cn('min-h-0 flex-1', effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col')}>
-        {visual && effectiveMode !== 'split' ? (
-          visualEditor
-        ) : effectiveMode === 'read' ? null : format === 'richtext' ? (
-          <RichTextEditor
-            handleRef={richRef}
-            initialHtml={content}
-            onChange={onChange}
-            onSave={() => void sync.flush(note.id)}
-            onUpload={upload}
-            onCreateCard={createCard}
-            autoFocus={autoFocus}
-            spellcheck={spellcheck === '1'}
-            header={titleInput}
+      <div ref={contentRef} className="relative flex min-h-0 flex-1">
+        {outlineOpen ? (
+          <OutlinePanel
+            id={outlineId}
+            format={format}
+            content={content}
+            mode={effectiveMode}
+            containerRef={contentRef}
+            getView={() => cmRef.current?.view() ?? null}
+            overlay={!outlineBeside}
+            autoFocus={outlineFocus}
+            onSelect={selectOutlineEntry}
+            onClose={closeOutline}
           />
-        ) : (
-          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
-              <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
-                {titleInput}
-                <div className="min-h-0 flex-1">
-                  <Editor
-                    key={format}
-                    ref={cmRef}
-                    initialDoc={content}
-                    onChange={onChange}
-                    onSave={() => void sync.flush(note.id)}
-                    onPasteFiles={upload}
-                    data={completionData}
-                    autoFocus={autoFocus}
-                    spellcheck={spellcheck === '1'}
-                    plain={format === 'text'}
-                  />
-                </div>
+        ) : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {format === 'markdown' && effectiveMode !== 'read' ? (
+            <div className="border-b border-border">
+              <div className="mx-auto max-w-[50rem]">
+                <EditorToolbar
+                  getView={() => cmRef.current?.view() ?? null}
+                  onUpload={upload}
+                  onCreateCard={createCard}
+                />
               </div>
             </div>
-          </div>
-        )}
-        {visual && effectiveMode === 'split' ? (
-          <div className="flex min-h-0 flex-col">{visualEditor}</div>
-        ) : !visual && effectiveMode !== 'edit' ? (
-          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
-              {effectiveMode === 'read' ? (
-                <h1
-                  className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
-                  style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
-                >
-                  {title}
-                </h1>
-              ) : (
-                <div className="pt-6" />
-              )}
-              {readView}
-            </div>
-            {effectiveMode === 'read' ? (
-              // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
-              <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
-                {linkedCards > 0 || cardsInNote ? (
-                  <NoteCards
-                    count={linkedCards}
-                    onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
-                    onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
-                  />
+          ) : null}
+
+          <div
+            className={cn(
+              'min-h-0 flex-1',
+              effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col',
+            )}
+          >
+            {visual && effectiveMode !== 'split' ? (
+              visualEditor
+            ) : effectiveMode === 'read' ? null : format === 'richtext' ? (
+              <RichTextEditor
+                handleRef={richRef}
+                initialHtml={content}
+                onChange={onChange}
+                onSave={() => void sync.flush(note.id)}
+                onUpload={upload}
+                onCreateCard={createCard}
+                autoFocus={autoFocus}
+                spellcheck={spellcheck === '1' && !inVault}
+                slashCommands={slashCommands === '1'}
+                header={titleInput}
+              />
+            ) : (
+              <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+                <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
+                  <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
+                    {titleInput}
+                    <div className="min-h-0 flex-1">
+                      <Editor
+                        key={format}
+                        ref={cmRef}
+                        initialDoc={content}
+                        onChange={onChange}
+                        onSave={() => void sync.flush(note.id)}
+                        onPasteFiles={upload}
+                        data={completionData}
+                        autoFocus={autoFocus}
+                        spellcheck={spellcheck === '1' && !inVault}
+                        plain={format === 'text'}
+                        // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
+                        slashCommands={format === 'markdown' && slashCommands === '1'}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {visual && effectiveMode === 'split' ? (
+              <div className="flex min-h-0 flex-col">{visualEditor}</div>
+            ) : !visual && effectiveMode !== 'edit' ? (
+              <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+                <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
+                  {effectiveMode === 'read' ? (
+                    <h1
+                      className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
+                      style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+                    >
+                      {title}
+                    </h1>
+                  ) : (
+                    <div className="pt-6" />
+                  )}
+                  {readView}
+                </div>
+                {effectiveMode === 'read' ? (
+                  // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
+                  <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
+                    {linkedCards > 0 || cardsInNote ? (
+                      <NoteCards
+                        count={linkedCards}
+                        onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
+                        onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
+                      />
+                    ) : null}
+                    {inVault ? null : <Backlinks id={note.id} />}
+                    {hasLinks ? <NoteGraph id={note.id} /> : null}
+                  </div>
                 ) : null}
-                <Backlinks id={note.id} />
-                {hasLinks ? <NoteGraph id={note.id} /> : null}
               </div>
             ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
 
       <input
@@ -940,10 +1187,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         }}
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
+      {printOpen ? (
+        <NotePrint title={title} format={format} content={content} links={previewLinks} onClose={() => setPrintOpen(false)} />
+      ) : null}
       {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
       <HistoryDialog
         noteId={note.id}
         title={title}
+        vault={inVault}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onRestored={(restored) => {
@@ -968,11 +1219,56 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <dt className="text-muted">Version</dt>
           <dd>{version}</dd>
         </dl>
-        <div className="mt-4 border-t border-border pt-4">
-          <Backlinks id={note.id} compact />
-        </div>
+        {inVault ? null : (
+          <div className="mt-4 border-t border-border pt-4">
+            <Backlinks id={note.id} compact />
+          </div>
+        )}
       </Modal>
     </div>
+  )
+}
+
+/**
+ * Gliederung mit Hervorhebung des aktuellen Abschnitts. Berechnet nur, solange sie offen ist, und aus dem verzögerten
+ * Stand – so kostet sie beim Tippen fast nichts, und geschlossen gar nichts
+ */
+function OutlinePanel({
+  format,
+  content,
+  mode,
+  containerRef,
+  getView,
+  onSelect,
+  ...props
+}: {
+  id: string
+  format: NoteFormat
+  content: string
+  mode: EditorMode
+  containerRef: React.RefObject<HTMLElement | null>
+  getView: () => EditorView | null
+  overlay: boolean
+  autoFocus: boolean
+  onSelect: (entry: OutlineEntry, byKeyboard: boolean) => void
+  onClose: () => void
+}) {
+  const deferredFormat = useDeferredValue(format)
+  const deferredContent = useDeferredValue(content)
+  const outline = useMemo(() => noteOutline(deferredFormat, deferredContent), [deferredFormat, deferredContent])
+  const spy = useOutlineSpy({ containerRef, format, mode, entries: outline.entries, getView })
+  return (
+    <NoteOutline
+      {...props}
+      format={format}
+      entries={outline.entries}
+      truncated={outline.truncated}
+      current={spy.current}
+      onSelect={(entry, byKeyboard) => {
+        spy.pin(outline.entries.indexOf(entry))
+        onSelect(entry, byKeyboard)
+      }}
+    />
   )
 }
 
@@ -1094,14 +1390,11 @@ function NoteGraph({ id }: { id: string }) {
 }
 
 function ConflictBanner({
-  id,
   status,
-  onResolved,
+  onResolve,
 }: {
-  id: string
   status: NoteSyncStatus
-  /** Version des anderen Geräts in den Editor übernehmen */
-  onResolved: (server: Note) => void
+  onResolve: (mode: 'mine' | 'theirs' | 'copy') => void
 }) {
   const server = status.serverNote
   return (
@@ -1114,25 +1407,13 @@ function ConflictBanner({
         </p>
       </div>
       <div className="mt-2 flex flex-wrap gap-2 pl-6">
-        <Button size="sm" variant="primary" onClick={() => void sync.resolveConflict(id, 'mine')}>
+        <Button size="sm" variant="primary" onClick={() => onResolve('mine')}>
           Meine Version
         </Button>
-        <Button
-          size="sm"
-          onClick={() => {
-            if (server) onResolved(server)
-            void sync.resolveConflict(id, 'theirs')
-          }}
-        >
+        <Button size="sm" onClick={() => onResolve('theirs')}>
           Andere Version
         </Button>
-        <Button
-          size="sm"
-          onClick={() => {
-            if (server) onResolved(server)
-            void sync.resolveConflict(id, 'copy')
-          }}
-        >
+        <Button size="sm" onClick={() => onResolve('copy')}>
           Beide behalten
         </Button>
       </div>

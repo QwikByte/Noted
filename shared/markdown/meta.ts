@@ -23,10 +23,10 @@ const blank = (s: string) => s.replace(/[^\n]/g, ' ')
 const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
 
 /**
- * Code-Blöcke, Inline-Code und Kommentare durch Leerzeichen ersetzen (Zeilen bleiben erhalten).
+ * Code-Blöcke und Kommentare durch Leerzeichen ersetzen (Zeilen bleiben erhalten).
  * Bewusst zeilenweise statt mit einer großen Regex – sonst droht quadratische Laufzeit.
  */
-export function stripCode(text: string): string {
+function stripBlocks(text: string): string {
   const lines = text.split('\n')
   let fence: string | null = null
   for (let i = 0; i < lines.length; i++) {
@@ -39,27 +39,129 @@ export function stripCode(text: string): string {
       lines[i] = blank(lines[i])
     }
   }
-  return lines
-    .join('\n')
-    .replace(/%%[\s\S]*?%%/g, blank)
-    .replace(/(`+)[^`\n][\s\S]*?\1/g, blank)
+  return lines.join('\n').replace(/%%[\s\S]*?%%/g, blank)
+}
+
+/** Code-Blöcke, Inline-Code und Kommentare durch Leerzeichen ersetzen (Zeilen bleiben erhalten). */
+export function stripCode(text: string): string {
+  return stripBlocks(text).replace(/(`+)[^`\n][\s\S]*?\1/g, blank)
+}
+
+/** Inline-Markdown als Klartext: ohne Einbettungen, Links als ihr Text, ohne Formatierungszeichen */
+function plainInline(text: string): string {
+  return text
+    .replace(/!\[\[[^[\]\n]*\]\]/g, ' ')
+    .replace(/\[\[([^[\]|\n]*\|)?([^[\]\n]*)\]\]/g, '$2')
+    .replace(/!?\[([^[\]\n]*)\]\([^()\n]*\)/g, '$1')
+    .replace(/[*_~=`$]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** Vergleichsform einer Überschrift – nur Buchstaben und Ziffern, damit Formatierung und Satzzeichen nicht stören */
 export const headingKey = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
-/** Zeile (0-basiert) der ersten Überschrift mit diesem Text, z. B. für Links wie [[Notiz#Abschnitt]] */
+export type MarkdownHeading = {
+  level: number
+  /** Klartext wie in Auszügen, z. B. für die Gliederung */
+  text: string
+  /** Text, wie er geschrieben steht – ohne # bzw. Unterstreichung */
+  raw: string
+  /** Zeile (0-basiert, inklusive Frontmatter); bei Setext die erste Zeile des Absatzes */
+  line: number
+}
+
+const ATX_RE = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/
+const SETEXT_RE = /^ {0,3}(=+|-+)[ \t]*$/
+const BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
+const INDENTED_RE = /^(?: {4}| {0,3}\t)/
+const HTML_RE = /^ {0,3}<[a-zA-Z/!?]/
+const BLOCK_RE = /^ {0,3}(?:>|[-*+](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/
+// Zitate und Listen beenden einen Absatz – geordnete aber nur ab 1 und keine leeren Punkte (wie markdown-it)
+const INTERRUPT_RE = /^ {0,3}(?:>|[-*+][ \t]+\S|1[.)][ \t]+\S)/
+// Inline-Code und Formeln bleiben als Quelltext stehen, nur ohne Backticks und $
+const VERBATIM_RE = /(`+)([^`]+)\1|\$\$([^$]+)\$\$|\$([^$]+)\$/g
+
+/** Text einer ATX-Überschrift ohne schließende # – die zählen nur nach Leerraum („Einführung in C#“) */
+function atxText(rest: string): string {
+  const s = rest.trim()
+  let end = s.length
+  while (end > 0 && s[end - 1] === '#') end--
+  if (end === 0) return ''
+  return end < s.length && (s[end - 1] === ' ' || s[end - 1] === '\t') ? s.slice(0, end).trimEnd() : s
+}
+
+function headingText(raw: string): string {
+  const verbatim: string[] = []
+  const masked = raw.replace(VERBATIM_RE, (_m, _ticks, code?: string, block?: string, inline?: string) => {
+    verbatim.push(code ?? block ?? inline ?? '')
+    return `\uE000${verbatim.length - 1}\uE001`
+  })
+  return plainInline(masked)
+    .replace(/\uE000(\d+)\uE001/g, (m, i: string) => verbatim[Number(i)] ?? m)
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Überschriften (ATX und Setext) außerhalb von Frontmatter, Code-Blöcken, Kommentaren, Zitaten und Callouts.
+ * Ein Durchlauf über die Zeilen ohne Rückwärtssuche, damit es auch bei jedem Tastendruck reicht.
+ */
+export function findHeadings(content: string): MarkdownHeading[] {
+  const fm = splitFrontmatter(content)
+  const offset = fm ? fm.lines : 0
+  const lines = stripBlocks((fm ? fm.body : content).replace(/\r\n?/g, '\n')).split('\n')
+  const out: MarkdownHeading[] = []
+  const push = (level: number, raw: string, line: number) => {
+    const text = headingText(raw)
+    if (text) out.push({ level, text, raw, line: offset + line })
+  }
+  // Laufender Absatz, der noch zur Setext-Überschrift werden kann
+  let para: string[] = []
+  let paraLine = -1
+  // Ein Absatz beginnt nur am Anfang, nach einer Leerzeile, Überschrift oder einem Trennstrich – nicht in Listen
+  // und Zitaten, deren Folgezeilen bis zur Leerzeile dazugehören
+  let mayStart = true
+  let html = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line.trim()) {
+      paraLine = -1
+      mayStart = true
+      html = false
+      continue
+    }
+    if (html) continue
+    const atx = ATX_RE.exec(line)
+    if (atx) {
+      push(atx[1].length, atxText(atx[2] ?? ''), i)
+      paraLine = -1
+      mayStart = true
+    } else if (paraLine >= 0) {
+      const setext = SETEXT_RE.exec(line)
+      if (setext) push(setext[1][0] === '=' ? 1 : 2, para.join(' '), paraLine)
+      if (setext || BREAK_RE.test(line)) paraLine = -1
+      else if (INTERRUPT_RE.test(line)) {
+        paraLine = -1
+        mayStart = false
+      } else para.push(line.trim())
+    } else if (BREAK_RE.test(line)) mayStart = true
+    else if (!mayStart || INDENTED_RE.test(line)) continue
+    else if (HTML_RE.test(line)) html = true
+    else if (BLOCK_RE.test(line)) mayStart = false
+    else {
+      para = [line.trim()]
+      paraLine = i
+    }
+  }
+  return out
+}
+
+/** Zeile (0-basiert) der ersten Überschrift mit diesem Text (roh oder als Klartext), z. B. für [[Notiz#Abschnitt]] */
 export function findHeadingLine(content: string, heading: string): number | null {
   const key = headingKey(heading)
   if (!key) return null
-  const fm = splitFrontmatter(content)
-  const offset = fm ? fm.lines : 0
-  const lines = stripCode(fm ? fm.body : content).split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^#{1,6}[ \t]+(.+?)[ \t#]*$/.exec(lines[i])
-    if (m && headingKey(m[1]) === key) return offset + i
-  }
-  return null
+  return findHeadings(content).find((h) => headingKey(h.raw) === key || headingKey(h.text) === key)?.line ?? null
 }
 
 const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
@@ -148,17 +250,12 @@ export function extractLinks(content: string): string[] {
   return [...keys].sort()
 }
 
+const LINE_PREFIX_RE = /^\s{0,3}(#{1,6}\s+|>\s*(\[![^\]]*\][+-]?\s*)?|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/gm
+
 /** Kurzer Textauszug für Listen (ohne Frontmatter und Markdown-Zeichen). */
 export function makeExcerpt(content: string, max = 160): string {
   const fm = splitFrontmatter(content)
   // Für einen Auszug genügt der Anfang – begrenzt zugleich die Rechenzeit
-  const text = stripCode((fm ? fm.body : content).slice(0, 4000))
-    .replace(/!\[\[[^[\]\n]*\]\]/g, ' ')
-    .replace(/\[\[([^[\]|\n]*\|)?([^[\]\n]*)\]\]/g, '$2')
-    .replace(/!?\[([^[\]\n]*)\]\([^()\n]*\)/g, '$1')
-    .replace(/^\s{0,3}(#{1,6}\s+|>\s*(\[![^\]]*\][+-]?\s*)?|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/gm, '')
-    .replace(/[*_~=`$]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const text = plainInline(stripCode((fm ? fm.body : content).slice(0, 4000)).replace(LINE_PREFIX_RE, ''))
   return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text
 }

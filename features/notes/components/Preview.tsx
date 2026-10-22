@@ -39,6 +39,8 @@ async function renderMermaid(root: HTMLElement) {
 export type PreviewLinks = {
   resolveNote: (target: string) => ResolvedNote | null
   onOpenNote: (id: string, heading?: string) => void
+  /** Tresor-Notiz? Deren Überschriften kommen nicht in die Adresse */
+  isVaultNote?: (id: string) => boolean
   onCreateNote: (title: string) => void
   onOpenTag: (tag: string) => void
   /** PDF im eingebauten Viewer öffnen statt in einem neuen Tab */
@@ -55,6 +57,8 @@ export function Preview({
   onOpenPdf,
   fileUrl,
   plainNoteLinks,
+  print,
+  onRendered,
   className,
 }: PreviewLinks & {
   content: string
@@ -63,16 +67,36 @@ export function Preview({
   fileUrl?: (name: string) => string
   /** Links auf Notizen nur als Text (geteilte Ansicht) */
   plainNoteLinks?: boolean
+  /** Für die Druckansicht (siehe RenderEnv.print) */
+  print?: boolean
+  /** Diagramme sind gerendert – auch ohne Diagramme und wenn Mermaid offline nicht geladen werden kann */
+  onRendered?: () => void
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const rendered = useMemo(() => {
-    const r = renderMarkdown(content, { resolveNote, fileUrl, plainNoteLinks })
+    const r = renderMarkdown(content, { resolveNote, fileUrl, plainNoteLinks, print })
     return { ...r, html: sanitize(r.html) }
-  }, [content, resolveNote, fileUrl, plainNoteLinks])
+  }, [content, resolveNote, fileUrl, plainNoteLinks, print])
 
+  const latestOnRendered = useRef(onRendered)
   useEffect(() => {
-    if (ref.current) void renderMermaid(ref.current)
+    latestOnRendered.current = onRendered
+  })
+  // Nacheinander rendern: Läuft der Effekt doppelt (Strict Mode), meldet nur der noch gültige Durchlauf – und erst,
+  // wenn auch der vorige fertig ist
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  useEffect(() => {
+    const root = ref.current
+    if (!root) return
+    let valid = true
+    queue.current = queue.current.then(() => renderMermaid(root)).catch(() => {})
+    void queue.current.then(() => {
+      if (valid) latestOnRendered.current?.()
+    })
+    return () => {
+      valid = false
+    }
   }, [rendered.html])
 
   function onClick(e: React.MouseEvent) {

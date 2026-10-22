@@ -1,11 +1,30 @@
 'use client'
 // Einträge der Menüs für Notizen und Ordner: dieselben im Menü „…“ und beim Rechtsklick (dort mit Öffnen davor)
-import { ExternalLink, FileText, FolderInput, FolderOpen, FolderPlus, Link2, List, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
+import {
+  ExternalLink,
+  FileText,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  Link2,
+  List,
+  Lock,
+  LockOpen,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { viewToUrl, type View } from '@/features/workspace/client/nav'
 import { MenuItem, MenuSeparator } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { copyText } from '@/shared/client/clipboard'
+import { useVaultState, vault } from '@/features/vault/client/vault'
+import { requestVault } from '@/features/vault/client/vault-ui'
+import { VaultMoveItem } from '@/features/vault/components/VaultMoveItem'
 import type { Folder, NoteSummary } from '../types'
 
 /** Ansicht öffnen – hier oder in einem neuen Tab (jede Ansicht hat eine eigene Adresse) */
@@ -38,10 +57,11 @@ export function NoteMenuItems({ note, context }: { note: NoteSummary; context?: 
       <MenuItem icon={<Pencil />} onSelect={() => app.renameNote(note)}>
         Umbenennen
       </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note })}>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'notes', notes: [note] })}>
         Verschieben …
       </MenuItem>
-      <MenuItem icon={note.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(note)}>
+      <VaultMoveItem note={note} />
+      <MenuItem icon={note.pinned ? <PinOff /> : <Pin />} onSelect={() => void app.pinNotes([note], !note.pinned)}>
         {note.pinned ? 'Lösen' : 'Anheften'}
       </MenuItem>
       {context ? (
@@ -56,7 +76,7 @@ export function NoteMenuItems({ note, context }: { note: NoteSummary; context?: 
         </MenuItem>
       ) : null}
       <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote(note)}>
+      <MenuItem icon={<Trash2 />} danger onSelect={() => void app.trashNotes([note])}>
         In den Papierkorb
       </MenuItem>
     </>
@@ -65,6 +85,16 @@ export function NoteMenuItems({ note, context }: { note: NoteSummary; context?: 
 
 export function FolderMenuItems({ folder, context }: { folder: Folder; context?: boolean }) {
   const app = useApp()
+  const { unlocked } = useVaultState()
+  // Wurzelordner des Tresors: gesperrt nur entsperren, sonst nicht umbenennen, verschieben oder löschen
+  const vaultRoot = folder.vault && folder.nameEnc === null
+  if (vaultRoot && !unlocked) {
+    return (
+      <MenuItem icon={<LockOpen />} onSelect={() => requestVault({ kind: 'unlock' })}>
+        Tresor entsperren …
+      </MenuItem>
+    )
+  }
   return (
     <>
       {context ? (
@@ -85,16 +115,24 @@ export function FolderMenuItems({ folder, context }: { folder: Folder; context?:
         </MenuItem>
       )}
       <MenuSeparator />
-      <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
-        Umbenennen
-      </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'folder', folder })}>
-        Verschieben …
-      </MenuItem>
-      <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
-        Löschen
-      </MenuItem>
+      {vaultRoot ? (
+        <MenuItem icon={<Lock />} onSelect={() => void vault.lock()}>
+          Tresor sperren
+        </MenuItem>
+      ) : (
+        <>
+          <MenuItem icon={<Pencil />} onSelect={() => app.openRenameFolder(folder)}>
+            Umbenennen
+          </MenuItem>
+          <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'folder', folder })}>
+            Verschieben …
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Trash2 />} danger onSelect={() => app.deleteFolder(folder)}>
+            Löschen
+          </MenuItem>
+        </>
+      )}
     </>
   )
 }

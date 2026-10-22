@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from './render'
 import { stripComments } from './syntax'
+import { findHeadings } from './meta'
 
 const env = {
   resolveNote: (t: string) => (t.toLowerCase() === 'vorhanden' ? { id: 'abc', title: 'Vorhanden' } : null),
@@ -68,8 +69,53 @@ describe('Vorschau', () => {
 
   it('rendert Überschriften nicht als Tags', () => {
     const { html } = renderMarkdown('# Titel\n## Unterpunkt')
-    expect(html).toContain('<h1 id="titel">Titel</h1>')
-    expect(html).toContain('<h2 id="unterpunkt">Unterpunkt</h2>')
+    expect(html).toContain('<h1 id="titel" data-line="0">Titel</h1>')
+    expect(html).toContain('<h2 id="unterpunkt" data-line="1">Unterpunkt</h2>')
+  })
+
+  it('nennt an Überschriften die Quellzeile – mit Frontmatter, Kommentar davor und Setext', () => {
+    const { html } = renderMarkdown('---\na: 1\n---\n# Titel\n%% Kommentar\nüber zwei Zeilen %%\n## Danach\n\nSetext\n---')
+    expect(html).toContain('<h1 id="titel" data-line="3">')
+    expect(html).toContain('<h2 id="danach" data-line="6">')
+    expect(html).toContain('<h2 id="setext" data-line="8">')
+  })
+
+  it('zählt Überschriften in derselben Zeile wie die Gliederung (findHeadings)', () => {
+    const note = [
+      '---',
+      'tags: [mathe]',
+      '---',
+      '# Analysis',
+      'Text mit `Code` und $x^2$',
+      '',
+      '```js',
+      '# kein Titel',
+      '```',
+      '## Folgen',
+      '%% ## versteckt',
+      '%%',
+      '> [!note] Kasten',
+      '> ## Im Kasten',
+      '',
+      'Reihen und',
+      'Grenzwerte',
+      '===',
+      '- Punkt',
+      '---',
+      '#### Satz von **Bolzano** ##',
+      '| a | b |',
+      '| - | - |',
+      '| 1 | 2 |',
+      '',
+      '## [[Ziel|Alias]] und $n = 1$',
+    ].join('\n')
+    const { html } = renderMarkdown(note)
+    const lines = note.split('\n')
+    const rendered = [...html.matchAll(/<h[1-6][^>]* data-line="(\d+)"/g)]
+      .map((m) => Number(m[1]))
+      .filter((line) => !lines[line].startsWith('>'))
+    expect(rendered).toEqual(findHeadings(note).map((h) => h.line))
+    expect(rendered).toEqual([3, 9, 15, 20, 25])
   })
 
   it('rendert Callouts inkl. einklappbarer Variante', () => {
@@ -119,5 +165,21 @@ describe('Vorschau', () => {
     expect(stripComments('```\n%%bleibt%%\n```')).toBe('```\n%%bleibt%%\n```')
     const { html } = renderMarkdown('Sichtbar %%unsichtbar%%')
     expect(html).not.toContain('unsichtbar')
+  })
+
+  it('druckt einklappbare Callouts aufgeklappt, Audio als Dateiverweis und nackte Adressen markiert', () => {
+    const md = '> [!faq]- Frage\n> Antwort\n\n![[aufnahme.m4a]]\n\nhttps://example.org/a und [Quelle](https://example.org)\n\n%%geheim%%'
+    const print = renderMarkdown(md, { print: true }).html
+    expect(print).toMatch(/<details class="callout callout-question" data-callout="faq" open/)
+    expect(print).not.toContain('<audio')
+    expect(print).toContain('class="embed-file embed-file" href="/api/files/aufnahme.m4a"')
+    expect(print).toContain('<a href="https://example.org/a" class="url-link">')
+    expect(print).toContain('<a href="https://example.org">Quelle</a>')
+    expect(print).not.toContain('geheim')
+    // Ohne print bleibt alles wie bisher
+    const screen = renderMarkdown(md).html
+    expect(screen).not.toMatch(/data-callout="faq" open/)
+    expect(screen).toContain('<audio controls')
+    expect(screen).not.toContain('url-link')
   })
 })

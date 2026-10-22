@@ -13,11 +13,12 @@ import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
 import { splitFrontmatter } from '@/shared/markdown/meta'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
+import { RICH_HEADING_LEVELS } from '../rich-html'
 
 function baseExtensions({ underline }: { underline: boolean }): AnyExtension[] {
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
+      heading: { levels: [...RICH_HEADING_LEVELS] },
       link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
       underline: underline ? {} : false,
     }),

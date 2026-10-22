@@ -15,6 +15,7 @@ type CurrentNote = {
   user_id: number
   version: number
   title: string
+  title_enc: string | null
   format: NoteFormat
   content: string
   created_at: number
@@ -24,6 +25,7 @@ type VersionRow = {
   id: number
   version: number
   title: string
+  title_enc: string | null
   format: NoteFormat
   reason: NoteVersionReason
   created_at: number
@@ -34,6 +36,7 @@ const toVersion = (r: VersionRow): NoteVersion => ({
   id: r.id,
   version: r.version,
   title: r.title,
+  titleEnc: r.title_enc,
   format: r.format,
   reason: r.reason,
   createdAt: r.created_at,
@@ -58,9 +61,9 @@ export function snapshotIfDue(
     if (now - (last.t ?? note.created_at) < EDIT_SNAPSHOT_INTERVAL) return false
   }
   db.prepare(
-    `INSERT INTO note_versions (note_id, user_id, version, title, format, content, reason, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(note.id, note.user_id, note.version, note.title, note.format, note.content, reason, now)
+    `INSERT INTO note_versions (note_id, user_id, version, title, title_enc, format, content, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(note.id, note.user_id, note.version, note.title, note.title_enc, note.format, note.content, reason, now)
   db.prepare(
     `DELETE FROM note_versions WHERE note_id = ? AND user_id = ? AND (created_at < ? OR id NOT IN (
        SELECT id FROM note_versions WHERE note_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?
@@ -86,7 +89,8 @@ function assertNote(userId: number, noteId: string) {
   if (!found) throw notFound('Notiz nicht gefunden.')
 }
 
-const VERSION_COLUMNS = 'id, version, title, format, reason, created_at, length(CAST(content AS BLOB)) AS size'
+const VERSION_COLUMNS =
+  'id, version, title, title_enc, format, reason, created_at, length(CAST(content AS BLOB)) AS size'
 
 /** Gesicherte Stände einer Notiz, neueste zuerst (ohne Inhalt) */
 export function listVersions(userId: number, noteId: string): NoteVersion[] {

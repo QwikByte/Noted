@@ -104,6 +104,12 @@ test('Formatierter Text: schreiben wie in Word, Seitenlink aus dem PDF, Lesemodu
   const view = page.getByTestId('rich-view')
   await expect(view.locator('h2')).toHaveText('Sitzung vom Montag')
   await expect(view.locator('span[style*="color"]')).toHaveText('rot')
+  // Die Gliederung zeigt die Überschrift aus dem Absatzformat, ein Klick springt hin
+  await page.getByRole('button', { name: 'Gliederung', exact: true }).click()
+  const entry = page.getByRole('navigation', { name: 'Gliederung' }).getByRole('button', { name: 'Sitzung vom Montag' })
+  await entry.click()
+  await expect(entry).toHaveAttribute('aria-current', 'location')
+  await expect(view.locator('h2')).toBeInViewport()
   // Der Seitenlink öffnet das PDF im eingebauten Viewer
   await view.getByRole('link', { name: 'Folien.pdf, S. 1' }).click()
   await expect(page.getByTestId('pdf-panel')).toBeVisible()

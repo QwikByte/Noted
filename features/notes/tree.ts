@@ -63,22 +63,26 @@ export function descendantFolderIds(folders: Folder[], id: string): Set<string> 
 }
 
 /**
- * Darf die Notiz bzw. der Ordner in diesen Ordner (`null` = oberste Ebene) verschoben werden? Nicht dorthin, wo er
- * schon liegt, und kein Ordner in sich selbst oder einen seiner Unterordner.
+ * Dürfen die Notizen bzw. der Ordner in diesen Ordner (`null` = oberste Ebene) verschoben werden? Notizen, sobald
+ * mindestens eine noch nicht dort liegt; kein Ordner dorthin, wo er schon liegt, in sich selbst oder einen seiner
+ * Unterordner.
  */
 export function canMoveTo(
-  item: { kind: 'note' | 'folder'; id: string },
+  item: { kind: 'notes'; ids: readonly string[] } | { kind: 'folder'; id: string },
   target: string | null,
   notes: NoteSummary[],
   folders: Folder[],
 ): boolean {
   if (target !== null && !folders.some((f) => f.id === target)) return false
-  if (item.kind === 'note') {
-    const note = notes.find((n) => n.id === item.id)
-    return !!note && note.folderId !== target
+  if (item.kind === 'notes') {
+    const ids = new Set(item.ids)
+    return notes.some((n) => ids.has(n.id) && n.folderId !== target)
   }
   const folder = folders.find((f) => f.id === item.id)
   if (!folder || folder.parentId === target) return false
+  // Ordner nicht über die Grenze des Tresors – und dessen Wurzelordner gar nicht
+  const targetVault = target !== null && folders.some((f) => f.id === target && f.vault)
+  if (folder.vault !== targetVault || (folder.vault && folder.nameEnc === null)) return false
   return target === null || !descendantFolderIds(folders, folder.id).has(target)
 }
 

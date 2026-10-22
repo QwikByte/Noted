@@ -17,6 +17,7 @@ import { clozeCount, normalizeCloze } from '../cloze'
 import { fitMask, occlusionError } from '../occlusion'
 import { sidesOf } from '../study'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
+import { getFsrsParams } from './fsrs-params'
 import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, Occlusion, ReviewLogEntry } from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
@@ -137,7 +138,7 @@ export function getFlashcardData(userId: number): FlashcardData {
     db.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY deck_id, position, created_at').all(userId) as CardRow[]
   ).map(toCard)
   const reviews = (db.prepare('SELECT * FROM card_reviews WHERE user_id = ?').all(userId) as ReviewRow[]).map(toReview)
-  return { decks, cards, reviews }
+  return { decks, cards, reviews, fsrs: getFsrsParams(userId) }
 }
 
 // ---------------------------------------------------------------------------

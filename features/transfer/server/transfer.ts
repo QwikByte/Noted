@@ -20,6 +20,8 @@ import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
 import { annotationsByAttachment } from '@/features/pdf/server/annotations'
 import { annotationsMarkdown } from '@/features/pdf/geometry'
 import { EXPORT_ATTACHMENT_FOLDER, buildExportIndex, exportNotePath } from '../paths'
+import { VAULT_EXPORT_FILE, vaultExport } from '@/features/vault/server/export'
+import { isVaultFolder } from '@/features/vault/server/vault'
 
 /** Karteikarten-Stapel als Markdown (Frage::Antwort, siehe deckToMarkdown) und verlustfrei als .noted-deck.zip */
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
@@ -57,7 +59,10 @@ function indexFor(notes: IndexNote[], paths: Map<string, string[]>, userId: numb
 /** Pfade aller Notizen und Anhänge im Export – für die Dateikarten eines Canvas */
 export function exportIndex(userId: number): ExportIndex {
   const notes = getDb()
-    .prepare('SELECT folder_id, title, format FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at')
+    .prepare(
+      `SELECT folder_id, title, format FROM notes WHERE user_id = ? AND deleted_at IS NULL AND vault = 0
+       ORDER BY created_at`,
+    )
     .all(userId) as IndexNote[]
   return indexFor(notes, folderPathMap(userId), userId)
 }
@@ -73,8 +78,8 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
   const paths = folderPathMap(userId)
   const notes = getDb()
     .prepare(
-      `SELECT id, folder_id, title, content, format, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL
-       ORDER BY created_at`,
+      `SELECT id, folder_id, title, content, format, updated_at FROM notes
+       WHERE user_id = ? AND deleted_at IS NULL AND vault = 0 ORDER BY created_at`,
     )
     .all(userId) as ExportNote[]
   let pathIndex: ExportIndex | null = null
@@ -96,6 +101,11 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
     if (![...usedDirs].some((d) => d === p || d.startsWith(p + '/'))) {
       entries.push({ path: p + '/', mtime: Date.now(), compress: false, data: () => new Uint8Array(0) })
     }
+  }
+  // Der Tresor nur verschlüsselt, als eine Datei – seine Notizen und Ordner nicht einzeln
+  const vault = vaultExport(userId)
+  if (vault) {
+    entries.push({ path: VAULT_EXPORT_FILE, mtime: vault.updatedAt, compress: true, data: () => strToU8(vault.json) })
   }
   const { decks, cards } = getFlashcardData(userId)
   // Dateinamen im Ordner „Karteikarten“ (auch von gleichnamigen Notizen) nicht doppelt vergeben
@@ -170,6 +180,8 @@ const NOTE_EXT = /\.(md|markdown)$/i
 const HTML_EXT = /\.html?$/i
 const CANVAS_EXT = /\.canvas$/i
 const ICS_EXT = /\.ics$/i
+/** Verschlüsselter Tresor aus einem Export – den Import in den Tresor gibt es noch nicht */
+const VAULT_EXT = /\.noted-vault$/i
 const isDeckPackage = (name: string) => name.toLowerCase().endsWith(DECK_PACKAGE_EXT)
 
 /** Anmerkungen zu einem PDF aus einem Export von Noted („Anhänge/Skript.pdf.anmerkungen.md“ neben „Skript.pdf“) */
@@ -213,14 +225,21 @@ export async function importFiles(
 ): Promise<ImportResult> {
   const { maxImportBytes, maxUploadBytes } = getConfig()
   const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, decks: 0, cards: 0, skipped: [] }
+  // Im Tresor wird nur verschlüsselt gespeichert – das kann der Server nicht
+  if (isVaultFolder(userId, targetFolderId)) throw badRequest('In den Tresor lässt sich noch nichts importieren.')
 
-  // Ordner-Cache: "parentId|name" -> id
+  // Ordner-Cache: "parentId|name" -> id – ohne Tresor; ein Ordner „Tresor“ im Archiv wird ein eigener („Tresor 1“)
   const folderCache = new Map<string, string>()
-  for (const f of listFolders(userId)) folderCache.set(`${f.parentId ?? ''}|${f.name.toLowerCase()}`, f.id)
+  const vaultNames = new Map<string, string[]>()
+  for (const f of listFolders(userId)) {
+    if (!f.vault) folderCache.set(`${f.parentId ?? ''}|${f.name.toLowerCase()}`, f.id)
+    else vaultNames.set(f.parentId ?? '', [...(vaultNames.get(f.parentId ?? '') ?? []), f.name])
+  }
 
   const ensureFolder = (parentId: string | null, rawName: string): string => {
-    const name = sanitizeName(rawName, 'Ordner')
-    const key = `${parentId ?? ''}|${name.toLowerCase()}`
+    const clean = sanitizeName(rawName, 'Ordner')
+    const name = uniqueName(clean, vaultNames.get(parentId ?? '') ?? [])
+    const key = `${parentId ?? ''}|${clean.toLowerCase()}`
     const existing = folderCache.get(key)
     if (existing) return existing
     const folder = createFolder(userId, { name, parentId })
@@ -292,7 +311,9 @@ export async function importFiles(
     const data = new Uint8Array(await file.arrayBuffer())
     const name = file.name || 'Datei'
 
-    if (isDeckPackage(name)) {
+    if (VAULT_EXT.test(name)) {
+      result.skipped.push(`${name} (der Tresor lässt sich noch nicht importieren)`)
+    } else if (isDeckPackage(name)) {
       try {
         importDeck(data)
       } catch (err) {
@@ -334,6 +355,10 @@ export async function importFiles(
         try {
           if (NOTE_EXT.test(entryPath) && packages.has(entryPath.replace(NOTE_EXT, DECK_PACKAGE_EXT))) continue
           if (isAnnotationsFile(entryPath, entries)) continue
+          if (VAULT_EXT.test(filename)) {
+            result.skipped.push(`${entryPath} (der Tresor lässt sich noch nicht importieren)`)
+            continue
+          }
           if (isDeckPackage(filename) && segments[0] !== EXPORT_ATTACHMENT_FOLDER) {
             importDeck(entryData)
           } else if (isNoteFile(segments, filename)) {

@@ -21,6 +21,8 @@ type Props = {
   spellcheck?: boolean
   /** Einfacher Text statt Markdown */
   plain?: boolean
+  /** Menü mit Befehlen nach „/“ – wirkt beim Öffnen */
+  slashCommands?: boolean
 }
 
 /** Editor für Markdown und einfachen Text (CodeMirror) */
@@ -90,6 +92,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           onPasteFiles: (files) => latest.current.onPasteFiles(files),
           spellcheck: latest.current.spellcheck,
           plain: latest.current.plain,
+          slashCommands: latest.current.slashCommands,
         }),
       }),
     })

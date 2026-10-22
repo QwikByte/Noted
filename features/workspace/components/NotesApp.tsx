@@ -3,7 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
-import { AppContext, type AppActions, type CardEditorInit, type CardsFromNoteInit, type NewNoteOptions } from '../client/context'
+import {
+  AppContext,
+  type AppActions,
+  type CardEditorInit,
+  type CardsFromNoteInit,
+  type MoveTarget,
+  type NewNoteOptions,
+} from '../client/context'
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
 import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
@@ -27,21 +34,39 @@ import { Button } from '@/shared/ui/button'
 import { ContextMenuProvider, useContextMenu } from '@/shared/ui/menu'
 import { CreateMenuItems, isEmptySpot } from '@/features/notes/components/ItemMenus'
 import { ConfirmModal } from '@/shared/ui/modal'
+import { openPrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useNav, type View } from '../client/nav'
 import { usePref } from '@/shared/client/prefs'
-import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/notes/client/queries'
+import {
+  applySavedNote,
+  keys,
+  removeNoteFromCache,
+  useFolders,
+  useNotes,
+  useVaultNoteIds,
+} from '@/features/notes/client/queries'
 import { graphKey } from '@/features/graph/client/queries'
 import { api, errorMessage } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
+import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { validateName } from '@/shared/lib/names'
-import type { Folder, NoteSummary } from '@/features/notes/types'
-
-type MoveTarget = { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder }
+import { useVaultInfo, useVaultState, vault } from '@/features/vault/client/vault'
+import {
+  createVaultFolder,
+  createVaultNote,
+  purgeCachedPlaintext,
+  renameVaultFolder,
+  sealPlainDrafts,
+  updateVaultNote,
+} from '@/features/vault/client/vault-notes'
+import { requestVault } from '@/features/vault/client/vault-ui'
+import { VaultDialogs } from '@/features/vault/components/VaultDialogs'
+import type { Folder, Note, NoteSummary } from '@/features/notes/types'
 
 // pdf.js wird erst geladen, wenn ein PDF geöffnet wird
 const PdfPanel = dynamic(() => import('@/features/pdf/components/PdfPanel'), { ssr: false })
@@ -62,6 +87,21 @@ export default function NotesApp() {
   const qc = useQueryClient()
   const toast = useToast()
   const { notes } = useNotes()
+  const { data: folders = [] } = useFolders()
+  const vaultIds = useVaultNoteIds()
+  const { unlocked } = useVaultState()
+  // Schlüsselmaterial gleich laden: So liegt es im Cache des Service Workers, und Entsperren geht später auch offline
+  useVaultInfo()
+
+  // Klartext aufräumen, den dieses Gerät von Notizen hat, die inzwischen im Tresor liegen (Cache des Service Workers,
+  // Entwürfe) – Entwürfe lassen sich erst entsperrt verschlüsseln
+  useEffect(() => {
+    if (vaultIds.length === 0) return
+    void purgeCachedPlaintext(vaultIds).then((found) => {
+      if (found) void qc.invalidateQueries({ queryKey: keys.tags })
+    })
+    if (unlocked) void sealPlainDrafts(new Set(vaultIds))
+  }, [vaultIds, unlocked, qc])
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Verknüpfungen aus dem Manifest (/?new=1, /?new=lecture) öffnen direkt den Dialog
@@ -70,7 +110,7 @@ export default function NotesApp() {
     return n ? (n === '1' ? {} : { templateId: n }) : null
   })
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null)
+  const [moveTarget, setMoveTarget] = useState<{ target: MoveTarget; onMoved?: () => void } | null>(null)
   const [folderPrompt, setFolderPrompt] = useState<{ parentId: string | null } | { folder: Folder } | null>(null)
   const [renameTarget, setRenameTarget] = useState<NoteSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
@@ -107,14 +147,25 @@ export default function NotesApp() {
     }
   }, [qc, toast])
 
+  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor)
   const titleIndex = useMemo(() => {
-    const map = new Map<string, NoteSummary>()
+    const plain = new Map<string, NoteSummary>()
+    const inVault = new Map<string, NoteSummary>()
     // Neueste zuerst, damit bei Namensgleichheit die zuletzt bearbeitete gewinnt
-    for (const n of [...notes].sort((a, b) => a.updatedAt - b.updatedAt)) map.set(linkKey(n.title), n)
-    return map
+    for (const n of [...notes].sort((a, b) => a.updatedAt - b.updatedAt)) {
+      const index = n.vault ? inVault : plain
+      index.set(linkKey(n.title), n)
+    }
+    return { plain, inVault }
   }, [notes])
 
-  const resolveTitle = useCallback((target: string) => titleIndex.get(linkKey(target)) ?? null, [titleIndex])
+  const resolveTitle = useCallback<AppActions['resolveTitle']>(
+    (target, opts) => {
+      const key = linkKey(target)
+      return (opts?.vault ? titleIndex.inVault.get(key) : undefined) ?? titleIndex.plain.get(key) ?? null
+    },
+    [titleIndex],
+  )
 
   const navigate = useCallback(
     (next: View, opts?: { replace?: boolean }) => {
@@ -128,12 +179,23 @@ export default function NotesApp() {
   const [defaultFormat] = useDefaultNoteFormat()
   const createNote = useCallback<AppActions['createNote']>(
     async ({ title, folderId, content = '', format = defaultFormat }) => {
-      const id = crypto.randomUUID()
-      void sync.create({ id, title, folderId, content, format })
+      // Ungefilterte Ordner: Gesperrt fehlen die Unterordner des Tresors in der Liste
+      const inVault = !!folderId && !!qc.getQueryData<Folder[]>(keys.folders)?.find((f) => f.id === folderId)?.vault
+      let id: string
+      if (inVault) {
+        if (!vault.unlocked) {
+          requestVault({ kind: 'unlock' })
+          throw new Error('Entsperre zuerst den Tresor.')
+        }
+        id = await createVaultNote({ title, folderId, content, format })
+      } else {
+        id = crypto.randomUUID()
+        void sync.create({ id, title, folderId, content, format })
+      }
       navigate({ kind: 'note', id })
       return id
     },
-    [navigate, defaultFormat],
+    [navigate, defaultFormat, qc],
   )
 
   // Editoren für formatierten Text, Mindmap und Canvas sowie die Formatumwandlung im Hintergrund laden – so cacht
@@ -157,30 +219,43 @@ export default function NotesApp() {
     }
   }, [])
 
-  const trashNote = useCallback<AppActions['trashNote']>(
-    async (note) => {
-      const draft = sync.getDraft(note.id)
-      if (draft?.isNew) {
-        sync.discard(note.id)
-        if (view.kind === 'note' && view.id === note.id) navigate({ kind: 'home' }, { replace: true })
-        return
+  const trashNotes = useCallback<AppActions['trashNotes']>(
+    async (list) => {
+      // Noch nie gesendete Notizen gibt es auf dem Server nicht – sie werden nur lokal verworfen
+      const local = list.filter((n) => sync.getDraft(n.id)?.isNew)
+      const remote = list.filter((n) => !sync.getDraft(n.id)?.isNew)
+      let ids: string[] = []
+      if (remote.length > 0) {
+        try {
+          ids = await postNoteBatch('trash', remote.map((n) => n.id))
+        } catch (err) {
+          // Offline bleibt alles, wie es ist – auch ungesendete Änderungen
+          toast.error(errorMessage(err))
+          return false
+        }
       }
-      try {
-        sync.discard(note.id)
-        await api(`/api/notes/${note.id}`, { method: 'DELETE' })
-        removeNoteFromCache(qc, note.id)
+      for (const n of [...local, ...remote]) {
+        sync.discard(n.id)
+        removeNoteFromCache(qc, n.id)
+      }
+      if (remote.length > 0) {
         qc.invalidateQueries({ queryKey: keys.trash })
         qc.invalidateQueries({ queryKey: keys.tags })
         qc.invalidateQueries({ queryKey: graphKey })
-        if (view.kind === 'note' && view.id === note.id) navigate({ kind: 'home' }, { replace: true })
-        toast.show(`„${note.title}“ in den Papierkorb verschoben.`, {
+        qc.invalidateQueries({ queryKey: ['search'] })
+      }
+      if (view.kind === 'note' && list.some((n) => n.id === view.id)) navigate({ kind: 'home' }, { replace: true })
+      const trashed = remote.filter((n) => ids.includes(n.id))
+      if (trashed.length > 0) {
+        toast.show(`${notesLabel(trashed)} in den Papierkorb verschoben.`, {
           action: {
             label: 'Rückgängig',
             onClick: async () => {
               try {
-                await api(`/api/notes/${note.id}/restore`, { method: 'POST' })
+                await postNoteBatch('restore', ids)
                 qc.invalidateQueries({ queryKey: keys.notes })
                 qc.invalidateQueries({ queryKey: keys.trash })
+                qc.invalidateQueries({ queryKey: keys.tags })
                 qc.invalidateQueries({ queryKey: graphKey })
               } catch (err) {
                 toast.error(`Wiederherstellen fehlgeschlagen: ${errorMessage(err)}`)
@@ -188,23 +263,23 @@ export default function NotesApp() {
             },
           },
         })
-      } catch (err) {
-        toast.error(errorMessage(err))
       }
+      return true
     },
     [qc, toast, view, navigate],
   )
 
-  const togglePin = useCallback<AppActions['togglePin']>(
-    async (note) => {
+  const pinNotes = useCallback<AppActions['pinNotes']>(
+    async (list, pinned) => {
       try {
-        const res = await api<{ note: Parameters<typeof applySavedNote>[1] }>(`/api/notes/${note.id}`, {
-          method: 'PUT',
-          body: { pinned: !note.pinned },
-        })
-        applySavedNote(qc, res.note)
+        const ids = new Set(await postNoteBatch(pinned ? 'pin' : 'unpin', list.map((n) => n.id)))
+        // Version und Bearbeitungszeit bleiben gleich – die Caches direkt anpassen statt neu zu laden
+        qc.setQueryData<NoteSummary[]>(keys.notes, (all) => all?.map((n) => (ids.has(n.id) ? { ...n, pinned } : n)))
+        for (const id of ids) qc.setQueryData<Note>(keys.note(id), (n) => (n ? { ...n, pinned } : n))
+        return true
       } catch (err) {
         toast.error(errorMessage(err))
+        return false
       }
     },
     [qc, toast],
@@ -217,12 +292,12 @@ export default function NotesApp() {
       openNewNote: (opts) => setNewNote(opts ?? {}),
       createNote,
       openQuickSwitcher: () => setSwitcherOpen(true),
-      openMove: setMoveTarget,
+      openMove: (target, opts) => setMoveTarget({ target, onMoved: opts?.onMoved }),
       openNewFolder: (parentId) => setFolderPrompt({ parentId }),
       openRenameFolder: (folder) => setFolderPrompt({ folder }),
       deleteFolder: setDeleteTarget,
-      trashNote,
-      togglePin,
+      trashNotes,
+      pinNotes,
       renameNote: setRenameTarget,
       closeSidebar: () => setSidebarOpen(false),
       resolveTitle,
@@ -234,13 +309,18 @@ export default function NotesApp() {
         setSidebarOpen(false)
       },
     }),
-    [view, navigate, createNote, trashNote, togglePin, resolveTitle, setPdfPref],
+    [view, navigate, createNote, trashNotes, pinNotes, resolveTitle, setPdfPref],
   )
 
   // Tastenkürzel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
+      // In Notiz, Glossar und Stapel öffnet Strg/⌘+P die Druckansicht
+      if (mod && !e.shiftKey && e.key === 'p' && openPrintShortcut()) {
+        e.preventDefault()
+        return
+      }
       if (mod && !e.shiftKey && (e.key === 'k' || e.key === 'o' || e.key === 'p')) {
         e.preventDefault()
         setSwitcherOpen(true)
@@ -414,7 +494,8 @@ export default function NotesApp() {
         {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
         <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
         <DragLayer />
-        <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
+        <VaultDialogs />
+        <MoveDialog target={moveTarget?.target ?? null} onMoved={moveTarget?.onMoved} onClose={() => setMoveTarget(null)} />
         <PromptDialog
           open={!!folderPrompt}
           title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}
@@ -425,8 +506,14 @@ export default function NotesApp() {
           onClose={() => setFolderPrompt(null)}
           onSubmit={async (name) => {
             if (!folderPrompt) return
-            if ('folder' in folderPrompt) {
+            // Im Tresor nur verschlüsselte Namen
+            const parent = 'folder' in folderPrompt ? null : folders.find((f) => f.id === folderPrompt.parentId)
+            if ('folder' in folderPrompt && folderPrompt.folder.vault) {
+              await renameVaultFolder(folderPrompt.folder.id, name)
+            } else if ('folder' in folderPrompt) {
               await api(`/api/folders/${folderPrompt.folder.id}`, { method: 'PATCH', body: { name } })
+            } else if (parent?.vault) {
+              await createVaultFolder(name, parent.id)
             } else {
               await api('/api/folders', { method: 'POST', body: { name, parentId: folderPrompt.parentId } })
             }
@@ -444,7 +531,8 @@ export default function NotesApp() {
           onClose={() => setRenameTarget(null)}
           onSubmit={async (title) => {
             if (!renameTarget) return
-            sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
+            if (renameTarget.vault) await updateVaultNote(renameTarget.id, renameTarget.version, { title }, { immediate: true })
+            else sync.update(renameTarget.id, renameTarget.version, { title }, { immediate: true })
             setRenameTarget(null)
           }}
         />

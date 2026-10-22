@@ -186,7 +186,12 @@ function StudySession({
   const deck = card ? live.decks.find((d) => d.id === card.deckId) : undefined
   const scheduler = deck?.scheduler
   const retention = deck?.retention
-  const plan = useMemo<Plan>(() => (scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention } : SM2), [scheduler, retention])
+  // Eigene FSRS-Gewichte des Kontos (sonst Standardwerte) – kommen mit den Karten, gelten also auch offline
+  const weights = live.fsrs?.weights
+  const plan = useMemo<Plan>(
+    () => (scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention, weights } : SM2),
+    [scheduler, retention, weights],
+  )
   const intervals = useMemo(
     () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan) : null),
     [current, state, mode, shownAt, plan],

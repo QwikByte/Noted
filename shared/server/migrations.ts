@@ -475,4 +475,54 @@ export const migrations: string[] = [
   );
   CREATE INDEX pdf_annotations_attachment ON pdf_annotations(user_id, attachment_id, page);
   `,
+
+  /* 23: Eigene FSRS-Parameter je Konto, aus dem Bewertungsprotokoll geschätzt („Parameter optimieren“). weights = JSON
+     mit den 19 Gewichten von FSRS-5; reviews = ausgewertete Wiederholungen; log_loss/rmse = Vorhersagefehler mit diesen
+     Gewichten, default_* mit den Standardwerten auf denselben Daten. Keine Zeile = Standardwerte. */ `
+  CREATE TABLE fsrs_params (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    weights TEXT NOT NULL,
+    reviews INTEGER NOT NULL,
+    log_loss REAL NOT NULL,
+    rmse REAL NOT NULL,
+    default_log_loss REAL NOT NULL,
+    default_rmse REAL NOT NULL,
+    optimized_at INTEGER NOT NULL
+  );
+  `,
+
+  /* 24: Schmierzettel – ein Text je Konto, keine Notiz (nicht in Suche, Tags, Graph oder Export). version zählt
+     jede Änderung hoch; der Browser schickt die Version mit, auf der sein Text beruht (Konflikt zwischen Geräten). */ `
+  CREATE TABLE scratchpads (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  `,
+
+  /* 25: Tresor – Ende-zu-Ende verschlüsselte Notizen. Gespeichert werden nur Umschläge („nv1.…“,
+     features/vault/format.ts) und verpackte Schlüssel; der Tresor-Schlüssel verlässt nie den Browser. kdf = JSON
+     {"name":"PBKDF2-SHA-256","iterations":600000,"salt":"…"}. Tresor-Notizen und -Unterordner haben ihre ID als
+     Platzhalter-Titel bzw. -Namen, der echte steht verschlüsselt in title_enc bzw. name_enc. notes.vault zusätzlich zur
+     Ordnerzugehörigkeit, weil folder_id im Papierkorb NULL werden kann. FTS5 secure-delete: gelöschte Einträge
+     verschwinden wirklich aus dem Index. */ `
+  CREATE TABLE vaults (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    folder_id TEXT NOT NULL UNIQUE REFERENCES folders(id) ON DELETE CASCADE,
+    kdf TEXT NOT NULL,
+    wrapped_key TEXT NOT NULL,
+    recovery_salt TEXT NOT NULL,
+    recovery_wrapped_key TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  ALTER TABLE folders ADD COLUMN vault INTEGER NOT NULL DEFAULT 0 CHECK (vault IN (0, 1));
+  ALTER TABLE folders ADD COLUMN name_enc TEXT;
+  ALTER TABLE notes ADD COLUMN vault INTEGER NOT NULL DEFAULT 0 CHECK (vault IN (0, 1));
+  ALTER TABLE notes ADD COLUMN title_enc TEXT;
+  ALTER TABLE note_versions ADD COLUMN title_enc TEXT;
+  INSERT INTO notes_fts(notes_fts, rank) VALUES ('secure-delete', 1);
+  `,
 ]

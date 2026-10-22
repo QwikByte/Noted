@@ -1553,3 +1553,167 @@ html.dragging * {
   border: 1.5px solid var(--border-strong);
   border-radius: 999px;
 }
+
+/* ------------------------------------------------------------------ */
+/* Druck (shared/ui/print-view.tsx)                                    */
+/* ------------------------------------------------------------------ */
+/* Das Blatt der Druckansicht – auf dem Bildschirm als Vorschau und im Druck. Fließtext ca. 11 pt, kompakt ca. 9 pt */
+.print-sheet {
+  --editor-font-size: 13.8px;
+  padding: 20px 16px 32px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.print-sheet[data-compact] {
+  --editor-font-size: 11.3px;
+}
+@container (min-width: 48rem) {
+  .print-sheet {
+    padding: 36px 48px 48px;
+  }
+}
+.print-sheet .markdown-body:not(.card-markdown),
+.print-sheet .plain-text {
+  max-width: none;
+  padding: 0;
+}
+.print-title {
+  margin: 0 0 0.6em;
+  font-family: var(--font-sans);
+  font-size: calc(var(--editor-font-size) * 1.75);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.print-heading {
+  margin: 1.4em 0 0.6em;
+  font-family: var(--font-sans);
+  font-size: calc(var(--editor-font-size) * 1.3);
+  font-weight: 700;
+  break-after: avoid;
+}
+.print-meta {
+  margin: -0.3em 0 1em;
+  color: var(--text-muted);
+  font-size: var(--editor-font-size);
+}
+.print-content {
+  font-size: var(--editor-font-size);
+  column-gap: 8mm;
+}
+/* Kompakt: zwei Spalten – in der Vorschau erst, wenn sie breit genug ist */
+@container (min-width: 40rem) {
+  .print-sheet[data-compact] .print-content {
+    columns: 2;
+  }
+}
+.print-cards {
+  list-style: decimal;
+  padding-left: 1.6em;
+}
+.print-card {
+  padding: 0.5em 0;
+  border-bottom: 1px solid var(--border);
+}
+.print-card::marker {
+  font-family: var(--font-sans);
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.print-answer {
+  margin-top: 0.3em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-muted);
+}
+.print-options {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.print-masks {
+  list-style: decimal;
+  padding-left: 2em;
+}
+/* Nichts zerreißen, Überschriften nicht allein am Seitenende */
+.print-sheet :is(img, .katex-display, pre, .mermaid-block, .callout, tr, li, dl > div, .print-card, [data-testid='occlusion-image']) {
+  break-inside: avoid;
+}
+.print-sheet :is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid;
+}
+.print-sheet .markdown-body pre {
+  white-space: pre-wrap;
+  overflow: visible;
+}
+/* Tabellen als echte Tabelle statt seitlich abgeschnitten – die Kopfzeile wiederholt sich auf jeder Seite */
+.print-sheet .markdown-body table {
+  display: table;
+  width: 100%;
+  overflow: visible;
+}
+.print-sheet .markdown-body thead {
+  display: table-header-group;
+}
+/* Externe Links mit Adresse – außer der Text ist schon die Adresse */
+.print-sheet a[href^='http']:not(.url-link)::after {
+  content: ' (' attr(href) ')';
+  color: var(--text-muted);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+/* Wikilinks, Tags, Datei- und Fußnotenlinks als gewöhnlicher Text */
+.print-sheet :is(a.wikilink, a.wikilink.unresolved, a.tag, a.file-link) {
+  color: inherit;
+  background: none;
+  padding: 0;
+  font-weight: inherit;
+  text-decoration: none;
+  opacity: 1;
+}
+.print-sheet .footnote-ref a {
+  color: inherit;
+}
+.print-sheet summary.callout-title::after,
+.print-sheet .footnote-backref {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 15mm 14mm;
+  }
+  /* Nur die Druckansicht – kein App-Rahmen, keine Seitenleiste, Meldungen oder Knöpfe */
+  html.print-open body > :not(.print-root) {
+    display: none !important;
+  }
+  html.print-open,
+  html.print-open body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+  .print-root {
+    position: static;
+    display: block;
+    background: none;
+  }
+  .print-root .note-desk {
+    display: block;
+    overflow: visible;
+    padding: 0;
+    background: none;
+  }
+  .print-root .note-paper {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+  }
+  .print-sheet[data-compact] .print-content {
+    columns: 2;
+  }
+}

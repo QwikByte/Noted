@@ -3,6 +3,7 @@ import {
   extractLinks,
   extractTags,
   findHeadingLine,
+  findHeadings,
   findWikiLinks,
   headingKey,
   makeExcerpt,
@@ -87,8 +88,26 @@ describe('Laufzeit bei böswilligen Eingaben', () => {
       extractTags(s)
       extractLinks(s)
       makeExcerpt(s)
+      findHeadings(s)
       expect(Date.now() - t).toBeLessThan(3000)
     }
+  })
+
+  it('findet Überschriften in großen Notizen in linearer Zeit', () => {
+    const inputs = [
+      'Text\n===\n'.repeat(200_000),
+      '# x\n'.repeat(500_000),
+      'Absatz\n'.repeat(500_000) + '---',
+      '`'.repeat(1_000_000) + '\n# x',
+      '# ' + '$'.repeat(1_000_000),
+      '# ' + ' # '.repeat(300_000) + 'x',
+    ]
+    for (const s of inputs) {
+      const t = Date.now()
+      findHeadings(s)
+      expect(Date.now() - t).toBeLessThan(3000)
+    }
+    expect(findHeadings(inputs[0])).toHaveLength(200_000)
   })
 })
 
@@ -99,6 +118,123 @@ describe('Überschriften', () => {
     expect(findHeadingLine(note, 'ziel')).toBe(8)
     expect(findHeadingLine(note, 'Fehlt')).toBeNull()
     expect(findHeadingLine(note, '')).toBeNull()
+  })
+
+  it('findet Ebenen und Zeilen inklusive Frontmatter – nicht in Code, Kommentaren, Zitaten und Callouts', () => {
+    const note = [
+      '---',
+      'title: x',
+      '---',
+      '# A',
+      '## B',
+      '#### C',
+      '```',
+      '# kein Titel',
+      '```',
+      '~~~',
+      '# auch nicht',
+      '~~~',
+      '%% ## versteckt',
+      '## noch versteckt %%',
+      '> ## Im Kasten',
+      '> [!note] Hinweis',
+      '> # Im Callout',
+      '   ### Drei Leerzeichen',
+      '    # Vier Leerzeichen',
+      '#tag',
+      '',
+      '<h2>HTML</h2>',
+      '---',
+      '',
+      '##',
+      '## ##',
+      '```',
+      '# offen bis zum Ende',
+    ].join('\n')
+    expect(findHeadings(note).map((h) => [h.level, h.text, h.line])).toEqual([
+      [1, 'A', 3],
+      [2, 'B', 4],
+      [4, 'C', 5],
+      [3, 'Drei Leerzeichen', 17],
+    ])
+  })
+
+  it('liest schließende # nur nach Leerraum', () => {
+    expect(findHeadings('## Einführung in C#\n## Titel ##\n### Mit   #  \n# C##').map((h) => h.raw)).toEqual([
+      'Einführung in C#',
+      'Titel',
+      'Mit',
+      'C##',
+    ])
+  })
+
+  it('erkennt Setext-Überschriften nur nach Leerzeile, Überschrift oder am Anfang', () => {
+    const note = [
+      'Erster',
+      '===',
+      'Zweiter über',
+      'zwei Zeilen',
+      '---',
+      '',
+      '- Punkt',
+      '---',
+      '',
+      'Absatz',
+      '',
+      '---',
+      '> Zitat',
+      'weiter',
+      '===',
+      '',
+      'Absatz',
+      '> Zitat',
+      '---',
+      '# ATX',
+      'Danach',
+      '-------',
+    ].join('\n')
+    expect(findHeadings(note).map((h) => [h.level, h.text, h.line])).toEqual([
+      [1, 'Erster', 0],
+      [2, 'Zweiter über zwei Zeilen', 2],
+      [1, 'ATX', 19],
+      [2, 'Danach', 20],
+    ])
+    // Das --- des Frontmatters ist keine Unterstreichung
+    expect(findHeadings('---\na: 1\n---\nText')).toEqual([])
+  })
+
+  it('zeigt Überschriften als Klartext – Code und Formeln bleiben als Quelltext', () => {
+    const note = [
+      '## [[Ziel|Alias]] und [[Notiz]]',
+      '## [Text](https://example.com) ![[bild.png]]',
+      '## **fett** und _kursiv_ ==markiert==',
+      '### Fall $n = 1$ und `a*b_c`',
+      '## $$x_1 * y$$',
+      '## 1. Einleitung',
+    ].join('\n')
+    expect(findHeadings(note).map((h) => h.text)).toEqual([
+      'Alias und Notiz',
+      'Text',
+      'fett und kursiv markiert',
+      'Fall n = 1 und a*b_c',
+      'x_1 * y',
+      '1. Einleitung',
+    ])
+    expect(findHeadings(note)[0].raw).toBe('[[Ziel|Alias]] und [[Notiz]]')
+  })
+
+  it('lässt sich von einzelnen Backticks nicht stören', () => {
+    expect(findHeadings('Das gibt`s nicht\n## Danach\nund noch ein ` hier\n## Ende').map((h) => h.text)).toEqual([
+      'Danach',
+      'Ende',
+    ])
+  })
+
+  it('springt per Roh- oder Klartext auch zu Überschriften mit Wikilink und zu Setext-Überschriften', () => {
+    const note = 'Text\n\n## Siehe [[Analysis|Folgen]]\n\nGrenzwerte\n---\n'
+    expect(findHeadingLine(note, 'Siehe [[Analysis|Folgen]]')).toBe(2)
+    expect(findHeadingLine(note, 'Siehe Folgen')).toBe(2)
+    expect(findHeadingLine(note, 'Grenzwerte')).toBe(4)
   })
 
   it('vergleicht Überschriften ohne Formatierung und Satzzeichen', () => {

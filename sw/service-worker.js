@@ -24,6 +24,8 @@ const DATA_ROUTES = [
   /^\/api\/glossary$/,
   /^\/api\/graph$/,
   /^\/api\/stats$/,
+  // Verpacktes Schlüsselmaterial des Tresors – damit Entsperren auch offline geht
+  /^\/api\/vault$/,
   /^\/api\/attachments\/[0-9a-f-]{36}\/annotations$/,
 ]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]

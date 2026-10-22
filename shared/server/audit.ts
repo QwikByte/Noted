@@ -22,6 +22,10 @@ export type AuditEvent =
   | 'update_requested'
   | 'share_created'
   | 'share_revoked'
+  | 'vault_created'
+  | 'vault_keys_changed'
+  | 'vault_deleted'
+  | 'vault_note_moved'
 
 export type AuditEntry = {
   event: AuditEvent

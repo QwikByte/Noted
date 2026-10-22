@@ -1,4 +1,5 @@
 import { route } from '@/features/auth/server/route'
+import { badRequest } from '@/shared/server/http'
 import { getNote } from '@/features/notes/server/notes'
 import { noteExtension } from '@/features/notes/format'
 import { canvasForExport } from '@/features/canvas/canvas'
@@ -10,6 +11,8 @@ const CONTENT_TYPES = { '.md': 'text/markdown', '.html': 'text/html', '.canvas':
 /** Notiz als Datei herunterladen: .md (Markdown, einfacher Text, Mindmap), .html (formatierter Text), .canvas */
 export const GET = route<{ id: string }>('user', ({ user, params }) => {
   const note = getNote(user.id, params.id)
+  // Der Server hat für Tresor-Notizen nur Chiffretext – herunterladen geht im entsperrten Browser
+  if (note.vault) throw badRequest('Notizen im Tresor lädt die App selbst herunter, nicht der Server.')
   const ext = noteExtension(note.format)
   const filename = `${note.title}${ext}`
   const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')

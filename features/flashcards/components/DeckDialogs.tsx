@@ -6,7 +6,7 @@ import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
 import { AutoTextarea } from './CardEditor'
-import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, importDeckPackage, updateDeck } from '../client/flashcards'
+import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, importDeckPackage, updateDeck, useFlashcards } from '../client/flashcards'
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
@@ -30,6 +30,8 @@ export function DeckSettingsDialog({
   const [limit, setLimit] = useState(String(deck?.newPerDay ?? DEFAULT_NEW_PER_DAY))
   const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
   const [scheduler, setScheduler] = useState<Deck['scheduler']>(deck?.scheduler ?? 'sm2')
+  // Eigene FSRS-Parameter gelten für alle Stapel des Kontos
+  const fsrs = useFlashcards().data?.fsrs ?? null
   const [retention, setRetention] = useState(String(Math.round((deck?.retention ?? DEFAULT_RETENTION) * 100)))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -94,7 +96,13 @@ export function DeckSettingsDialog({
           <Field
             label="Wiederholungsplan"
             hint={
-              scheduler === 'fsrs' ? 'Meist weniger Wiederholungen bei gleicher Behaltensrate. Der bisherige Lernstand bleibt erhalten.' : undefined
+              scheduler === 'fsrs'
+                ? `Meist weniger Wiederholungen bei gleicher Behaltensrate. Der bisherige Lernstand bleibt erhalten. ${
+                    fsrs
+                      ? `Parameter: an deinen Lernverlauf angepasst (${new Date(fsrs.optimizedAt).toLocaleDateString('de-DE')})`
+                      : 'Parameter: Standardwerte'
+                  } – anpassen in der Lernstatistik.`
+                : undefined
             }
           >
             {(id) => (

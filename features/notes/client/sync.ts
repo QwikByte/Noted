@@ -19,6 +19,9 @@ export type Draft = {
   content?: string
   /** Format, zu dem `content` gehört (undefined = unverändert) */
   format?: NoteFormat
+  /** Tresor-Notiz: `content` ist ein Umschlag, der Titel steht verschlüsselt in `titleEnc` – nie Klartext */
+  vault?: boolean
+  titleEnc?: string
   /** Server-Version, auf der der Entwurf basiert */
   baseVersion: number | null
   /** Nach einem Konflikt bewusst „Meine Version“ gewählt – der Server sichert seinen Stand dann im Verlauf */
@@ -27,7 +30,9 @@ export type Draft = {
   updatedAt: number
 }
 
-export type SyncState = 'saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
+type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId' | 'titleEnc' | 'vault'>>
+
+export type SyncState ='saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
 
 export type NoteSyncStatus = {
   state: SyncState
@@ -42,6 +47,12 @@ const SAVE_DELAY = 900
 const RETRY_INTERVAL = 20_000
 
 const SAVED: NoteSyncStatus = { state: 'saved' }
+
+/** Titel der Kopie, die bei „Beide behalten“ entsteht */
+export function conflictCopyTitle(title: string): string {
+  const stamp = new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }).replace(/[:/]/g, '-')
+  return `${title} (Konflikt ${stamp})`
+}
 
 class SyncStore {
   private storageKey = ''
@@ -152,7 +163,15 @@ class SyncStore {
   // ---- Änderungen ----
 
   /** Neue Notiz anlegen (funktioniert auch offline). */
-  create(input: { id: string; title: string; folderId: string | null; content: string; format: NoteFormat }) {
+  create(input: {
+    id: string
+    title: string
+    folderId: string | null
+    content: string
+    format: NoteFormat
+    vault?: boolean
+    titleEnc?: string
+  }) {
     const draft: Draft = { ...input, isNew: true, baseVersion: null, rev: 1, updatedAt: Date.now() }
     this.drafts.set(input.id, draft)
     this.created.add(input.id)
@@ -163,12 +182,20 @@ class SyncStore {
   }
 
   /** Änderung an einer Notiz vormerken. `version` ist die Server-Version, auf der sie basiert. */
-  update(
-    id: string,
-    version: number,
-    patch: Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId'>>,
-    opts: { immediate?: boolean } = {},
-  ) {
+  update(id: string, version: number, patch: DraftPatch, opts: { immediate?: boolean } = {}) {
+    this.updateMany([{ id, version, patch }], opts)
+  }
+
+  /** Wie `update` für mehrere Notizen – der lokale Speicher wird dabei nur einmal geschrieben. */
+  updateMany(changes: { id: string; version: number; patch: DraftPatch }[], opts: { immediate?: boolean } = {}) {
+    if (changes.length === 0) return
+    for (const { id, version, patch } of changes) this.mergeDraft(id, version, patch)
+    this.persist()
+    this.emit()
+    for (const { id } of changes) this.schedule(id, opts.immediate ? 0 : SAVE_DELAY)
+  }
+
+  private mergeDraft(id: string, version: number, patch: DraftPatch) {
     const existing = this.drafts.get(id)
     const draft: Draft = existing
       ? { ...existing, ...patch, rev: existing.rev + 1, updatedAt: Date.now() }
@@ -183,9 +210,6 @@ class SyncStore {
     this.drafts.set(id, draft)
     const st = this.getStatus(id).state
     if (st !== 'conflict' && st !== 'saving') this.setStatus(id, { state: 'pending' })
-    this.persist()
-    this.emit()
-    this.schedule(id, opts.immediate ? 0 : SAVE_DELAY)
   }
 
   private schedule(id: string, delay: number) {
@@ -229,10 +253,11 @@ class SyncStore {
           method: 'POST',
           body: {
             id: draft.id,
-            title: draft.title ?? 'Unbenannt',
+            title: draft.vault ? draft.id : (draft.title ?? 'Unbenannt'),
             folderId: draft.folderId ?? null,
             content: draft.content ?? '',
             format: draft.format ?? 'markdown',
+            titleEnc: draft.titleEnc,
           },
           keepalive,
         })
@@ -242,6 +267,7 @@ class SyncStore {
           method: 'PUT',
           body: {
             title: draft.title,
+            titleEnc: draft.titleEnc,
             folderId: draft.folderId,
             content: draft.content,
             format: draft.format,
@@ -277,7 +303,8 @@ class SyncStore {
         const serverNote = err.body.note as Note
         this.setKnownVersion(id, serverNote.version)
         this.setStatus(id, { state: 'conflict', serverNote })
-        if (this.activeId !== id) await this.resolveConflict(id, 'copy')
+        // Eine Tresor-Notiz lässt sich nur entsperrt kopieren (neue ID, also neu verschlüsseln) – der Konflikt bleibt
+        if (this.activeId !== id && !draft.vault) await this.resolveConflict(id, 'copy')
       } else if (err instanceof ApiError && err.status === 404 && !draft.isNew) {
         this.setStatus(id, { state: 'error', error: 'Die Notiz wurde auf einem anderen Gerät gelöscht.' })
       } else {
@@ -300,7 +327,8 @@ class SyncStore {
     const draft = this.drafts.get(id)
     const status = this.getStatus(id)
     const serverNote = status.serverNote
-    if (!draft) return
+    // Kopie einer Tresor-Notiz legt die Notizansicht verschlüsselt an (der Umschlag gehört zur alten ID)
+    if (!draft || (mode === 'copy' && draft.vault)) return
     if (mode === 'mine' && serverNote) {
       draft.baseVersion = serverNote.version
       draft.overwrite = true
@@ -315,17 +343,33 @@ class SyncStore {
     this.emit()
     if (serverNote) for (const fn of this.savedListeners) fn(serverNote, { linksUpdated: 0, created: false })
     if (mode === 'copy') {
-      const stamp = new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }).replace(/[:/]/g, '-')
       if (draft.content !== undefined) {
         await this.create({
           id: crypto.randomUUID(),
-          title: `${draft.title ?? serverNote?.title ?? 'Notiz'} (Konflikt ${stamp})`,
+          title: conflictCopyTitle(draft.title ?? serverNote?.title ?? 'Notiz'),
           folderId: draft.folderId ?? serverNote?.folderId ?? null,
           content: draft.content,
           format: draft.format ?? serverNote?.format ?? 'markdown',
         })
       }
     }
+  }
+
+  /**
+   * Klartext-Entwurf zu einer Notiz, die inzwischen im Tresor liegt, durch seine verschlüsselte Fassung ersetzen –
+   * der Server lehnt Klartext dort ab
+   */
+  sealDraft(id: string, sealed: { titleEnc?: string; content?: string }) {
+    const draft = this.drafts.get(id)
+    if (!draft || draft.vault) return
+    const next: Draft = { ...draft, vault: true, title: undefined, rev: draft.rev + 1, updatedAt: Date.now() }
+    if (sealed.titleEnc !== undefined) next.titleEnc = sealed.titleEnc
+    if (sealed.content !== undefined) next.content = sealed.content
+    this.drafts.set(id, next)
+    if (this.getStatus(id).state === 'error') this.setStatus(id, { state: 'pending' })
+    this.persist()
+    this.emit()
+    this.schedule(id, 0)
   }
 
   /** Entwurf als neue Notiz anlegen (z. B. wenn das Original auf dem Server gelöscht wurde). */

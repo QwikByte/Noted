@@ -81,7 +81,32 @@ export type SrsState = {
 /** side 0: Vorderseite wird abgefragt, side 1: Rückseite (nur bei beidseitigen Karten) – bei Lückentexten die Lücke */
 export type CardReview = SrsState & { cardId: string; side: number }
 
-export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[] }
+/** `fsrs`: auf den eigenen Lernverlauf optimierte FSRS-Gewichte des Kontos – `null`: Standardwerte */
+export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[]; fsrs: FsrsParams | null }
+
+/** Vorhersagefehler von FSRS-Gewichten auf dem Bewertungsprotokoll – rmse: RMSE(bins) wie bei Anki (0–1) */
+export type FsrsMetrics = { logLoss: number; rmse: number }
+
+/** Eigene FSRS-Gewichte – `reviews`: ausgewertete Wiederholungen, `defaultMetrics`: Fehler der Standardwerte */
+export type FsrsParams = {
+  weights: number[]
+  reviews: number
+  metrics: FsrsMetrics
+  defaultMetrics: FsrsMetrics
+  optimizedAt: number
+}
+
+/**
+ * Ergebnis von „Parameter optimieren“: saved – neue Gewichte gespeichert · kept – die bisherigen passen besser ·
+ * not_enough – zu wenige Wiederholungen. `before`/`after`: Fehler der bisher gültigen bzw. der neuen Gewichte.
+ */
+export type FsrsOptimizeResult = {
+  status: 'saved' | 'kept' | 'not_enough'
+  reviews: number
+  before: FsrsMetrics | null
+  after: FsrsMetrics | null
+  fsrs: FsrsParams | null
+}
 
 /** Eintrag im Bewertungsprotokoll: jede Bewertung im Lernmodus, auch offline gesammelte */
 export type ReviewLogEntry = {
