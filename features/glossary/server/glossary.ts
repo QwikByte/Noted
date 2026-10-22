@@ -10,7 +10,7 @@ import type { Glossary } from '../types'
 /** Formate mit Markdown – formatierter Text (HTML) kennt weder Callouts noch Formeln, einfacher Text keine Formatierung */
 const FORMATS: NoteFormat[] = ['markdown', 'mindmap', 'canvas']
 
-/** Glossar aller Notizen – oder nur eines Ordners samt Unterordnern */
+/** Glossar aller Notizen (ohne Tresor) – oder nur eines Ordners samt Unterordnern */
 export function getGlossary(userId: number, folderId: string | null): Glossary {
   let folders: Set<string> | null = null
   if (folderId) {
@@ -31,7 +31,7 @@ export function getGlossary(userId: number, folderId: string | null): Glossary {
   const rows = getDb()
     .prepare(
       `SELECT id, title, format, content, folder_id FROM notes
-       WHERE user_id = ? AND deleted_at IS NULL AND format IN (${FORMATS.map(() => '?').join(', ')})`,
+       WHERE user_id = ? AND deleted_at IS NULL AND vault = 0 AND format IN (${FORMATS.map(() => '?').join(', ')})`,
     )
     .all(userId, ...FORMATS) as { id: string; title: string; format: NoteFormat; content: string; folder_id: string | null }[]
   return buildGlossary(

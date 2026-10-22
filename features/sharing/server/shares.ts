@@ -67,10 +67,11 @@ export function createShare(
 ): { share: Share; url: string } {
   assertSharingEnabled()
   const note = getDb()
-    .prepare('SELECT format FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
-    .get(noteId, user.id) as { format: NoteFormat } | undefined
+    .prepare('SELECT format, vault FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .get(noteId, user.id) as { format: NoteFormat; vault: number } | undefined
   if (!note) throw notFound('Notiz nicht gefunden.')
   if (note.format === 'canvas') throw badRequest('Ein Canvas lässt sich nicht teilen.')
+  if (note.vault === 1) throw badRequest('Notizen im Tresor lassen sich nicht teilen.')
   const token = randomToken(32)
   const id = sha256(token)
   const expiresAt = expiresInDays === null ? null : now + expiresInDays * DAY
@@ -126,7 +127,10 @@ function openShare(token: string, ip: string | null, now: number) {
     .get(sha256(token), now) as { id: string; userId: number; noteId: string } | undefined
   if (!share) throw notFound()
   const note = db
-    .prepare('SELECT title, format, content, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .prepare(
+      `SELECT title, format, content, updated_at AS updatedAt FROM notes
+       WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND vault = 0`,
+    )
     .get(share.noteId, share.userId) as SharedNote | undefined
   if (!note || note.format === 'canvas') throw notFound()
   return { share, note }

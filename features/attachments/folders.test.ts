@@ -9,6 +9,8 @@ const folder = (id: string, name: string, parentId: string | null = null): Folde
   parentId,
   createdAt: 0,
   updatedAt: 0,
+  vault: false,
+  nameEnc: null,
 })
 const note = (id: string, title: string, folderId: string | null): NoteSummary => ({
   id,
@@ -21,6 +23,8 @@ const note = (id: string, title: string, folderId: string | null): NoteSummary =
   updatedAt: 0,
   tags: [],
   excerpt: '',
+  vault: false,
+  titleEnc: null,
 })
 const file = (id: string, noteIds: string[]): FileEntry => ({
   id,

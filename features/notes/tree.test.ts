@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { canMoveTo } from './tree'
 import type { Folder, NoteSummary } from './types'
 
-const folder = (id: string, parentId: string | null = null): Folder => ({ id, name: id, parentId, createdAt: 0, updatedAt: 0 })
+const folder = (id: string, parentId: string | null = null): Folder => ({
+  id,
+  name: id,
+  parentId,
+  createdAt: 0,
+  updatedAt: 0,
+  vault: false,
+  nameEnc: null,
+})
 const note = (id: string, folderId: string | null): NoteSummary => ({
   id,
   folderId,
@@ -14,6 +22,8 @@ const note = (id: string, folderId: string | null): NoteSummary => ({
   updatedAt: 0,
   tags: [],
   excerpt: '',
+  vault: false,
+  titleEnc: null,
 })
 
 describe('Verschieben per Drag & Drop', () => {

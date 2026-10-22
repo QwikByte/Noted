@@ -54,10 +54,12 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
     if (!d) return n
     byId.delete(n.id)
     const format = d.format ?? n.format
-    const text = d.content !== undefined ? noteText(format, d.content) : null
+    // Im Tresor ist der Inhalt ein Umschlag: kein Auszug, keine Tags
+    const text = d.content !== undefined && !n.vault ? noteText(format, d.content) : null
     return {
       ...n,
       title: d.title ?? n.title,
+      titleEnc: d.titleEnc ?? n.titleEnc,
       folderId: d.folderId !== undefined ? d.folderId : n.folderId,
       format,
       updatedAt: Math.max(n.updatedAt, d.updatedAt),
@@ -67,10 +69,10 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
   for (const d of byId.values()) {
     if (!d.isNew) continue
     const format = d.format ?? 'markdown'
-    const text = noteText(format, d.content ?? '')
+    const text = d.vault ? '' : noteText(format, d.content ?? '')
     result.unshift({
       id: d.id,
-      title: d.title ?? 'Unbenannt',
+      title: d.vault ? d.id : (d.title ?? 'Unbenannt'),
       folderId: d.folderId ?? null,
       format,
       pinned: false,
@@ -79,6 +81,8 @@ function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
       updatedAt: d.updatedAt,
       tags: extractTags(text),
       excerpt: makeExcerpt(text),
+      vault: !!d.vault,
+      titleEnc: d.titleEnc ?? null,
     })
   }
   return result

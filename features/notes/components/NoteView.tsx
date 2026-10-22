@@ -173,6 +173,8 @@ export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?:
         updatedAt: draft.updatedAt,
         tags: [],
         excerpt: '',
+        vault: !!draft.vault,
+        titleEnc: draft.titleEnc ?? null,
       }
     }
     return null

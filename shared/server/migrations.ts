@@ -500,4 +500,29 @@ export const migrations: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+
+  /* 25: Tresor – Ende-zu-Ende verschlüsselte Notizen. Gespeichert werden nur Umschläge („nv1.…“,
+     features/vault/format.ts) und verpackte Schlüssel; der Tresor-Schlüssel verlässt nie den Browser. kdf = JSON
+     {"name":"PBKDF2-SHA-256","iterations":600000,"salt":"…"}. Tresor-Notizen und -Unterordner haben ihre ID als
+     Platzhalter-Titel bzw. -Namen, der echte steht verschlüsselt in title_enc bzw. name_enc. notes.vault zusätzlich zur
+     Ordnerzugehörigkeit, weil folder_id im Papierkorb NULL werden kann. FTS5 secure-delete: gelöschte Einträge
+     verschwinden wirklich aus dem Index. */ `
+  CREATE TABLE vaults (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    folder_id TEXT NOT NULL UNIQUE REFERENCES folders(id) ON DELETE CASCADE,
+    kdf TEXT NOT NULL,
+    wrapped_key TEXT NOT NULL,
+    recovery_salt TEXT NOT NULL,
+    recovery_wrapped_key TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  ALTER TABLE folders ADD COLUMN vault INTEGER NOT NULL DEFAULT 0 CHECK (vault IN (0, 1));
+  ALTER TABLE folders ADD COLUMN name_enc TEXT;
+  ALTER TABLE notes ADD COLUMN vault INTEGER NOT NULL DEFAULT 0 CHECK (vault IN (0, 1));
+  ALTER TABLE notes ADD COLUMN title_enc TEXT;
+  ALTER TABLE note_versions ADD COLUMN title_enc TEXT;
+  INSERT INTO notes_fts(notes_fts, rank) VALUES ('secure-delete', 1);
+  `,
 ]

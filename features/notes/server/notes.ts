@@ -11,6 +11,16 @@ import { escapeRegExp } from '@/shared/lib/regexp'
 import { noteText } from '../format'
 import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
 import { getVersion, snapshotIfDue } from './versions'
+import {
+  assertEnvelope,
+  auditVaultMove,
+  checkpoint,
+  isVaultFolder,
+  vaultBoundary,
+  vaultRequired,
+  vaultRootId,
+} from '@/features/vault/server/vault'
+import { MAX_VAULT_ENVELOPE_LENGTH, MAX_VAULT_TITLE_ENVELOPE_LENGTH } from '@/features/vault/limits'
 import type {
   Folder,
   Note,
@@ -26,6 +36,8 @@ import type {
 
 export const MAX_NOTE_LENGTH = 2_000_000 // ca. 2 MB Text pro Notiz
 
+type Actor = { user: { id: number; username: string }; ip: string | null }
+
 type FolderRow = {
   id: string
   user_id: number
@@ -33,6 +45,8 @@ type FolderRow = {
   name: string
   created_at: number
   updated_at: number
+  vault: number
+  name_enc: string | null
 }
 
 type NoteRow = {
@@ -48,6 +62,8 @@ type NoteRow = {
   created_at: number
   updated_at: number
   deleted_at: number | null
+  vault: number
+  title_enc: string | null
 }
 
 const toFolder = (r: FolderRow): Folder => ({
@@ -56,6 +72,8 @@ const toFolder = (r: FolderRow): Folder => ({
   name: r.name,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  vault: r.vault === 1,
+  nameEnc: r.name_enc,
 })
 
 function tagsFor(db: Database.Database, noteId: string): string[] {
@@ -76,6 +94,8 @@ function toNote(db: Database.Database, r: NoteRow): Note {
     updatedAt: r.updated_at,
     tags: tagsFor(db, r.id),
     excerpt: r.excerpt,
+    vault: r.vault === 1,
+    titleEnc: r.title_enc,
     content: r.content,
   }
 }
@@ -111,7 +131,12 @@ function siblingFolderNames(userId: number, parentId: string | null, excludeId?:
   ).map((r) => r.name)
 }
 
-export function createFolder(userId: number, input: { id?: string; name: string; parentId: string | null }): Folder {
+export function createFolder(
+  userId: number,
+  input: { id?: string; name: string; parentId: string | null; nameEnc?: string },
+): Folder {
+  if (isVaultFolder(userId, input.parentId)) return createVaultFolder(userId, input)
+  if (input.nameEnc !== undefined) throw vaultBoundary()
   const name = input.name.trim()
   const error = validateName(name)
   if (error) throw badRequest(error)
@@ -126,6 +151,31 @@ export function createFolder(userId: number, input: { id?: string; name: string;
     .prepare('INSERT INTO folders (id, user_id, parent_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(id, userId, input.parentId, name, t, t)
   return toFolder(getFolderRow(userId, id))
+}
+
+/** Unterordner im Tresor: Der Name ist verschlüsselt, Platzhalter ist die ID (sie steckt in der AAD des Namens) */
+function createVaultFolder(
+  userId: number,
+  input: { id?: string; name: string; parentId: string | null; nameEnc?: string },
+): Folder {
+  if (!input.id || !isValidId(input.id) || (input.name !== '' && input.name !== input.id)) throw vaultRequired()
+  const nameEnc = assertEnvelope(input.nameEnc, MAX_VAULT_TITLE_ENVELOPE_LENGTH)
+  const existing = getDb().prepare('SELECT user_id FROM folders WHERE id = ?').get(input.id) as
+    | { user_id: number }
+    | undefined
+  if (existing) {
+    // Wiederholte Anfrage: bestehenden Ordner zurückgeben
+    if (existing.user_id === userId) return toFolder(getFolderRow(userId, input.id))
+    throw conflict('Diese ID ist bereits vergeben.')
+  }
+  const t = Date.now()
+  getDb()
+    .prepare(
+      `INSERT INTO folders (id, user_id, parent_id, name, vault, name_enc, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
+    )
+    .run(input.id, userId, input.parentId, input.id, nameEnc, t, t)
+  return toFolder(getFolderRow(userId, input.id))
 }
 
 /** Alle Unterordner (rekursiv) inkl. des Ordners selbst. */
@@ -143,14 +193,19 @@ function descendantIds(userId: number, id: string): string[] {
   return rows.map((r) => r.id)
 }
 
-export function updateFolder(userId: number, id: string, patch: { name?: string; parentId?: string | null }): Folder {
+export type FolderPatch = { name?: string; parentId?: string | null; nameEnc?: string }
+
+export function updateFolder(userId: number, id: string, patch: FolderPatch): Folder {
   const folder = getFolderRow(userId, id)
+  if (folder.vault === 1) return updateVaultFolder(userId, folder, patch)
+  if (patch.nameEnc !== undefined) throw vaultBoundary()
   const name = patch.name !== undefined ? patch.name.trim() : folder.name
   const parentId = patch.parentId !== undefined ? patch.parentId : folder.parent_id
   const error = validateName(name)
   if (error) throw badRequest(error)
   if (parentId !== null) {
     assertFolder(userId, parentId)
+    if (isVaultFolder(userId, parentId)) throw vaultBoundary()
     if (descendantIds(userId, id).includes(parentId)) {
       throw badRequest('Ein Ordner kann nicht in sich selbst verschoben werden.')
     }
@@ -164,9 +219,29 @@ export function updateFolder(userId: number, id: string, patch: { name?: string;
   return toFolder(getFolderRow(userId, id))
 }
 
+/** Ordner im Tresor: umbenennen nur verschlüsselt, verschieben nur innerhalb des Tresors */
+function updateVaultFolder(userId: number, folder: FolderRow, patch: FolderPatch): Folder {
+  if (folder.id === vaultRootId(userId)) {
+    throw badRequest('Den Ordner des Tresors kannst du weder umbenennen noch verschieben.')
+  }
+  if (patch.name !== undefined && patch.name !== folder.name) throw vaultRequired()
+  const parentId = patch.parentId !== undefined ? patch.parentId : folder.parent_id
+  if (!isVaultFolder(userId, parentId)) throw vaultBoundary()
+  if (descendantIds(userId, folder.id).includes(parentId!)) {
+    throw badRequest('Ein Ordner kann nicht in sich selbst verschoben werden.')
+  }
+  const nameEnc =
+    patch.nameEnc !== undefined ? assertEnvelope(patch.nameEnc, MAX_VAULT_TITLE_ENVELOPE_LENGTH) : folder.name_enc
+  getDb()
+    .prepare('UPDATE folders SET name_enc = ?, parent_id = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+    .run(nameEnc, parentId, Date.now(), folder.id, userId)
+  return toFolder(getFolderRow(userId, folder.id))
+}
+
 /** Löscht einen Ordner samt Unterordnern. Enthaltene Notizen landen im Papierkorb. */
 export function deleteFolder(userId: number, id: string): { trashedNotes: number } {
   getFolderRow(userId, id)
+  if (id === vaultRootId(userId)) throw badRequest('Den Tresor löschst du unter Einstellungen → Tresor.')
   const db = getDb()
   const ids = descendantIds(userId, id)
   let trashed = 0
@@ -234,6 +309,7 @@ export function listNotes(userId: number): NoteSummary[] {
   const rows = db
     .prepare(
       `SELECT n.id, n.folder_id, n.title, n.format, n.excerpt, n.pinned, n.version, n.created_at, n.updated_at,
+              n.vault, n.title_enc,
               (SELECT GROUP_CONCAT(tag, char(31)) FROM note_tags t WHERE t.note_id = n.id) AS tags
        FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL
        ORDER BY n.updated_at DESC`,
@@ -250,6 +326,8 @@ export function listNotes(userId: number): NoteSummary[] {
     updatedAt: r.updated_at,
     tags: r.tags ? r.tags.split('\u001f').sort() : [],
     excerpt: r.excerpt,
+    vault: r.vault === 1,
+    titleEnc: r.title_enc,
   }))
 }
 
@@ -263,10 +341,20 @@ function checkContent(content: string, format: NoteFormat) {
   if (format === 'canvas' && !parseCanvas(content)) throw badRequest('Das Canvas konnte nicht gelesen werden.')
 }
 
-export function createNote(
-  userId: number,
-  input: { id?: string; title: string; folderId: string | null; content: string; format?: NoteFormat; pinned?: boolean },
-): Note {
+export type NoteInput = {
+  id?: string
+  title: string
+  folderId: string | null
+  content: string
+  format?: NoteFormat
+  pinned?: boolean
+  /** Nur im Tresor: verschlüsselter Titel (`title` ist dann die ID oder leer, `content` ein Umschlag) */
+  titleEnc?: string
+}
+
+export function createNote(userId: number, input: NoteInput): Note {
+  if (isVaultFolder(userId, input.folderId)) return createVaultNote(userId, input)
+  if (input.titleEnc !== undefined) throw vaultBoundary()
   const db = getDb()
   const title = input.title.trim()
   const error = validateName(title)
@@ -298,8 +386,32 @@ export function createNote(
   return getNote(userId, id)
 }
 
+/**
+ * Notiz im Tresor: Titel und Inhalt kommen als Umschläge, die ID vom Browser (sie steckt in der AAD). Kein Index, keine
+ * Tags und Links, kein Auszug – der Server kennt den Klartext nicht.
+ */
+function createVaultNote(userId: number, input: NoteInput): Note {
+  const db = getDb()
+  if (!input.id || !isValidId(input.id) || (input.title !== '' && input.title !== input.id)) throw vaultRequired()
+  const titleEnc = assertEnvelope(input.titleEnc, MAX_VAULT_TITLE_ENVELOPE_LENGTH)
+  const content = assertEnvelope(input.content, MAX_VAULT_ENVELOPE_LENGTH)
+  const existing = db.prepare('SELECT user_id FROM notes WHERE id = ?').get(input.id) as { user_id: number } | undefined
+  if (existing) {
+    if (existing.user_id === userId) return getNote(userId, input.id)
+    throw conflict('Diese ID ist bereits vergeben.')
+  }
+  const t = Date.now()
+  db.prepare(
+    `INSERT INTO notes (id, user_id, folder_id, title, title_enc, content, format, excerpt, pinned, vault, version,
+       created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 1, 1, ?, ?)`,
+  ).run(input.id, userId, input.folderId, input.id, titleEnc, content, input.format ?? 'markdown', input.pinned ? 1 : 0, t, t)
+  return getNote(userId, input.id)
+}
+
 export type NotePatch = {
   title?: string
+  /** Nur im Tresor: verschlüsselter Titel – zählt wie eine Änderung des Titels */
+  titleEnc?: string
   folderId?: string | null
   content?: string
   /** Format wechseln – den umgewandelten Inhalt liefert der Browser in `content` mit */
@@ -320,6 +432,8 @@ export type NotePatch = {
 export function updateNote(userId: number, id: string, patch: NotePatch): { note: Note; linksUpdated: number } {
   const db = getDb()
   const current = getNoteRow(userId, id)
+  if (current.vault === 1) return { note: updateVaultNote(userId, current, patch), linksUpdated: 0 }
+  if (patch.titleEnc !== undefined) throw vaultBoundary()
   const format = patch.format ?? current.format
   const contentChanged = (patch.content !== undefined && patch.content !== current.content) || format !== current.format
   let title = current.title
@@ -343,6 +457,7 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   }
   if (contentChanged) checkContent(patch.content ?? current.content, format)
   if (folderChanged) assertFolder(userId, folderId)
+  if (folderChanged && isVaultFolder(userId, folderId)) throw vaultBoundary()
   if (titleChanged || folderChanged) {
     const taken = noteTitlesInFolder(userId, folderId, id)
     if (taken.some((n) => n.toLowerCase() === title.toLowerCase())) {
@@ -384,10 +499,59 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   return { note: getNote(userId, id), linksUpdated }
 }
 
+/** Tresor-Notiz ändern: nur Umschläge, verschieben nur innerhalb des Tresors, sonst wie updateNote */
+function updateVaultNote(userId: number, current: NoteRow, patch: NotePatch): Note {
+  const db = getDb()
+  if (patch.title !== undefined && patch.title !== current.title) throw vaultRequired()
+  if (patch.content !== undefined) assertEnvelope(patch.content, MAX_VAULT_ENVELOPE_LENGTH)
+  const format = patch.format ?? current.format
+  const titleEnc =
+    patch.titleEnc !== undefined ? assertEnvelope(patch.titleEnc, MAX_VAULT_TITLE_ENVELOPE_LENGTH) : current.title_enc
+  const contentChanged = (patch.content !== undefined && patch.content !== current.content) || format !== current.format
+  const titleChanged = titleEnc !== current.title_enc
+  const folderId = patch.folderId !== undefined ? patch.folderId : current.folder_id
+  const folderChanged = folderId !== current.folder_id
+  if (folderChanged && !isVaultFolder(userId, folderId)) throw vaultBoundary()
+  if (patch.baseVersion !== undefined && patch.baseVersion !== current.version && (contentChanged || titleChanged)) {
+    throw conflict('Die Notiz wurde inzwischen an anderer Stelle geändert.', 'version_conflict', {
+      note: toNote(db, current),
+    })
+  }
+  const bump = contentChanged || titleChanged
+  const snapshotReason: NoteVersionReason | null =
+    patch.reason && bump ? patch.reason : format !== current.format ? 'format' : contentChanged ? 'edit' : null
+  const pinned = patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : current.pinned
+  db.transaction(() => {
+    if (snapshotReason) snapshotIfDue(db, current, snapshotReason)
+    db.prepare(
+      `UPDATE notes SET title_enc = ?, folder_id = ?, content = ?, format = ?, pinned = ?, version = version + ?,
+         updated_at = ? WHERE id = ? AND user_id = ?`,
+    ).run(
+      titleEnc,
+      folderId,
+      patch.content ?? current.content,
+      format,
+      pinned,
+      bump ? 1 : 0,
+      bump || folderChanged ? Date.now() : current.updated_at,
+      current.id,
+      userId,
+    )
+  })()
+  return getNote(userId, current.id)
+}
+
 /** Älteren Stand zurückholen – ein gewöhnliches Speichern, dabei wird der bisherige Stand gesichert ('restore') */
 export function restoreVersion(userId: number, noteId: string, versionId: number) {
-  const { title, format, content } = getVersion(userId, noteId, versionId)
-  return updateNote(userId, noteId, { title, format, content, reason: 'restore', autoRename: true })
+  const { title, titleEnc, format, content } = getVersion(userId, noteId, versionId)
+  return updateNote(userId, noteId, {
+    title,
+    ...(titleEnc !== null ? { titleEnc } : {}),
+    format,
+    content,
+    reason: 'restore',
+    autoRename: true,
+  })
 }
 
 /** Ersetzt [[Alt]], [[Alt|…]], [[Alt#…]], [[Ordner/Alt]] in allen verlinkenden Notizen. */
@@ -402,7 +566,7 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
   // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern. Verglichen wird
   // in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein, „Übungen“ bliebe sonst unerkannt
   const others = db
-    .prepare('SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND id != ?')
+    .prepare('SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND vault = 0 AND id != ?')
     .all(userId, noteId) as { title: string }[]
   if (others.some((n) => linkKey(n.title) === key)) return 0
 
@@ -455,6 +619,17 @@ export function restoreNote(userId: number, id: string): Note {
   const db = getDb()
   const row = getNoteRow(userId, id, { includeDeleted: true })
   if (row.deleted_at === null) return toNote(db, row)
+  if (row.vault === 1) {
+    // Zurück in ihren Tresor-Ordner – gibt es den nicht mehr, in den Wurzelordner, ohne Index
+    const folderId = isVaultFolder(userId, row.folder_id) ? row.folder_id : vaultRootId(userId)
+    if (!folderId) throw notFound('Den Tresor dieser Notiz gibt es nicht mehr.')
+    db.prepare('UPDATE notes SET deleted_at = NULL, folder_id = ?, updated_at = ? WHERE id = ?').run(
+      folderId,
+      Date.now(),
+      id,
+    )
+    return getNote(userId, id)
+  }
   const folderExists =
     row.folder_id !== null && db.prepare('SELECT 1 FROM folders WHERE id = ? AND user_id = ?').get(row.folder_id, userId)
   const folderId = folderExists ? row.folder_id : null
@@ -514,14 +689,14 @@ export function batchNotes(userId: number, action: NoteBatchAction, ids: string[
 
 export function listTrash(userId: number): TrashedNote[] {
   purgeTrash(userId)
-  return (
-    getDb()
-      .prepare(
-        `SELECT id, title, folder_id AS folderId, deleted_at AS deletedAt, updated_at AS updatedAt
-         FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`,
-      )
-      .all(userId) as TrashedNote[]
-  )
+  const rows = getDb()
+    .prepare(
+      `SELECT id, title, folder_id AS folderId, deleted_at AS deletedAt, updated_at AS updatedAt, vault,
+              title_enc AS titleEnc
+       FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`,
+    )
+    .all(userId) as (Omit<TrashedNote, 'vault'> & { vault: number })[]
+  return rows.map((r) => ({ ...r, vault: r.vault === 1 }))
 }
 
 export function emptyTrash(userId: number): number {
@@ -569,7 +744,7 @@ export function searchNotes(userId: number, query: string, limit = 50): SearchRe
     const rows = db
       .prepare(
         `SELECT n.id, n.title, n.folder_id AS folderId, n.excerpt AS snippet, n.updated_at AS updatedAt
-         FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL ${tagFilter}
+         FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${tagFilter}
          ORDER BY n.updated_at DESC LIMIT ?`,
       )
       .all(userId, ...tagParams, limit) as SearchResult[]
@@ -582,7 +757,7 @@ export function searchNotes(userId: number, query: string, limit = 50): SearchRe
         `SELECT n.id, n.title, n.folder_id AS folderId, n.updated_at AS updatedAt,
                 snippet(notes_fts, 3, '${SNIPPET_START}', '${SNIPPET_END}', '…', 14) AS snippet
          FROM notes_fts f JOIN notes n ON n.id = f.note_id
-         WHERE notes_fts MATCH ? AND f.user_id = ? AND n.deleted_at IS NULL ${tagFilter}
+         WHERE notes_fts MATCH ? AND f.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${tagFilter}
          ORDER BY bm25(notes_fts, 0.0, 0.0, 8.0, 1.0) LIMIT ?`,
       )
       .all(buildFtsQuery(terms), userId, ...tagParams, limit) as SearchResult[]
@@ -596,25 +771,27 @@ export function listTags(userId: number): TagCount[] {
   return getDb()
     .prepare(
       `SELECT t.tag, COUNT(*) AS count FROM note_tags t JOIN notes n ON n.id = t.note_id
-       WHERE n.user_id = ? AND n.deleted_at IS NULL GROUP BY t.tag ORDER BY t.tag`,
+       WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 GROUP BY t.tag ORDER BY t.tag`,
     )
     .all(userId) as TagCount[]
 }
 
 export function listBacklinks(userId: number, id: string): { id: string; title: string; folderId: string | null }[] {
   const note = getNoteRow(userId, id)
+  // Im Tresor gesperrt: Der Server kennt den Titel nicht, und Tresor-Notizen tauchen nirgends sonst auf
+  if (note.vault === 1) return []
   return getDb()
     .prepare(
       `SELECT n.id, n.title, n.folder_id AS folderId FROM notes n JOIN note_links l ON l.note_id = n.id
-       WHERE n.user_id = ? AND n.deleted_at IS NULL AND l.target = ? AND n.id != ?
+       WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 AND l.target = ? AND n.id != ?
        ORDER BY n.updated_at DESC`,
     )
     .all(userId, linkKey(note.title), id) as { id: string; title: string; folderId: string | null }[]
 }
 
-/** Pfad eines Ordners als Array von Namen (für Export/Anzeige). */
+/** Pfad eines Ordners als Array von Namen (für den Export – ohne Tresor, dessen Namen der Server nicht kennt). */
 export function folderPathMap(userId: number): Map<string, string[]> {
-  const folders = listFolders(userId)
+  const folders = listFolders(userId).filter((f) => !f.vault)
   const byId = new Map(folders.map((f) => [f.id, f]))
   const cache = new Map<string, string[]>()
   const resolve = (id: string, depth = 0): string[] => {
@@ -627,4 +804,88 @@ export function folderPathMap(userId: number): Map<string, string[]> {
   }
   for (const f of folders) resolve(f.id)
   return cache
+}
+
+// ---------------------------------------------------------------------------
+// Über die Grenze des Tresors
+// ---------------------------------------------------------------------------
+
+function assertBaseVersion(db: Database.Database, current: NoteRow, baseVersion: number) {
+  if (baseVersion !== current.version) {
+    throw conflict('Die Notiz wurde inzwischen an anderer Stelle geändert.', 'version_conflict', {
+      note: toNote(db, current),
+    })
+  }
+}
+
+/**
+ * Notiz in den Tresor: Der Browser hat Titel und Inhalt mit der ID der Notiz verschlüsselt. Mit dem Klartext
+ * verschwinden Verlauf, Freigaben, Suchindex, Tags und Links; Karteikarten werden gelöst oder auf Wunsch gelöscht.
+ * secure_delete und der Checkpoint überschreiben den Klartext auch in der Datenbankdatei.
+ */
+export function moveNoteIntoVault(
+  actor: Actor,
+  id: string,
+  input: { folderId: string; baseVersion: number; titleEnc: string; content: string; deleteCards: boolean },
+): { note: Note; cards: number } {
+  const userId = actor.user.id
+  const db = getDb()
+  const current = getNoteRow(userId, id)
+  if (current.vault === 1) throw badRequest('Die Notiz liegt schon im Tresor.')
+  if (!isVaultFolder(userId, input.folderId)) throw badRequest('Das Ziel liegt nicht im Tresor.')
+  const titleEnc = assertEnvelope(input.titleEnc, MAX_VAULT_TITLE_ENVELOPE_LENGTH)
+  const content = assertEnvelope(input.content, MAX_VAULT_ENVELOPE_LENGTH)
+  assertBaseVersion(db, current, input.baseVersion)
+  const cards = db.transaction(() => {
+    db.prepare('DELETE FROM note_versions WHERE note_id = ? AND user_id = ?').run(id, userId)
+    db.prepare('DELETE FROM shares WHERE note_id = ? AND user_id = ?').run(id, userId)
+    unindexNote(db, id)
+    db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(id)
+    db.prepare('DELETE FROM note_links WHERE note_id = ?').run(id)
+    const changed = input.deleteCards
+      ? db.prepare('DELETE FROM cards WHERE note_id = ? AND user_id = ?').run(id, userId).changes
+      : db.prepare('UPDATE cards SET note_id = NULL WHERE note_id = ? AND user_id = ?').run(id, userId).changes
+    db.prepare(
+      `UPDATE notes SET vault = 1, folder_id = ?, title = ?, title_enc = ?, content = ?, excerpt = '',
+         version = version + 1, updated_at = ? WHERE id = ? AND user_id = ?`,
+    ).run(input.folderId, id, titleEnc, content, Date.now(), id, userId)
+    return changed
+  })()
+  checkpoint()
+  auditVaultMove(actor, id, 'in')
+  return { note: getNote(userId, id), cards }
+}
+
+/**
+ * Notiz aus dem Tresor: Der Browser hat entschlüsselt und schickt Klartext. Danach ist sie wieder durchsuchbar; der
+ * verschlüsselte Verlauf entfällt, ein gleichnamiger Titel im Zielordner bekommt eine Nummer.
+ */
+export function moveNoteOutOfVault(
+  actor: Actor,
+  id: string,
+  input: { folderId: string | null; baseVersion: number; title: string; content: string },
+): { note: Note } {
+  const userId = actor.user.id
+  const db = getDb()
+  const current = getNoteRow(userId, id)
+  if (current.vault !== 1) throw badRequest('Die Notiz liegt nicht im Tresor.')
+  assertFolder(userId, input.folderId)
+  if (isVaultFolder(userId, input.folderId)) throw badRequest('Das Ziel liegt im Tresor.')
+  const error = validateName(input.title.trim())
+  if (error) throw badRequest(error)
+  checkContent(input.content, current.format)
+  assertBaseVersion(db, current, input.baseVersion)
+  const title = uniqueName(input.title.trim(), noteTitlesInFolder(userId, input.folderId, id))
+  const text = noteText(current.format, input.content)
+  db.transaction(() => {
+    db.prepare('DELETE FROM note_versions WHERE note_id = ? AND user_id = ?').run(id, userId)
+    db.prepare(
+      `UPDATE notes SET vault = 0, folder_id = ?, title = ?, title_enc = NULL, content = ?, excerpt = ?,
+         version = version + 1, updated_at = ? WHERE id = ? AND user_id = ?`,
+    ).run(input.folderId, title, input.content, makeExcerpt(text), Date.now(), id, userId)
+    indexNote(db, { id, user_id: userId, title, text })
+  })()
+  checkpoint()
+  auditVaultMove(actor, id, 'out')
+  return { note: getNote(userId, id) }
 }

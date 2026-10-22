@@ -92,10 +92,10 @@ export function listAttachments(userId: number): Attachment[] {
   ).map(toAttachment)
 }
 
-/** Alle Dateien mit den Notizen (ohne Papierkorb), die sie einbetten oder verlinken */
+/** Alle Dateien mit den Notizen (ohne Papierkorb und Tresor), die sie einbetten oder verlinken */
 export function listFiles(userId: number): FileEntry[] {
   const notes = getDb()
-    .prepare('SELECT id, format, content FROM notes WHERE user_id = ? AND deleted_at IS NULL')
+    .prepare('SELECT id, format, content FROM notes WHERE user_id = ? AND deleted_at IS NULL AND vault = 0')
     .all(userId) as { id: string; format: NoteFormat; content: string }[]
   const usage = new Map<string, string[]>()
   for (const note of notes) {

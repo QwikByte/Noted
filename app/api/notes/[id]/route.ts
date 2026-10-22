@@ -3,11 +3,14 @@ import { json, parseJson } from '@/shared/server/http'
 import { route } from '@/features/auth/server/route'
 import { deleteNotePermanently, getNote, trashNote, updateNote } from '@/features/notes/server/notes'
 import { NOTE_FORMAT_IDS } from '@/features/notes/format'
+import { MAX_VAULT_TITLE_ENVELOPE_LENGTH } from '@/features/vault/limits'
 
 export const GET = route<{ id: string }>('user', ({ user, params }) => json({ note: getNote(user.id, params.id) }))
 
 const schema = z.object({
   title: z.string().max(300).optional(),
+  /** Nur im Tresor: verschlüsselter Titel */
+  titleEnc: z.string().max(MAX_VAULT_TITLE_ENVELOPE_LENGTH).optional(),
   folderId: z.string().uuid().nullable().optional(),
   content: z.string().optional(),
   format: z.enum(NOTE_FORMAT_IDS).optional(),

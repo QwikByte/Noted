@@ -19,6 +19,9 @@ export type Draft = {
   content?: string
   /** Format, zu dem `content` gehört (undefined = unverändert) */
   format?: NoteFormat
+  /** Tresor-Notiz: `content` ist ein Umschlag, der Titel steht verschlüsselt in `titleEnc` – nie Klartext */
+  vault?: boolean
+  titleEnc?: string
   /** Server-Version, auf der der Entwurf basiert */
   baseVersion: number | null
   /** Nach einem Konflikt bewusst „Meine Version“ gewählt – der Server sichert seinen Stand dann im Verlauf */
@@ -27,7 +30,7 @@ export type Draft = {
   updatedAt: number
 }
 
-type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId'>>
+type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId' | 'titleEnc'>>
 
 export type SyncState ='saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
 
@@ -154,7 +157,15 @@ class SyncStore {
   // ---- Änderungen ----
 
   /** Neue Notiz anlegen (funktioniert auch offline). */
-  create(input: { id: string; title: string; folderId: string | null; content: string; format: NoteFormat }) {
+  create(input: {
+    id: string
+    title: string
+    folderId: string | null
+    content: string
+    format: NoteFormat
+    vault?: boolean
+    titleEnc?: string
+  }) {
     const draft: Draft = { ...input, isNew: true, baseVersion: null, rev: 1, updatedAt: Date.now() }
     this.drafts.set(input.id, draft)
     this.created.add(input.id)
@@ -236,10 +247,11 @@ class SyncStore {
           method: 'POST',
           body: {
             id: draft.id,
-            title: draft.title ?? 'Unbenannt',
+            title: draft.vault ? draft.id : (draft.title ?? 'Unbenannt'),
             folderId: draft.folderId ?? null,
             content: draft.content ?? '',
             format: draft.format ?? 'markdown',
+            titleEnc: draft.titleEnc,
           },
           keepalive,
         })
@@ -249,6 +261,7 @@ class SyncStore {
           method: 'PUT',
           body: {
             title: draft.title,
+            titleEnc: draft.titleEnc,
             folderId: draft.folderId,
             content: draft.content,
             format: draft.format,
