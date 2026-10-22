@@ -673,7 +673,11 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
   // Ohne Abhängigkeitsliste: Der Handle soll immer den aktuellen Baum sehen
   useImperativeHandle(handleRef, () => ({
       focus: () => focusFlow(),
-      setDoc: (markdown) => setDoc({ source: markdown, root: parseMindmap(markdown, title) }),
+      setDoc: (markdown) => {
+        // Stand von außen: Rückgängig holte sonst einen älteren Baum zurück und speicherte ihn darüber
+        history.current = { past: [], future: [] }
+        setDoc({ source: markdown, root: parseMindmap(markdown, title) })
+      },
       insert: (insertion) => {
         // Seitenlink, Zitate aus dem PDF oder Zeilen vom Schmierzettel als Unterpunkte des ausgewählten Knotens
         if (insertion.kind === 'text') {

@@ -155,7 +155,8 @@ export default function RichTextEditor(props: Props) {
     props.handleRef,
     () => ({
       focus: () => editor?.commands.focus(),
-      setDoc: (html) => editor?.commands.setContent(html, { emitUpdate: false }),
+      // Nicht in den Verlauf: Rückgängig holte sonst den Stand von vor dem Austausch zurück und speicherte ihn
+      setDoc: (html) => editor?.chain().setMeta('addToHistory', false).setContent(html, { emitUpdate: false }).run(),
       insert: (insertion) => {
         if (!editor) return
         // Noch nie in den Text geklickt? Dann ans Ende statt an den Anfang

@@ -108,3 +108,44 @@ test('Konflikt zwischen zwei Geräten wird erkannt', async ({ browser }) => {
   await a.context.close()
   await b.context.close()
 })
+
+test('Strg+Z holt den Stand eines anderen Geräts nicht zurück', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
+  const request = (url: string, method: string, body: object) =>
+    page.evaluate(
+      async ({ url, method, body }) => {
+        const r = await fetch(url, {
+          method,
+          headers: { 'content-type': 'application/json', 'x-noted-request': '1' },
+          body: JSON.stringify(body),
+        })
+        const data = await r.json()
+        if (!r.ok) throw new Error(`${r.status} ${JSON.stringify(data)}`)
+        return data.note as { id: string; version: number; content: string }
+      },
+      { url, method, body },
+    )
+  const note = await request('/api/notes', 'POST', { title: 'Vorlesung 5', content: 'Absatz eins' })
+  await page.goto(`/?n=${note.id}`)
+  await expect(page.locator('.cm-content')).toContainText('Absatz eins')
+
+  // Auf dem Handy ergänzt; zurück am Laptop holt die App den neuen Stand
+  await request(`/api/notes/${note.id}`, 'PUT', { content: 'Absatz eins\n\nVom Handy', baseVersion: note.version })
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')))
+  await expect(page.locator('.cm-content')).toContainText('Vom Handy')
+
+  // Eigene Eingabe und zweimal Rückgängig: nur die eigene Eingabe verschwindet
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Control+Home')
+  await page.keyboard.insertText('# ')
+  await page.keyboard.press('Control+z')
+  await page.keyboard.press('Control+z')
+  await expect(page.locator('.cm-content')).toContainText('Vom Handy')
+  await expect(page.getByTestId('save-status')).toContainText('Gespeichert', { timeout: 10_000 })
+  const server = await page.evaluate(async (id) => (await (await fetch(`/api/notes/${id}`)).json()).note.content, note.id)
+  expect(server).toBe('Absatz eins\n\nVom Handy')
+})

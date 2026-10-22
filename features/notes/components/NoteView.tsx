@@ -572,7 +572,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */
   const onVisualChange = (doc: string) => {
     onChange(doc)
-    if (effectiveMode === 'split') cmRef.current?.setDoc(doc)
+    if (effectiveMode === 'split') cmRef.current?.replaceDoc(doc)
   }
 
   const toggleTask = useCallback(
@@ -581,7 +581,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       if (line < 0 || line >= lines.length) return
       lines[line] = lines[line].replace(/\[([ xX/\-><!?*])\]/, checked ? '[x]' : '[ ]')
       const next = lines.join('\n')
-      cmRef.current?.setDoc(next)
+      cmRef.current?.replaceDoc(next)
       onChange(next)
     },
     [content, onChange],
