@@ -4,12 +4,26 @@
 // Drücken (vorher scrollt die Liste wie gewohnt). Ablageziele tragen data-drop-folder (Ordner-ID oder ROOT).
 import { useSyncExternalStore } from 'react'
 
-export type DragItem = { kind: 'note'; id: string; title: string } | { kind: 'folder'; id: string; name: string }
+/**
+ * Notizen: eine oder mehrere ausgewählte – `title` ist der Titel der Notiz bzw. „3 Notizen“, `onMoved` hebt danach
+ * z. B. die Auswahl auf
+ */
+export type DragItem =
+  | { kind: 'notes'; ids: string[]; title: string; onMoved?: () => void }
+  | { kind: 'folder'; id: string; name: string }
 
 /** Ablageziel „oberste Ebene“ */
 export const ROOT = 'root'
 
-type DragState = { item: DragItem; x: number; y: number; touch: boolean; target: string | null }
+type DragState = {
+  item: DragItem
+  /** Gezogene Notizen bzw. Ordner – beim Start festgelegt, damit useDraggedIds dieselbe Liste liefert */
+  ids: readonly string[]
+  x: number
+  y: number
+  touch: boolean
+  target: string | null
+}
 
 /** Prüft und verschiebt – registriert von der DragLayer, die Notizen und Ordner kennt */
 type DropHandler = {
@@ -60,9 +74,11 @@ export function useDropTarget(): string | null {
   return useSyncExternalStore(subscribe, () => state?.target ?? null, () => null)
 }
 
-/** ID der Notiz bzw. des Ordners, der gerade gezogen wird */
-export function useDraggedId(): string | null {
-  return useSyncExternalStore(subscribe, () => state?.item.id ?? null, () => null)
+const NOTHING: readonly string[] = []
+
+/** IDs der Notizen bzw. des Ordners, die gerade gezogen werden */
+export function useDraggedIds(): readonly string[] {
+  return useSyncExternalStore(subscribe, () => state?.ids ?? NOTHING, () => NOTHING)
 }
 
 function scrollParent(el: Element | null): HTMLElement | null {
@@ -130,7 +146,7 @@ export function startDrag(e: React.PointerEvent<HTMLElement>, item: DragItem) {
     started = true
     window.getSelection()?.removeAllRanges()
     document.documentElement.classList.add('dragging')
-    setState({ item, x, y, touch, target: null })
+    setState({ item, ids: item.kind === 'notes' ? item.ids : [item.id], x, y, touch, target: null })
     update(x, y)
   }
 

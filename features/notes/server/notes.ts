@@ -14,6 +14,8 @@ import { getVersion, snapshotIfDue } from './versions'
 import type {
   Folder,
   Note,
+  NoteBatchAction,
+  NoteBatchResult,
   NoteFormat,
   NoteSummary,
   NoteVersionReason,
@@ -475,6 +477,38 @@ export function deleteNotePermanently(userId: number, id: string) {
   db.transaction(() => {
     unindexNote(db, id)
     db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?').run(id, userId)
+  })()
+}
+
+/**
+ * Sammelaktion für mehrere Notizen in einer Transaktion. Fremde, unbekannte und für die Aktion unpassende IDs (z. B. auf
+ * einem anderen Gerät schon gelöscht oder wiederhergestellt) werden übersprungen statt die Anfrage abzulehnen.
+ * `delete` und `restore` wirken nur auf Notizen im Papierkorb, die übrigen nur auf nicht gelöschte.
+ */
+export function batchNotes(userId: number, action: NoteBatchAction, ids: string[]): NoteBatchResult {
+  const db = getDb()
+  const inTrash = action === 'delete' || action === 'restore'
+  return db.transaction(() => {
+    const found = db
+      .prepare(
+        `SELECT id FROM notes WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))
+         AND deleted_at IS ${inTrash ? 'NOT NULL' : 'NULL'}`,
+      )
+      .all(userId, JSON.stringify(ids)) as { id: string }[]
+    const known = new Set(found.map((r) => r.id))
+    const matched = [...new Set(ids)].filter((id) => known.has(id))
+    if (action === 'pin' || action === 'unpin') {
+      // Wie beim Anheften einer einzelnen Notiz: weder Version noch Bearbeitungszeit ändern sich
+      db.prepare(
+        'UPDATE notes SET pinned = ? WHERE user_id = ? AND deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))',
+      ).run(action === 'pin' ? 1 : 0, userId, JSON.stringify(matched))
+    } else {
+      // Die Einzelfunktionen pflegen Suchindex und Links; ihre Transaktionen laufen hier als Savepoints. Beim
+      // Wiederherstellen sehen sie die in dieser Anfrage schon vergebenen Titel (freie Namen bei Gleichstand)
+      const apply = action === 'trash' ? trashNote : action === 'restore' ? restoreNote : deleteNotePermanently
+      for (const id of matched) apply(userId, id)
+    }
+    return { ids: matched }
   })()
 }
 

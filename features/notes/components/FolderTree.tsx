@@ -7,7 +7,7 @@ import { cn } from '@/shared/ui/cn'
 import { buildTree, folderPath, type FolderNode } from '../tree'
 import { useFolders, useNotes } from '../client/queries'
 import { useExpanded } from '../client/expanded'
-import { ROOT, startDrag, useDraggedId, useDropTarget } from '../client/drag'
+import { ROOT, startDrag, useDraggedIds, useDropTarget } from '../client/drag'
 import type { NoteSummary } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 import { NavLink } from '@/features/workspace/components/NavLink'
@@ -21,7 +21,7 @@ export function FolderTree() {
   const { data: folders = [] } = useFolders()
   const { expanded, toggle } = useExpanded()
   const dropTarget = useDropTarget()
-  const dragged = useDraggedId()
+  const dragged = useDraggedIds()
   const tree = useMemo(() => buildTree(folders, notes), [folders, notes])
   const openContextMenu = useContextMenu()
 
@@ -48,14 +48,14 @@ export function FolderTree() {
         className={cn(
           'group flex items-center rounded-md pr-1 transition-colors',
           active ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-          dragged === note.id && 'opacity-50',
+          dragged.includes(note.id) && 'opacity-50',
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
         onContextMenu={(e) => openContextMenu(e, <NoteMenuItems note={note} context />)}
       >
         <NavLink
           to={{ kind: 'note', id: note.id }}
-          onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
+          onPointerDown={(e) => startDrag(e, { kind: 'notes', ids: [note.id], title: note.title })}
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-[18px] text-left text-sm select-none [-webkit-touch-callout:none]"
           title={note.title}
           aria-current={active ? 'page' : undefined}
@@ -85,7 +85,7 @@ export function FolderTree() {
           className={cn(
             'group flex items-center rounded-md pr-1 transition-colors',
             activeFolderId === node.id ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-            dragged === node.id && 'opacity-50',
+            dragged.includes(node.id) && 'opacity-50',
           )}
           style={{ paddingLeft: 8 + node.depth * 14 }}
           onContextMenu={(e) => openContextMenu(e, <FolderMenuItems folder={node} context />)}

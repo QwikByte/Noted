@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BookA,
@@ -29,66 +29,115 @@ import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { cn } from '@/shared/ui/cn'
 import { api, NetworkError } from '@/shared/client/api'
 import { keys, useFolders, useNotes } from '../client/queries'
-import { startDrag, useDraggedId, useDropTarget } from '../client/drag'
+import { startDrag, useDraggedIds, useDropTarget } from '../client/drag'
+import { NoteSelectionContext, useNoteSelection, useNoteSelectionContext } from '../client/selection'
 import { folderPath, sortByName } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
+import { NoteSelectionBar, NoteSelectionMenuItems, SelectButton, SelectionCheckbox } from './SelectionBar'
 import { NavLink } from '@/features/workspace/components/NavLink'
 
+/** Notizen in Anzeigereihenfolge der Liste – Umschalt-Klick wählt nur innerhalb einer Liste einen Bereich */
+const ListOrderContext = createContext<readonly string[]>([])
+
 /** Notizen als Liste – wie ein Inhaltsverzeichnis: Titel, Auszug, Ablageort */
-function NoteList({ children }: { children: React.ReactNode }) {
-  return <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">{children}</div>
+function NoteList({ order = [], children }: { order?: readonly string[]; children: React.ReactNode }) {
+  return (
+    <ListOrderContext.Provider value={order}>
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">{children}</div>
+    </ListOrderContext.Provider>
+  )
 }
 
 function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
   const { notes } = useNotes()
   const openContextMenu = useContextMenu()
-  const dragged = useDraggedId() === note.id
+  const selection = useNoteSelectionContext()
+  const listOrder = useContext(ListOrderContext)
+  const dragged = useDraggedIds().includes(note.id)
   // Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste
   const summary = notes.find((n) => n.id === note.id)
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
+  const selecting = !!selection?.active
+  const selected = !!selection?.ids.has(note.id)
+  const toggle = (e: React.MouseEvent) => selection?.click(note.id, listOrder, e)
+
+  function onPointerDown(e: React.PointerEvent<HTMLElement>) {
+    // Eine ausgewählte Notiz zieht alle ausgewählten mit, eine andere wird allein gezogen
+    const ids = selection && selected ? selection.order.filter((id) => selection.ids.has(id)) : [note.id]
+    startDrag(e, {
+      kind: 'notes',
+      ids,
+      title: ids.length === 1 ? note.title : `${ids.length} Notizen`,
+      onMoved: selected ? selection?.stop : undefined,
+    })
+  }
+
   return (
-    <NavLink
-      to={{ kind: 'note', id: note.id }}
-      onContextMenu={(e) => openContextMenu(e, summary ? <NoteMenuItems note={summary} context /> : null)}
-      // In einen Ordner der Seitenleiste oder der Ordneransicht ziehen
-      onPointerDown={(e) => startDrag(e, { kind: 'note', id: note.id, title: note.title })}
+    <div
       className={cn(
-        'group flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-subtle focus-visible:-outline-offset-2',
+        'group flex transition-colors select-none [-webkit-touch-callout:none]',
+        selected ? 'bg-accent-soft' : 'hover:bg-subtle',
         dragged && 'opacity-50',
       )}
+      onContextMenu={(e) =>
+        openContextMenu(
+          e,
+          selection && selected && selection.ids.size >= 2 ? (
+            <NoteSelectionMenuItems selection={selection} />
+          ) : summary ? (
+            <NoteMenuItems note={summary} context />
+          ) : null,
+        )
+      }
     >
-      <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate font-semibold group-hover:text-accent-text">{note.title}</span>
-        {'pinned' in note && note.pinned ? <Pin className="size-3.5 shrink-0 self-center text-faint" aria-label="Angeheftet" /> : null}
-        <span className="shrink-0 text-xs text-faint tabular-nums">{formatRelative(note.updatedAt)}</span>
-      </div>
-      {snippet !== undefined ? (
-        <p className="search-snippet line-clamp-2 text-sm text-muted" dangerouslySetInnerHTML={{ __html: snippet }} />
-      ) : 'excerpt' in note && note.excerpt ? (
-        <p className="line-clamp-1 text-sm text-muted">{note.excerpt}</p>
-      ) : (
-        <p className="text-sm text-faint">Noch leer</p>
-      )}
-      {path.length > 0 || tags.length > 0 ? (
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
-          {path.length > 0 ? (
-            <span className="inline-flex items-center gap-1">
-              <FolderIcon className="size-3" />
-              {path.map((f) => f.name).join(' / ')}
-            </span>
-          ) : null}
-          {tags.slice(0, 4).map((t) => (
-            <span key={t} className="text-accent-text">
-              #{t}
-            </span>
-          ))}
+      {selecting ? <SelectionCheckbox title={note.title} checked={selected} onToggle={toggle} className="pt-3.5 pl-4" /> : null}
+      <NavLink
+        to={{ kind: 'note', id: note.id }}
+        // Im Auswahlmodus sind die Checkboxen die Tab-Stopps
+        tabIndex={selecting ? -1 : undefined}
+        onClick={(e) => {
+          // Strg/⌘- und Umschalt-Klick wählen aus statt einen neuen Tab zu öffnen – der bleibt über Mittelklick
+          if (!selection || !(selecting || e.ctrlKey || e.metaKey || e.shiftKey)) return
+          e.preventDefault()
+          toggle(e)
+        }}
+        // In einen Ordner der Seitenleiste oder der Ordneransicht ziehen
+        onPointerDown={onPointerDown}
+        className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 text-left focus-visible:-outline-offset-2"
+      >
+        <div className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate font-semibold group-hover:text-accent-text">{note.title}</span>
+          {'pinned' in note && note.pinned ? <Pin className="size-3.5 shrink-0 self-center text-faint" aria-label="Angeheftet" /> : null}
+          <span className="shrink-0 text-xs text-faint tabular-nums">{formatRelative(note.updatedAt)}</span>
         </div>
-      ) : null}
-    </NavLink>
+        {snippet !== undefined ? (
+          <p className="search-snippet line-clamp-2 text-sm text-muted" dangerouslySetInnerHTML={{ __html: snippet }} />
+        ) : 'excerpt' in note && note.excerpt ? (
+          <p className="line-clamp-1 text-sm text-muted">{note.excerpt}</p>
+        ) : (
+          <p className="text-sm text-faint">Noch leer</p>
+        )}
+        {path.length > 0 || tags.length > 0 ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
+            {path.length > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <FolderIcon className="size-3" />
+                {path.map((f) => f.name).join(' / ')}
+              </span>
+            ) : null}
+            {tags.slice(0, 4).map((t) => (
+              <span key={t} className="text-accent-text">
+                #{t}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </NavLink>
+    </div>
   )
 }
 
@@ -110,6 +159,12 @@ export function HomeNotes() {
   const { data: folders = [] } = useFolders()
   const pinned = notes.filter((n) => n.pinned)
   const recent = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12)
+  const pinnedOrder = pinned.map((n) => n.id)
+  const recentOrder = recent.map((n) => n.id)
+  // Beide Abschnitte bilden eine Auswahl – eine Notiz in beiden ist über ihre ID in beiden markiert
+  const order = [...new Set([...pinnedOrder, ...recentOrder])]
+  const root = useRef<HTMLDivElement>(null)
+  const selection = useNoteSelection({ order, resetKey: 'home', root })
 
   const quick = [
     { id: 'lecture', label: 'Vorlesung', icon: <GraduationCap className="size-4.5" /> },
@@ -118,8 +173,15 @@ export function HomeNotes() {
     { id: 'empty', label: 'Leere Notiz', icon: <Plus className="size-4.5" /> },
   ]
 
+  const heading = (text: string, first: boolean) => (
+    <div className="mb-2.5 flex min-h-8 items-center gap-2">
+      <h2 className="flex-1 text-sm font-semibold text-muted">{text}</h2>
+      {first ? <SelectButton selection={selection} /> : null}
+    </div>
+  )
+
   return (
-    <>
+    <div ref={root}>
       <div className="mb-10 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Neue Notiz aus Vorlage" role="group">
         {quick.map((q) => (
           <button
@@ -140,42 +202,45 @@ export function HomeNotes() {
         </div>
       ) : null}
 
-      {pinned.length > 0 ? (
-        <section className="mb-8">
-          <h2 className="mb-2.5 text-sm font-semibold text-muted">Angeheftet</h2>
-          <NoteList>
-            {pinned.map((n) => (
-              <NoteCard key={n.id} note={n} folders={folders} />
-            ))}
-          </NoteList>
-        </section>
-      ) : null}
+      <NoteSelectionContext.Provider value={selection}>
+        <NoteSelectionBar selection={selection} />
+        {pinned.length > 0 ? (
+          <section className="mb-8">
+            {heading('Angeheftet', true)}
+            <NoteList order={pinnedOrder}>
+              {pinned.map((n) => (
+                <NoteCard key={n.id} note={n} folders={folders} />
+              ))}
+            </NoteList>
+          </section>
+        ) : null}
 
-      <section>
-        <h2 className="mb-2.5 text-sm font-semibold text-muted">Zuletzt bearbeitet</h2>
-        {isLoading && notes.length === 0 ? (
-          <div className="flex justify-center py-10 text-faint">
-            <Loader2 className="size-6 animate-spin" />
-          </div>
-        ) : recent.length === 0 ? (
-          <EmptyState
-            icon={<NotebookPen />}
-            title="Noch keine Notizen"
-            action={
-              <Button variant="primary" onClick={() => app.openNewNote({ templateId: 'lecture' })}>
-                <Plus className="size-4" /> Erste Notiz
-              </Button>
-            }
-          />
-        ) : (
-          <NoteList>
-            {recent.map((n) => (
-              <NoteCard key={n.id} note={n} folders={folders} />
-            ))}
-          </NoteList>
-        )}
-      </section>
-    </>
+        <section>
+          {heading('Zuletzt bearbeitet', pinned.length === 0)}
+          {isLoading && notes.length === 0 ? (
+            <div className="flex justify-center py-10 text-faint">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : recent.length === 0 ? (
+            <EmptyState
+              icon={<NotebookPen />}
+              title="Noch keine Notizen"
+              action={
+                <Button variant="primary" onClick={() => app.openNewNote({ templateId: 'lecture' })}>
+                  <Plus className="size-4" /> Erste Notiz
+                </Button>
+              }
+            />
+          ) : (
+            <NoteList order={recentOrder}>
+              {recent.map((n) => (
+                <NoteCard key={n.id} note={n} folders={folders} />
+              ))}
+            </NoteList>
+          )}
+        </section>
+      </NoteSelectionContext.Provider>
+    </div>
   )
 }
 
@@ -185,11 +250,15 @@ export function FolderView({ id }: { id: string }) {
   const { notes } = useNotes()
   const { data: folders = [], isLoading } = useFolders()
   const dropTarget = useDropTarget()
-  const dragged = useDraggedId()
+  const dragged = useDraggedIds()
   const folder = folders.find((f) => f.id === id)
   const path = folderPath(folders, id)
   const children = sortByName(folders.filter((f) => f.parentId === id))
   const items = sortByName(notes.filter((n) => n.folderId === id))
+  const order = items.map((n) => n.id)
+  const root = useRef<HTMLDivElement>(null)
+  // Nur die Notizen sind auswählbar, nicht die Karten der Unterordner
+  const selection = useNoteSelection({ order, resetKey: `folder:${id}`, root })
 
   if (!folder) {
     return (
@@ -207,6 +276,7 @@ export function FolderView({ id }: { id: string }) {
   return (
     <Page>
       <div
+        ref={root}
         data-drop-folder={id}
         className={cn('-m-2 rounded-xl p-2', dropTarget === id && 'ring-2 ring-accent ring-inset')}
       >
@@ -236,6 +306,7 @@ export function FolderView({ id }: { id: string }) {
           }
           actions={
             <>
+              <SelectButton selection={selection} />
               <Button variant="primary" size="sm" onClick={() => app.openNewNote({ folderId: id })} className="max-sm:hidden">
                 <Plus className="size-4" /> Notiz
               </Button>
@@ -278,7 +349,7 @@ export function FolderView({ id }: { id: string }) {
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg border border-border bg-elevated px-4 py-3 text-left text-sm font-medium transition-colors select-none [-webkit-touch-callout:none] hover:border-border-strong hover:bg-subtle',
                   dropTarget === f.id && 'border-accent bg-accent-soft ring-2 ring-accent',
-                  dragged === f.id && 'opacity-50',
+                  dragged.includes(f.id) && 'opacity-50',
                 )}
               >
                 <FolderIcon className="size-4 text-muted" />
@@ -299,11 +370,14 @@ export function FolderView({ id }: { id: string }) {
             }
           />
         ) : (
-          <NoteList>
-            {items.map((n) => (
-              <NoteCard key={n.id} note={n} folders={folders} />
-            ))}
-          </NoteList>
+          <NoteSelectionContext.Provider value={selection}>
+            <NoteSelectionBar selection={selection} />
+            <NoteList order={order}>
+              {items.map((n) => (
+                <NoteCard key={n.id} note={n} folders={folders} />
+              ))}
+            </NoteList>
+          </NoteSelectionContext.Provider>
         )}
       </div>
     </Page>
@@ -316,18 +390,30 @@ export function TagView({ tag }: { tag: string }) {
   const items = notes
     .filter((n) => n.tags.some((t) => t === tag || t.startsWith(tag + '/')))
     .sort((a, b) => b.updatedAt - a.updatedAt)
+  const order = items.map((n) => n.id)
+  const root = useRef<HTMLDivElement>(null)
+  const selection = useNoteSelection({ order, resetKey: `tag:${tag}`, root })
   return (
     <Page>
-      <PageHeader title={`#${tag}`} subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`} />
-      {items.length === 0 ? (
-        <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />
-      ) : (
-        <NoteList>
-          {items.map((n) => (
-            <NoteCard key={n.id} note={n} folders={folders} />
-          ))}
-        </NoteList>
-      )}
+      <div ref={root}>
+        <PageHeader
+          title={`#${tag}`}
+          subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`}
+          actions={<SelectButton selection={selection} />}
+        />
+        {items.length === 0 ? (
+          <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />
+        ) : (
+          <NoteSelectionContext.Provider value={selection}>
+            <NoteSelectionBar selection={selection} />
+            <NoteList order={order}>
+              {items.map((n) => (
+                <NoteCard key={n.id} note={n} folders={folders} />
+              ))}
+            </NoteList>
+          </NoteSelectionContext.Provider>
+        )}
+      </div>
     </Page>
   )
 }
@@ -406,71 +492,86 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
     return notes.filter((n) => n.title.toLowerCase().includes(q) || n.excerpt.toLowerCase().includes(q))
   }, [search.error, debounced, notes])
 
+  // Auswählbar sind die Notiz-Treffer (auch offline), nicht die Treffer in Dateien
+  const order = (offlineResults ?? (debounced ? results : [])).map((n) => n.id)
+  const root = useRef<HTMLDivElement>(null)
+  const selection = useNoteSelection({ order, resetKey: `search:${debounced}`, root })
+
   return (
     <Page>
-      <div className="relative mb-6">
-        <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-faint" />
-        <input
-          autoFocus
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Notizen durchsuchen …"
-          className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
-          aria-label="Suchbegriff"
-        />
-      </div>
-      {!debounced ? (
-        <EmptyState
-          icon={<Search />}
-          title="Volltextsuche"
-          text="Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags."
-        />
-      ) : offlineResults ? (
-        <>
-          <p className="mb-3 flex items-center gap-2 text-sm text-warning">
-            <CloudOff className="size-4" /> Offline – es werden nur Titel und Auszüge durchsucht.
-          </p>
-          <NoteList>
-            {offlineResults.map((n) => (
-              <NoteCard key={n.id} note={n} folders={folders} />
-            ))}
-          </NoteList>
-        </>
-      ) : search.isLoading ? (
-        <div className="flex justify-center py-10 text-faint">
-          <Loader2 className="size-6 animate-spin" />
+      <div ref={root}>
+        <div className="relative mb-6">
+          <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-faint" />
+          <input
+            autoFocus
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Notizen durchsuchen …"
+            className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
+            aria-label="Suchbegriff"
+          />
         </div>
-      ) : results.length === 0 && files.length === 0 ? (
-        <EmptyState icon={<Search />} title="Nichts gefunden" />
-      ) : (
-        <>
-          {results.length > 0 ? (
-            <>
-              <p className="mb-3 text-sm text-muted">
-                {results.length} {results.length === 1 ? 'Treffer' : 'Treffer'}
+        {!debounced ? (
+          <EmptyState
+            icon={<Search />}
+            title="Volltextsuche"
+            text="Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags."
+          />
+        ) : offlineResults ? (
+          <NoteSelectionContext.Provider value={selection}>
+            <div className="mb-3 flex items-center gap-2">
+              <p className="flex flex-1 items-center gap-2 text-sm text-warning">
+                <CloudOff className="size-4 shrink-0" /> Offline – es werden nur Titel und Auszüge durchsucht.
               </p>
-              <NoteList>
-                {results.map((r) => (
-                  <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
-                ))}
-              </NoteList>
-            </>
-          ) : null}
-          {files.length > 0 ? (
-            <section className={cn(results.length > 0 && 'mt-8')} aria-labelledby="search-files" data-testid="search-files">
-              <h2 id="search-files" className="mb-3 text-sm text-muted">
-                In Dateien
-              </h2>
-              <NoteList>
-                {files.map((f) => (
-                  <FileHit key={`${f.id}:${f.page}`} hit={f} />
-                ))}
-              </NoteList>
-            </section>
-          ) : null}
-        </>
-      )}
+              <SelectButton selection={selection} />
+            </div>
+            <NoteSelectionBar selection={selection} />
+            <NoteList order={order}>
+              {offlineResults.map((n) => (
+                <NoteCard key={n.id} note={n} folders={folders} />
+              ))}
+            </NoteList>
+          </NoteSelectionContext.Provider>
+        ) : search.isLoading ? (
+          <div className="flex justify-center py-10 text-faint">
+            <Loader2 className="size-6 animate-spin" />
+          </div>
+        ) : results.length === 0 && files.length === 0 ? (
+          <EmptyState icon={<Search />} title="Nichts gefunden" />
+        ) : (
+          <>
+            {results.length > 0 ? (
+              <NoteSelectionContext.Provider value={selection}>
+                <div className="mb-3 flex items-center gap-2">
+                  <p className="flex-1 text-sm text-muted">
+                    {results.length} {results.length === 1 ? 'Treffer' : 'Treffer'}
+                  </p>
+                  <SelectButton selection={selection} />
+                </div>
+                <NoteSelectionBar selection={selection} />
+                <NoteList order={order}>
+                  {results.map((r) => (
+                    <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
+                  ))}
+                </NoteList>
+              </NoteSelectionContext.Provider>
+            ) : null}
+            {files.length > 0 ? (
+              <section className={cn(results.length > 0 && 'mt-8')} aria-labelledby="search-files" data-testid="search-files">
+                <h2 id="search-files" className="mb-3 text-sm text-muted">
+                  In Dateien
+                </h2>
+                <NoteList>
+                  {files.map((f) => (
+                    <FileHit key={`${f.id}:${f.page}`} hit={f} />
+                  ))}
+                </NoteList>
+              </section>
+            ) : null}
+          </>
+        )}
+      </div>
     </Page>
   )
 }

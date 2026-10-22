@@ -38,10 +38,10 @@ export function NoteMenuItems({ note, context }: { note: NoteSummary; context?: 
       <MenuItem icon={<Pencil />} onSelect={() => app.renameNote(note)}>
         Umbenennen
       </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note })}>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'notes', notes: [note] })}>
         Verschieben …
       </MenuItem>
-      <MenuItem icon={note.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(note)}>
+      <MenuItem icon={note.pinned ? <PinOff /> : <Pin />} onSelect={() => void app.pinNotes([note], !note.pinned)}>
         {note.pinned ? 'Lösen' : 'Anheften'}
       </MenuItem>
       {context ? (
@@ -56,7 +56,7 @@ export function NoteMenuItems({ note, context }: { note: NoteSummary; context?: 
         </MenuItem>
       ) : null}
       <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote(note)}>
+      <MenuItem icon={<Trash2 />} danger onSelect={() => void app.trashNotes([note])}>
         In den Papierkorb
       </MenuItem>
     </>

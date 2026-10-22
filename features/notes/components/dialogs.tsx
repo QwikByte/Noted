@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Check, FileText, History, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react'
-import { useApp, type NewNoteOptions } from '@/features/workspace/client/context'
+import { useApp, type MoveTarget, type NewNoteOptions } from '@/features/workspace/client/context'
 import { ConfirmModal, Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { Field, Input, Select } from '@/shared/ui/input'
@@ -12,6 +12,7 @@ import { api, errorMessage } from '@/shared/client/api'
 import { applySavedNote, keys, useFolders, useNotes, useNoteVersion, useNoteVersions } from '../client/queries'
 import { buildTree, descendantFolderIds, type FolderNode } from '../tree'
 import { sync } from '../client/sync'
+import { notesLabel, useMoveNotes } from '../client/bulk'
 import { BUILTIN_TEMPLATES, TEMPLATE_FOLDER_NAMES, applyTemplate } from '../templates'
 import { validateName } from '@/shared/lib/names'
 import { escapeHtml } from '@/shared/lib/html'
@@ -21,7 +22,7 @@ import { Preview } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { formatBytes, formatDateTime, formatRelative } from '@/shared/lib/format'
 import { NOTE_FORMAT_LABELS } from '../format'
-import type { Folder, Note, NoteFormat, NoteSummary, NoteVersion, NoteVersionReason } from '../types'
+import type { Note, NoteFormat, NoteSummary, NoteVersion, NoteVersionReason } from '../types'
 
 /** Ordnerliste mit Einrückung für Auswahlfelder. */
 function useFolderOptions(exclude?: Set<string>) {
@@ -229,23 +230,32 @@ export function NewNoteDialog({ options, onClose }: { options: NewNoteOptions | 
   )
 }
 
+/** Ordner, in dem alle Notizen liegen – sonst die oberste Ebene */
+function commonFolder(notes: readonly NoteSummary[]): string | null {
+  const first = notes[0]?.folderId ?? null
+  return notes.every((n) => n.folderId === first) ? first : null
+}
+
 export function MoveDialog({
   target,
+  onMoved,
   onClose,
 }: {
-  target: { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder } | null
+  target: MoveTarget | null
+  onMoved?: () => void
   onClose: () => void
 }) {
   const qc = useQueryClient()
   const toast = useToast()
   const { data: folders = [] } = useFolders()
+  const moveNotes = useMoveNotes()
   const [dest, setDest] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const [prevTarget, setPrevTarget] = useState(target)
   if (target !== prevTarget) {
     setPrevTarget(target)
-    if (target) setDest(target.kind === 'note' ? target.note.folderId : target.folder.parentId)
+    if (target) setDest(target.kind === 'notes' ? commonFolder(target.notes) : target.folder.parentId)
   }
 
   const exclude = useMemo(
@@ -255,14 +265,18 @@ export function MoveDialog({
 
   async function submit() {
     if (!target) return
+    if (target.kind === 'notes') {
+      // Über die Entwürfe – klappt auch offline, die Meldung mit „Rückgängig“ kommt von dort
+      moveNotes(target.notes, dest)
+      onMoved?.()
+      onClose()
+      return
+    }
     setLoading(true)
     try {
-      if (target.kind === 'note') {
-        sync.update(target.note.id, target.note.version, { folderId: dest }, { immediate: true })
-      } else {
-        await api(`/api/folders/${target.folder.id}`, { method: 'PATCH', body: { parentId: dest } })
-        await qc.invalidateQueries({ queryKey: keys.folders })
-      }
+      await api(`/api/folders/${target.folder.id}`, { method: 'PATCH', body: { parentId: dest } })
+      await qc.invalidateQueries({ queryKey: keys.folders })
+      onMoved?.()
       onClose()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -271,13 +285,13 @@ export function MoveDialog({
     }
   }
 
-  const name = target?.kind === 'note' ? target.note.title : target?.folder.name
+  const description = !target ? undefined : target.kind === 'notes' ? notesLabel(target.notes) : `„${target.folder.name}“`
   return (
     <Modal
       open={!!target}
       onClose={onClose}
       title="Verschieben"
-      description={name ? `„${name}“` : undefined}
+      description={description}
       size="sm"
       footer={
         <>

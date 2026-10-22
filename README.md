@@ -24,7 +24,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
 - Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter; findet auch Text in PDFs und Textdateien, siehe **Dateien**), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).
 - **Graph** (Seitenleiste → **Graph**): alle Notizen als Punkte, die Wikilinks als Linien – so siehst du, welche Mitschriften zusammenhängen und wo Inseln sind. Größere Punkte haben mehr Verbindungen, die Farbe zeigt den obersten Ordner. Filtern nach Ordner (samt Unterordnern) und Tag, das Suchfeld hebt Notizen hervor; ein Klick öffnet die Notiz. Mit der Tastatur: Fläche fokussieren, Pfeiltasten wählen eine Notiz (bei einer Suche nur unter den Treffern), `Enter` öffnet sie, `Escape` hebt die Auswahl auf. Ab 1 500 Notizen zeigt der Graph nur einen gefilterten Ausschnitt. Im Lesemodus steht unter „Verlinkt in“ der **lokale Graph** der Notiz (direkt verlinkt oder zwei Schritte weit).
-- **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
+- **Drag & Drop:** Notizen und Ordner auf einen Ordner ziehen – in der Seitenleiste, in der Ordneransicht (auf Unterordner und den Pfad darüber) und aus jeder Notizliste in die Seitenleiste. Mehrere ausgewählte Notizen ziehen gemeinsam. Mit der Maus einfach ziehen, auf Handy und Tablet lange drücken und dann ziehen. Zugeklappte Ordner öffnen sich, wenn du kurz darüber verweilst; `Esc` bricht ab, „Rückgängig“ in der Meldung macht das Verschieben rückgängig.
+- **Mehrfachauswahl** in der Ordneransicht, bei einem Tag, in den Suchergebnissen, auf der Startseite und im Papierkorb: `Strg/⌘ + Klick` wählt eine Notiz aus, `Umschalt + Klick` einen Bereich, `Strg/⌘ + A` alle Notizen der Liste, `Esc` hebt die Auswahl auf. Auf Handy und Tablet (und für die Tastatur) blendet **Auswählen** Kästchen ein, dann schaltet Tippen um. Die Leiste über der Liste verschiebt, heftet an oder löst und legt in den Papierkorb – im Papierkorb stellt sie wieder her oder löscht endgültig; dieselben Aktionen gibt es per Rechtsklick auf eine ausgewählte Notiz. Höchstens 500 Notizen auf einmal. Einen neuen Tab öffnen dort Mittelklick und „In neuem Tab öffnen“.
 - Vorlagen für Vorlesung, Übung, Lernzettel, Literatur und Sprechstunde. Eigene Vorlagen legst du als Notizen im Ordner „Vorlagen“ ab; `{{date}}`, `{{time}}` und `{{title}}` werden dabei ersetzt.
 
 **Fünf Formate für Notizen**
@@ -330,6 +331,10 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Strg/⌘ + F` | Im Editor suchen und ersetzen |
 | `Strg/⌘ + B` / `I` | Fett / kursiv |
 | `Strg/⌘ + Shift + H` | ==Markieren== |
+| `Strg/⌘ + Klick` | In Notizlisten: Notiz auswählen bzw. abwählen |
+| `Umschalt + Klick` | In Notizlisten: Bereich bis hierher auswählen (mit `Strg/⌘` dazu) |
+| `Strg/⌘ + A` | In Notizlisten: alle Notizen auswählen |
+| `Esc` | In Notizlisten: Auswahl aufheben |
 | Rechtsklick, `Umschalt + F10` oder Kontextmenütaste | Kontextmenü mit den Aktionen für das, was darunter liegt (Notiz, Ordner, Text im Editor, Link, Karte, Termin, Datei …) |
 | `Umschalt` + Rechtsklick | Das Menü des Browsers statt des eigenen (in Eingabefeldern und Dialogen gibt es immer das des Browsers) |
 
@@ -360,7 +365,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin, geteilte Notizen) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
-  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
+  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Mehrfachauswahl, Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche

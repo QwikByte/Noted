@@ -632,10 +632,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         Als {noteExtension(format)} herunterladen
       </MenuItem>
       <MenuSeparator />
-      <MenuItem icon={summaryForActions.pinned ? <PinOff /> : <Pin />} onSelect={() => app.togglePin(summaryForActions)} disabled={!serverNote}>
+      <MenuItem
+        icon={summaryForActions.pinned ? <PinOff /> : <Pin />}
+        onSelect={() => void app.pinNotes([summaryForActions], !summaryForActions.pinned)}
+        disabled={!serverNote}
+      >
         {summaryForActions.pinned ? 'Lösen' : 'Anheften'}
       </MenuItem>
-      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'note', note: summaryForActions })}>
+      <MenuItem icon={<FolderInput />} onSelect={() => app.openMove({ kind: 'notes', notes: [summaryForActions] })}>
         Verschieben …
       </MenuItem>
       <MenuItem icon={<Type />} onSelect={() => setFormatOpen(true)} hint={NOTE_FORMAT_LABELS[format].label}>
@@ -670,7 +674,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         </MenuItem>
       ) : null}
       <MenuSeparator />
-      <MenuItem icon={<Trash2 />} danger onSelect={() => app.trashNote({ id: note.id, title })}>
+      <MenuItem icon={<Trash2 />} danger onSelect={() => void app.trashNotes([{ id: note.id, title }])}>
         In den Papierkorb
       </MenuItem>
     </>

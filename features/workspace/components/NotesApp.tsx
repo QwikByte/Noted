@@ -3,7 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
-import { AppContext, type AppActions, type CardEditorInit, type CardsFromNoteInit, type NewNoteOptions } from '../client/context'
+import {
+  AppContext,
+  type AppActions,
+  type CardEditorInit,
+  type CardsFromNoteInit,
+  type MoveTarget,
+  type NewNoteOptions,
+} from '../client/context'
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
 import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
@@ -36,12 +43,11 @@ import { applySavedNote, keys, removeNoteFromCache, useNotes } from '@/features/
 import { graphKey } from '@/features/graph/client/queries'
 import { api, errorMessage } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
+import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { validateName } from '@/shared/lib/names'
-import type { Folder, NoteSummary } from '@/features/notes/types'
-
-type MoveTarget = { kind: 'note'; note: NoteSummary } | { kind: 'folder'; folder: Folder }
+import type { Folder, Note, NoteSummary } from '@/features/notes/types'
 
 // pdf.js wird erst geladen, wenn ein PDF geöffnet wird
 const PdfPanel = dynamic(() => import('@/features/pdf/components/PdfPanel'), { ssr: false })
@@ -70,7 +76,7 @@ export default function NotesApp() {
     return n ? (n === '1' ? {} : { templateId: n }) : null
   })
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null)
+  const [moveTarget, setMoveTarget] = useState<{ target: MoveTarget; onMoved?: () => void } | null>(null)
   const [folderPrompt, setFolderPrompt] = useState<{ parentId: string | null } | { folder: Folder } | null>(null)
   const [renameTarget, setRenameTarget] = useState<NoteSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
@@ -157,30 +163,43 @@ export default function NotesApp() {
     }
   }, [])
 
-  const trashNote = useCallback<AppActions['trashNote']>(
-    async (note) => {
-      const draft = sync.getDraft(note.id)
-      if (draft?.isNew) {
-        sync.discard(note.id)
-        if (view.kind === 'note' && view.id === note.id) navigate({ kind: 'home' }, { replace: true })
-        return
+  const trashNotes = useCallback<AppActions['trashNotes']>(
+    async (list) => {
+      // Noch nie gesendete Notizen gibt es auf dem Server nicht – sie werden nur lokal verworfen
+      const local = list.filter((n) => sync.getDraft(n.id)?.isNew)
+      const remote = list.filter((n) => !sync.getDraft(n.id)?.isNew)
+      let ids: string[] = []
+      if (remote.length > 0) {
+        try {
+          ids = await postNoteBatch('trash', remote.map((n) => n.id))
+        } catch (err) {
+          // Offline bleibt alles, wie es ist – auch ungesendete Änderungen
+          toast.error(errorMessage(err))
+          return false
+        }
       }
-      try {
-        sync.discard(note.id)
-        await api(`/api/notes/${note.id}`, { method: 'DELETE' })
-        removeNoteFromCache(qc, note.id)
+      for (const n of [...local, ...remote]) {
+        sync.discard(n.id)
+        removeNoteFromCache(qc, n.id)
+      }
+      if (remote.length > 0) {
         qc.invalidateQueries({ queryKey: keys.trash })
         qc.invalidateQueries({ queryKey: keys.tags })
         qc.invalidateQueries({ queryKey: graphKey })
-        if (view.kind === 'note' && view.id === note.id) navigate({ kind: 'home' }, { replace: true })
-        toast.show(`„${note.title}“ in den Papierkorb verschoben.`, {
+        qc.invalidateQueries({ queryKey: ['search'] })
+      }
+      if (view.kind === 'note' && list.some((n) => n.id === view.id)) navigate({ kind: 'home' }, { replace: true })
+      const trashed = remote.filter((n) => ids.includes(n.id))
+      if (trashed.length > 0) {
+        toast.show(`${notesLabel(trashed)} in den Papierkorb verschoben.`, {
           action: {
             label: 'Rückgängig',
             onClick: async () => {
               try {
-                await api(`/api/notes/${note.id}/restore`, { method: 'POST' })
+                await postNoteBatch('restore', ids)
                 qc.invalidateQueries({ queryKey: keys.notes })
                 qc.invalidateQueries({ queryKey: keys.trash })
+                qc.invalidateQueries({ queryKey: keys.tags })
                 qc.invalidateQueries({ queryKey: graphKey })
               } catch (err) {
                 toast.error(`Wiederherstellen fehlgeschlagen: ${errorMessage(err)}`)
@@ -188,23 +207,23 @@ export default function NotesApp() {
             },
           },
         })
-      } catch (err) {
-        toast.error(errorMessage(err))
       }
+      return true
     },
     [qc, toast, view, navigate],
   )
 
-  const togglePin = useCallback<AppActions['togglePin']>(
-    async (note) => {
+  const pinNotes = useCallback<AppActions['pinNotes']>(
+    async (list, pinned) => {
       try {
-        const res = await api<{ note: Parameters<typeof applySavedNote>[1] }>(`/api/notes/${note.id}`, {
-          method: 'PUT',
-          body: { pinned: !note.pinned },
-        })
-        applySavedNote(qc, res.note)
+        const ids = new Set(await postNoteBatch(pinned ? 'pin' : 'unpin', list.map((n) => n.id)))
+        // Version und Bearbeitungszeit bleiben gleich – die Caches direkt anpassen statt neu zu laden
+        qc.setQueryData<NoteSummary[]>(keys.notes, (all) => all?.map((n) => (ids.has(n.id) ? { ...n, pinned } : n)))
+        for (const id of ids) qc.setQueryData<Note>(keys.note(id), (n) => (n ? { ...n, pinned } : n))
+        return true
       } catch (err) {
         toast.error(errorMessage(err))
+        return false
       }
     },
     [qc, toast],
@@ -217,12 +236,12 @@ export default function NotesApp() {
       openNewNote: (opts) => setNewNote(opts ?? {}),
       createNote,
       openQuickSwitcher: () => setSwitcherOpen(true),
-      openMove: setMoveTarget,
+      openMove: (target, opts) => setMoveTarget({ target, onMoved: opts?.onMoved }),
       openNewFolder: (parentId) => setFolderPrompt({ parentId }),
       openRenameFolder: (folder) => setFolderPrompt({ folder }),
       deleteFolder: setDeleteTarget,
-      trashNote,
-      togglePin,
+      trashNotes,
+      pinNotes,
       renameNote: setRenameTarget,
       closeSidebar: () => setSidebarOpen(false),
       resolveTitle,
@@ -234,7 +253,7 @@ export default function NotesApp() {
         setSidebarOpen(false)
       },
     }),
-    [view, navigate, createNote, trashNote, togglePin, resolveTitle, setPdfPref],
+    [view, navigate, createNote, trashNotes, pinNotes, resolveTitle, setPdfPref],
   )
 
   // Tastenkürzel
@@ -414,7 +433,7 @@ export default function NotesApp() {
         {fromNote ? <CardsFromNoteDialog note={fromNote} onClose={() => setFromNote(null)} /> : null}
         <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
         <DragLayer />
-        <MoveDialog target={moveTarget} onClose={() => setMoveTarget(null)} />
+        <MoveDialog target={moveTarget?.target ?? null} onMoved={moveTarget?.onMoved} onClose={() => setMoveTarget(null)} />
         <PromptDialog
           open={!!folderPrompt}
           title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}

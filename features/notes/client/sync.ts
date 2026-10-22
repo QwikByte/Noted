@@ -27,7 +27,9 @@ export type Draft = {
   updatedAt: number
 }
 
-export type SyncState = 'saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
+type DraftPatch = Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId'>>
+
+export type SyncState ='saved' | 'pending' | 'saving' | 'offline' | 'conflict' | 'error'
 
 export type NoteSyncStatus = {
   state: SyncState
@@ -163,12 +165,20 @@ class SyncStore {
   }
 
   /** Änderung an einer Notiz vormerken. `version` ist die Server-Version, auf der sie basiert. */
-  update(
-    id: string,
-    version: number,
-    patch: Partial<Pick<Draft, 'title' | 'content' | 'format' | 'folderId'>>,
-    opts: { immediate?: boolean } = {},
-  ) {
+  update(id: string, version: number, patch: DraftPatch, opts: { immediate?: boolean } = {}) {
+    this.updateMany([{ id, version, patch }], opts)
+  }
+
+  /** Wie `update` für mehrere Notizen – der lokale Speicher wird dabei nur einmal geschrieben. */
+  updateMany(changes: { id: string; version: number; patch: DraftPatch }[], opts: { immediate?: boolean } = {}) {
+    if (changes.length === 0) return
+    for (const { id, version, patch } of changes) this.mergeDraft(id, version, patch)
+    this.persist()
+    this.emit()
+    for (const { id } of changes) this.schedule(id, opts.immediate ? 0 : SAVE_DELAY)
+  }
+
+  private mergeDraft(id: string, version: number, patch: DraftPatch) {
     const existing = this.drafts.get(id)
     const draft: Draft = existing
       ? { ...existing, ...patch, rev: existing.rev + 1, updatedAt: Date.now() }
@@ -183,9 +193,6 @@ class SyncStore {
     this.drafts.set(id, draft)
     const st = this.getStatus(id).state
     if (st !== 'conflict' && st !== 'saving') this.setStatus(id, { state: 'pending' })
-    this.persist()
-    this.emit()
-    this.schedule(id, opts.immediate ? 0 : SAVE_DELAY)
   }
 
   private schedule(id: string, delay: number) {

@@ -3,6 +3,7 @@ import { ADMIN_PASSWORD, call, loginAs, setupTestEnv } from '@/tests/helpers'
 import * as notes from '@/app/api/notes/route'
 import * as note from '@/app/api/notes/[id]/route'
 import * as restore from '@/app/api/notes/[id]/restore/route'
+import * as batch from '@/app/api/notes/batch/route'
 import * as backlinks from '@/app/api/notes/[id]/backlinks/route'
 import * as download from '@/app/api/notes/[id]/download/route'
 import * as folders from '@/app/api/folders/route'
@@ -246,6 +247,102 @@ describe('Papierkorb', () => {
     const r = await call(trash.DELETE, '/', { method: 'DELETE', cookie: token })
     expect(r.data.deleted).toBeGreaterThanOrEqual(1)
     expect((await call(trash.GET, '/', { cookie: token })).data.notes).toEqual([])
+  })
+})
+
+describe('Sammelaktionen', () => {
+  const run = (action: string, ids: unknown, cookie: string | null = token) =>
+    call(batch.POST, '/api/notes/batch', { cookie, body: { action, ids } })
+  const idsInTrash = async () =>
+    ((await call(trash.GET, '/', { cookie: token })).data.notes as { id: string; title: string }[]).map((n) => n.id)
+
+  it('legt mehrere Notizen in den Papierkorb und holt sie zurück – Suche und Tags folgen', async () => {
+    const a = await newNote('Sammel A', 'stapelwort #sammeltag')
+    const b = await newNote('Sammel B', 'stapelwort #sammeltag')
+    const trashed = await run('trash', [a.id, b.id, a.id])
+    expect(trashed.status).toBe(200)
+    expect(trashed.data.ids).toEqual([a.id, b.id])
+    expect((await call(search.GET, '/', { cookie: token, query: { q: 'stapelwort' } })).data.results).toEqual([])
+    const tagsAfter = (await call(tags.GET, '/', { cookie: token })).data.tags as { tag: string }[]
+    expect(tagsAfter.map((t) => t.tag)).not.toContain('sammeltag')
+    expect(await idsInTrash()).toEqual(expect.arrayContaining([a.id, b.id]))
+    // Schon im Papierkorb: ein zweites Mal ändert nichts
+    expect((await run('trash', [a.id])).data.ids).toEqual([])
+
+    const restored = await run('restore', [b.id, a.id])
+    expect(restored.data.ids).toEqual([b.id, a.id])
+    expect((await call(search.GET, '/', { cookie: token, query: { q: 'stapelwort' } })).data.results).toHaveLength(2)
+    const tagsBack = (await call(tags.GET, '/', { cookie: token })).data.tags
+    expect(tagsBack).toEqual(expect.arrayContaining([{ tag: 'sammeltag', count: 2 }]))
+  })
+
+  it('stellt gleichnamige Notizen aus gelöschten Ordnern mit freien Namen auf der obersten Ebene wieder her', async () => {
+    const f1 = await newFolder('Doppelt-Ordner 1')
+    const f2 = await newFolder('Doppelt-Ordner 2')
+    const a = await newNote('Doppelt', '', f1.id)
+    const b = await newNote('Doppelt', '', f2.id)
+    await call(folder.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: f1.id } })
+    await call(folder.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: f2.id } })
+    const r = await run('restore', [a.id, b.id])
+    expect(r.data.ids).toEqual([a.id, b.id])
+    const list = (await call(notes.GET, '/', { cookie: token })).data.notes as { id: string; title: string; folderId: null }[]
+    const restored = list.filter((n) => n.id === a.id || n.id === b.id)
+    expect(restored.map((n) => n.folderId)).toEqual([null, null])
+    expect(restored.map((n) => n.title).sort()).toEqual(['Doppelt', 'Doppelt 1'])
+  })
+
+  it('löscht endgültig nur Notizen aus dem Papierkorb', async () => {
+    const keep = await newNote('Bleibt liegen')
+    const gone = await newNote('Kommt weg')
+    await run('trash', [gone.id])
+    const r = await run('delete', [keep.id, gone.id])
+    expect(r.data.ids).toEqual([gone.id])
+    expect((await call(note.GET, '/', { cookie: token, params: { id: keep.id } })).status).toBe(200)
+    expect(await idsInTrash()).not.toContain(gone.id)
+    // Wiederherstellen wirkt nur auf gelöschte Notizen
+    expect((await run('restore', [keep.id])).data.ids).toEqual([])
+  })
+
+  it('heftet an und löst, ohne Version und Bearbeitungszeit zu ändern', async () => {
+    const a = await newNote('Pin A')
+    const b = await newNote('Pin B')
+    const before = (await call(note.GET, '/', { cookie: token, params: { id: a.id } })).data.note
+    expect((await run('pin', [a.id, b.id])).data.ids).toEqual([a.id, b.id])
+    const pinned = (await call(note.GET, '/', { cookie: token, params: { id: a.id } })).data.note
+    expect(pinned.pinned).toBe(true)
+    expect(pinned.version).toBe(before.version)
+    expect(pinned.updatedAt).toBe(before.updatedAt)
+    expect((await run('unpin', [a.id])).data.ids).toEqual([a.id])
+    const unpinned = (await call(note.GET, '/', { cookie: token, params: { id: a.id } })).data.note
+    expect(unpinned.pinned).toBe(false)
+    expect(unpinned.version).toBe(before.version)
+    expect(unpinned.updatedAt).toBe(before.updatedAt)
+    // Gelöschte Notizen werden nicht angeheftet
+    await run('trash', [b.id])
+    expect((await run('pin', [b.id])).data.ids).toEqual([])
+  })
+
+  it('überspringt fremde und unbekannte Notizen', async () => {
+    const other = await loginAs('fremd', 'Kennwort-Xyz-222')
+    const mine = await newNote('Gehört mir')
+    const unknown = crypto.randomUUID()
+    const r = await run('trash', [mine.id, unknown], other)
+    expect(r.status).toBe(200)
+    expect(r.data.ids).toEqual([])
+    expect((await call(note.GET, '/', { cookie: token, params: { id: mine.id } })).status).toBe(200)
+    expect((await run('pin', [mine.id], other)).data.ids).toEqual([])
+    expect((await call(note.GET, '/', { cookie: token, params: { id: mine.id } })).data.note.pinned).toBe(false)
+  })
+
+  it('prüft die Eingabe, die Anmeldung und den CSRF-Header', async () => {
+    const id = crypto.randomUUID()
+    expect((await run('trash', [])).status).toBe(400)
+    expect((await run('trash', Array.from({ length: 501 }, () => crypto.randomUUID()))).status).toBe(400)
+    expect((await run('trash', ['abc'])).status).toBe(400)
+    expect((await run('move', [id])).status).toBe(400)
+    expect((await run('trash', [id], null)).status).toBe(401)
+    const body = { action: 'trash', ids: [id] }
+    expect((await call(batch.POST, '/api/notes/batch', { cookie: token, csrf: false, body })).status).toBe(403)
   })
 })
 

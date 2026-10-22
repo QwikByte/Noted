@@ -53,6 +53,12 @@ export type SearchResponse = { results: SearchResult[]; files: FileSearchResult[
 
 export type TagCount = { tag: string; count: number }
 
+/** Sammelaktionen für mehrere Notizen auf einmal (POST /api/notes/batch) */
+export const NOTE_BATCH_ACTIONS = ['trash', 'restore', 'delete', 'pin', 'unpin'] as const
+export type NoteBatchAction = (typeof NOTE_BATCH_ACTIONS)[number]
+/** Die tatsächlich geänderten Notizen, in der Reihenfolge der Anfrage */
+export type NoteBatchResult = { ids: string[] }
+
 /**
  * Anlass, zu dem ein älterer Stand gesichert wurde: edit – Bearbeiten nach einer Pause · conflict – vor dem
  * Überschreiben bei einem Konflikt · restore – vor dem Wiederherstellen · format – vor einem Formatwechsel
