@@ -10,8 +10,7 @@ import { useNow } from '@/shared/client/now'
 import { AnkiImportDialog, DeckPackageImportDialog, DeckSettingsDialog } from './DeckDialogs'
 import { useFlashcards } from '../client/flashcards'
 import { NetworkError } from '@/shared/client/api'
-import { deckCounts, type DeckCounts } from '../study'
-import type { Card } from '../types'
+import { cardsByDeck, deckCounts, type DeckCounts } from '../study'
 
 /** Fällige Karten aller Stapel (für die Seitenleiste) */
 export function useDueTotal(): number {
@@ -19,17 +18,8 @@ export function useDueTotal(): number {
   const now = useNow()
   return useMemo(() => {
     if (!data) return 0
-    return data.decks.reduce(
-      (sum, d) =>
-        sum +
-        deckCounts(
-          d,
-          data.cards.filter((c) => c.deckId === d.id),
-          data.states,
-          now,
-        ).due,
-      0,
-    )
+    const byDeck = cardsByDeck(data.cards)
+    return data.decks.reduce((sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now).due, 0)
   }, [data, now])
 }
 
@@ -44,8 +34,7 @@ export function CardsView() {
 
   const rows = useMemo(() => {
     if (!data) return []
-    const byDeck = new Map<string, Card[]>()
-    for (const c of data.cards) byDeck.set(c.deckId, [...(byDeck.get(c.deckId) ?? []), c])
+    const byDeck = cardsByDeck(data.cards)
     return data.decks.map((deck) => {
       const cards = byDeck.get(deck.id) ?? []
       return { deck, cards, counts: deckCounts(deck, cards, data.states, now), status: statusCounts(cards, data.states) }

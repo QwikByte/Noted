@@ -35,6 +35,17 @@ export function stateMap(reviews: CardReview[]): StateMap {
   return map
 }
 
+/** Karten je Stapel, in der Reihenfolge von `cards` */
+export function cardsByDeck(cards: Card[]): Map<string, Card[]> {
+  const byDeck = new Map<string, Card[]>()
+  for (const c of cards) {
+    const list = byDeck.get(c.deckId)
+    if (list) list.push(c)
+    else byDeck.set(c.deckId, [c])
+  }
+  return byDeck
+}
+
 export function byPosition(a: Card, b: Card) {
   return a.position - b.position || a.createdAt - b.createdAt
 }
@@ -177,12 +188,7 @@ export class LearnSession {
     now: number,
     inScope?: (card: Card) => boolean,
   ) {
-    const byDeck = new Map<string, Card[]>()
-    for (const c of cards) {
-      const list = byDeck.get(c.deckId)
-      if (list) list.push(c)
-      else byDeck.set(c.deckId, [c])
-    }
+    const byDeck = cardsByDeck(cards)
     const review: StudyItem[] = []
     const fresh: StudyItem[] = []
     const learning: { item: StudyItem; due: number }[] = []

@@ -6,7 +6,7 @@ import { Button } from '@/shared/ui/button'
 import { Panel } from '@/shared/ui/panel'
 import { useNow } from '@/shared/client/now'
 import { useFlashcards } from '../client/flashcards'
-import { deckCounts } from '../study'
+import { cardsByDeck, deckCounts } from '../study'
 
 /** Startseite: fällige Karten je Stapel, direkt zum Lernen. Ohne Stapel: nichts. */
 export function DueDecks({ className }: { className?: string }) {
@@ -15,16 +15,9 @@ export function DueDecks({ className }: { className?: string }) {
   const now = useNow()
   const rows = useMemo(() => {
     if (!data) return []
+    const byDeck = cardsByDeck(data.cards)
     return data.decks
-      .map((deck) => ({
-        deck,
-        due: deckCounts(
-          deck,
-          data.cards.filter((c) => c.deckId === deck.id),
-          data.states,
-          now,
-        ).due,
-      }))
+      .map((deck) => ({ deck, due: deckCounts(deck, byDeck.get(deck.id) ?? [], data.states, now).due }))
       .filter((r) => r.due > 0)
   }, [data, now])
 

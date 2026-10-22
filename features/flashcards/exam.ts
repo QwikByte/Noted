@@ -16,7 +16,11 @@ export function examsByDeck(events: CalendarEvent[]): Map<string, DeckExam[]> {
   const exams = events.filter((e) => e.exam).sort((a, b) => a.start.localeCompare(b.start))
   for (const e of exams) {
     const exam = { id: e.id, title: e.title, date: dateOf(e.start) }
-    for (const deckId of e.exam?.deckIds ?? []) map.set(deckId, [...(map.get(deckId) ?? []), exam])
+    for (const deckId of e.exam?.deckIds ?? []) {
+      const list = map.get(deckId)
+      if (list) list.push(exam)
+      else map.set(deckId, [exam])
+    }
   }
   return map
 }
