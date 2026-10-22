@@ -19,6 +19,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Aufgaben (`- [ ]`, in der Vorschau abhakbar)
   - `==Markierungen==`, Fußnoten, Code-Hervorhebung, `%%Kommentare%%`
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
+- **Gliederung** (Knopf links im Kopf der Notiz): listet die Überschriften eingerückt auf; ein Klick springt im Editor und im Lesemodus dorthin, der Abschnitt, in dem du gerade liest, ist hervorgehoben. Auf breiten Bildschirmen steht sie links neben dem Blatt – ein- und ausblendbar, auf dem Gerät gemerkt –, auf schmalen Bildschirmen, im Modus „Geteilt“ und mit PDF daneben klappt sie über der Notiz auf. Mit der Tastatur: `↑`/`↓`/`Pos1`/`Ende` wandern durch die Einträge, `Enter` springt und setzt den Fokus ans Ziel, `Esc` schließt die aufgeklappte Liste. Für Markdown und formatierten Text.
 - **Befehle mit `/`:** Ein `/` am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü: Überschriften, Listen, Aufgaben, Zitat, Callout, Tabelle, Formeln, Code, Mermaid-Diagramm, Trennlinie, Wikilink, Karteikarte, Datum von heute sowie Bild oder Datei. Weitertippen filtert (`/tab`, `/h2`, `/formel`), `Enter`, Klick oder Antippen fügt ein, `Esc` schließt. In Code, Formeln, Properties und Tabellenzeilen bleibt das `/` einfach ein Zeichen. Abschaltbar unter **Einstellungen → Darstellung**.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - **Drucken** (**⋮ → Drucken …** oder `Strg/⌘ + P`): eine Druckansicht mit der Notiz auf hellem Blatt – auch im dunklen Design –, im Druckdialog auch „Als PDF speichern“. Formeln, Diagramme, Callouts (eingeklappte aufgeklappt), Code, Tabellen, Bilder und Fußnoten kommen mit, `%%Kommentare%%` nicht; externe Links bekommen ihre Adresse dahinter. Wählbar: Titel, Properties und **Kompakt** (kleinere Schrift, zwei Spalten – für Spickzettel). Gedruckt wird der aktuelle Stand, auch offline. Mindmaps erscheinen als Gliederung, Canvas als Text der Karten.
@@ -370,7 +371,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 app/                    Nur Routing: Seiten (Login, Setup, Notizen, Einstellungen, Admin, geteilte Notizen) und API-Routen (app/api)
 features/               Ein Ordner je fachlichem Bereich, jeweils mit components/, client/, server/ und Tests
   workspace/            App-Rahmen: Startseite, Seitenleiste, Navigation, App-Kontext, Benutzermenü, Werkzeugleiste und Fenster
-  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Mehrfachauswahl, Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Sync, Vorlagen
+  notes/                Notizen in fünf Formaten, Ordner (mit Drag & Drop), Mehrfachauswahl, Tags, Suche, Papierkorb, Verlauf, Editoren, Vorschau, Gliederung, Sync, Vorlagen
   mindmap/              Mindmap: Markdown-Gliederung ↔ Baum, Anordnung, Editor
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche

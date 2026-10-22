@@ -274,6 +274,91 @@ test('Links auf Abschnitte springen zur Überschrift – im Lesemodus und im Edi
   await expect(page.locator('.cm-line', { hasText: '## Ziel' })).toBeInViewport()
 })
 
+test('Gliederung: Überschriften auflisten, hinspringen und den aktuellen Abschnitt hervorheben', async ({ page, browser }) => {
+  await login(page)
+  const filler = Array.from({ length: 80 }, (_, i) => `Absatz ${i + 1}`).join('\n\n')
+  const content = `# Anfang\n\n${filler}\n\n\`\`\`\n# kein Titel\n\`\`\`\n\n## Ziel\nHier steht es.\n`
+  const note = await post(page, '/api/notes', { title: 'Lange Gliederung', content }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${note.id}`)
+  const toggle = page.getByRole('button', { name: 'Gliederung', exact: true })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  const outline = page.getByRole('navigation', { name: 'Gliederung' })
+  const entries = outline.locator('button[data-index]')
+  await expect(entries).toHaveText(['Anfang', 'Ziel'])
+  await expect(outline).not.toContainText('kein Titel')
+  // Als Spalte links neben dem Blatt, nicht darüber
+  const column = (await outline.boundingBox())!
+  expect(column.x + column.width).toBeLessThanOrEqual((await page.locator('.note-paper').boundingBox())!.x)
+
+  // Klick: Die Überschrift ist im Bild (oben, soweit das Textende es zulässt), der Editor bekommt keinen Fokus
+  await outline.getByRole('button', { name: 'Ziel' }).click()
+  const target = page.locator('.cm-line', { hasText: '## Ziel' })
+  await expect(target).toBeInViewport()
+  await expect(outline.getByRole('button', { name: 'Ziel' })).toHaveAttribute('aria-current', 'location')
+  await expect(outline.getByRole('button', { name: 'Ziel' })).toBeFocused()
+  await expect(page.locator('.cm-content')).not.toBeFocused()
+  // Per Tastatur wandert der Fokus in den Editor
+  await page.keyboard.press('Home')
+  await expect(outline.getByRole('button', { name: 'Anfang' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.cm-content')).toBeFocused()
+  await shot(page, '57-outline')
+
+  // Die Spalte bleibt nach dem Neuladen
+  await page.reload()
+  await expect(outline).toBeVisible()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+  // Lesemodus: Auswahl per Tastatur setzt den Fokus auf die Überschrift
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await outline.getByRole('button', { name: 'Anfang' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.markdown-body h1', { hasText: 'Anfang' })).toBeFocused()
+  await expect(outline.getByRole('button', { name: 'Anfang' })).toHaveAttribute('aria-current', 'location')
+  // Beim Scrollen ist genau ein Abschnitt hervorgehoben – ganz unten der letzte, ganz oben der erste
+  await page.locator('.note-paper').hover()
+  await page.mouse.wheel(0, 50_000)
+  await expect(outline.getByRole('button', { name: 'Ziel' })).toHaveAttribute('aria-current', 'location')
+  await expect(outline.locator('[aria-current]')).toHaveCount(1)
+  await page.mouse.wheel(0, -50_000)
+  await expect(outline.getByRole('button', { name: 'Anfang' })).toHaveAttribute('aria-current', 'location')
+
+  // Zu schmal für die Spalte (wie mit PDF daneben): Der Knopf öffnet das Overlay, danach ist die Spalte wieder da
+  await page.setViewportSize({ width: 1100, height: 720 })
+  await expect(outline).toBeHidden()
+  await toggle.click()
+  await expect(outline).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(outline).toBeHidden()
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(outline).toBeVisible()
+
+  // Handy: Die Liste klappt über dem Blatt auf, eine Auswahl springt und schließt sie
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  const phone = await context.newPage()
+  phone.on('pageerror', (err) => consoleErrors.push(String(err)))
+  await login(phone)
+  await phone.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await phone.goto(`/?n=${note.id}`)
+  const phoneToggle = phone.getByRole('button', { name: 'Gliederung', exact: true })
+  const overlay = phone.getByRole('navigation', { name: 'Gliederung' })
+  await phoneToggle.click()
+  await expect(overlay).toBeVisible()
+  await phone.keyboard.press('Escape')
+  await expect(overlay).toBeHidden()
+  await expect(phoneToggle).toBeFocused()
+  await phoneToggle.click()
+  await overlay.getByRole('button', { name: 'Ziel' }).click()
+  await expect(overlay).toBeHidden()
+  await expect(phone.locator('.cm-line', { hasText: '## Ziel' })).toBeInViewport()
+  await expect(phone.locator('.cm-content')).not.toBeFocused()
+  await context.close()
+})
+
 test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen', async ({ page }) => {
   await login(page)
   const folder = await post(page, '/api/folders', { name: 'Glossar-Test', parentId: null }, 'folder')

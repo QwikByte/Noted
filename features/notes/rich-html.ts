@@ -1,10 +1,40 @@
 // Bausteine für formatierten Text (HTML): Anhänge, PDF-Links und Zitate – ohne den Editor selbst laden zu müssen.
 import { defaultFileUrl } from '@/shared/markdown/syntax'
-import { escapeHtml } from '@/shared/lib/html'
+import { escapeHtml, htmlToText } from '@/shared/lib/html'
 import type { Insertion, PdfRef } from './client/active-editor'
 import type { Attachment } from '@/features/attachments/types'
 
 const FILE_URL = '/api/files/'
+
+/** Überschriften, die der Editor kennt – h4 bis h6 aus eingefügtem HTML werden zu Absätzen */
+export const RICH_HEADING_LEVELS = [1, 2, 3] as const
+
+/**
+ * Überschriften 1–3 in der Reihenfolge des Dokuments – auch leere, damit die Nummern zu den Überschriften im DOM
+ * passen. Linear: öffnendes Tag suchen, das schließende per indexOf ab dort
+ */
+export function richTextHeadings(html: string): { level: number; text: string }[] {
+  const lower = html.toLowerCase()
+  const out: { level: number; text: string }[] = []
+  // Fehlt ein schließendes Tag einmal, fehlt es auch für alle späteren Überschriften dieser Ebene
+  const unclosed = new Set<number>()
+  const open = /<h([1-3])(?=[\s/>])/g
+  let m: RegExpExecArray | null
+  while ((m = open.exec(lower))) {
+    const level = Number(m[1])
+    const start = lower.indexOf('>', open.lastIndex)
+    if (start < 0) break
+    const close = unclosed.has(level) ? -1 : lower.indexOf(`</h${level}`, start)
+    if (close < 0) {
+      unclosed.add(level)
+      out.push({ level, text: '' })
+      continue
+    }
+    out.push({ level, text: htmlToText(html.slice(start + 1, close)).replace(/\s+/g, ' ') })
+    open.lastIndex = close
+  }
+  return out
+}
 
 function pdfLink(ref: PdfRef, label: string): string {
   return `<a href="${escapeHtml(defaultFileUrl(ref.file))}#page=${ref.page}">${escapeHtml(label)}</a>`

@@ -1,7 +1,7 @@
 'use client'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
-import { EditorView } from '@codemirror/view'
+import type { EditorView } from '@codemirror/view'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -31,6 +31,7 @@ import {
   PinOff,
   Printer,
   Share2,
+  TableOfContents,
   Trash2,
   Type,
   Upload,
@@ -41,6 +42,7 @@ import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { NotePrint } from './NotePrint'
+import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { HistoryDialog } from './dialogs'
@@ -66,7 +68,9 @@ import type { Attachment } from '@/features/attachments/types'
 import { errorMessage, ApiError } from '@/shared/client/api'
 import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
-import type { NoteEditorHandle } from '../client/editor-handle'
+import type { NoteEditorHandle, RichTextHandle } from '../client/editor-handle'
+import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
+import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
@@ -107,16 +111,19 @@ function useSyncStatus(id: string): NoteSyncStatus {
   )
 }
 
-/** Breit genug für Editor und Vorschau nebeneinander? Gemessen am eigenen Bereich (daneben kann ein PDF offen sein). */
-function useIsWide(ref: React.RefObject<HTMLElement | null>) {
+/**
+ * Breit genug, z. B. für Editor und Vorschau nebeneinander oder die Gliederung neben dem Blatt? Gemessen am eigenen
+ * Bereich (daneben kann ein PDF offen sein).
+ */
+function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   const [wide, setWide] = useState(false)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= 960))
+    const ro = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= minWidth))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ref])
+  }, [ref, minWidth])
   return wide
 }
 
@@ -216,7 +223,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const toast = useToast()
   // Markdown und einfacher Text: CodeMirror · formatierter Text: TipTap · Mindmap und Canvas: React Flow
   const cmRef = useRef<EditorHandle>(null)
-  const richRef = useRef<NoteEditorHandle>(null)
+  const richRef = useRef<RichTextHandle>(null)
   const visualRef = useRef<NoteEditorHandle>(null)
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
@@ -224,7 +231,10 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const { data: attachments = [] } = useAttachments()
   const status = useSyncStatus(note.id)
   const rootRef = useRef<HTMLDivElement>(null)
-  const isWide = useIsWide(rootRef)
+  const isWide = useIsWide(rootRef, 960)
+  const outlineWide = useIsWide(rootRef, OUTLINE_BESIDE_WIDTH)
+  // Bereich unter dem Kopf: Gliederung, Werkzeugleiste, Editor und Vorschau
+  const contentRef = useRef<HTMLDivElement>(null)
   const pdfInput = useRef<HTMLInputElement>(null)
 
   const initialDraft = sync.getDraft(note.id)
@@ -257,6 +267,39 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const setMode = (m: EditorMode) => {
     setModeState(m)
     setStoredMode(m)
+  }
+
+  // Gliederung: auf breiten Flächen als Spalte neben dem Blatt (ein- und ausblendbar, auf dem Gerät gemerkt), sonst
+  // als Overlay darüber, das nach jedem Öffnen der Notiz zu ist
+  const [outlinePref, setOutlinePref] = usePref<'1' | '0'>('noted:outline', '0')
+  const [outlineOverlay, setOutlineOverlay] = useState(false)
+  // Per Tastatur geöffnet: Fokus auf den aktuellen Eintrag – nur bis die Liste wieder zu ist
+  const [outlineFocus, setOutlineFocus] = useState(false)
+  const outlineId = useId()
+  const outlineButton = useRef<HTMLButtonElement>(null)
+  const withOutline = hasOutline(format)
+  const outlineBeside = outlineWide && effectiveMode !== 'split'
+  const outlineOpen = withOutline && (outlineBeside ? outlinePref === '1' : outlineOverlay)
+  if (!outlineOpen && outlineFocus) setOutlineFocus(false)
+
+  function toggleOutline(e: React.MouseEvent) {
+    const opening = !outlineOpen
+    if (outlineBeside) setOutlinePref(opening ? '1' : '0')
+    else setOutlineOverlay(opening)
+    setOutlineFocus(opening && e.detail === 0)
+  }
+
+  const closeOutline = useCallback(() => {
+    if (outlineBeside) setOutlinePref('0')
+    else setOutlineOverlay(false)
+    outlineButton.current?.focus()
+  }, [outlineBeside, setOutlinePref])
+
+  function selectOutlineEntry(entry: OutlineEntry, byKeyboard: boolean) {
+    if (!outlineBeside) setOutlineOverlay(false)
+    const view = cmRef.current?.view() ?? null
+    const target = { root: contentRef.current, format, mode: effectiveMode, view, rich: richRef.current }
+    revealEntry(target, entry, byKeyboard)
   }
 
   // Aktive Notiz merken (Konflikte hier nicht automatisch auflösen)
@@ -409,8 +452,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       const view = cmRef.current?.view()
       const line = view ? findHeadingLine(view.state.doc.toString(), heading) : null
       if (view && line !== null) {
-        const pos = view.state.doc.line(line + 1).from
-        view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 24 }) })
+        revealLine(view, line, false)
         done = true
       }
       const el = headingElement(rootRef.current, heading)
@@ -763,6 +805,21 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           >
             <ArrowLeft className="size-5" />
           </Button>
+          {withOutline ? (
+            <Button
+              ref={outlineButton}
+              variant="ghost"
+              size="icon-sm"
+              className={cn('mr-1', outlineOpen && 'bg-active text-fg')}
+              onClick={toggleOutline}
+              title="Gliederung"
+              aria-label="Gliederung"
+              aria-expanded={outlineOpen}
+              aria-controls={outlineId}
+            >
+              <TableOfContents className="size-4" />
+            </Button>
+          ) : null}
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm text-muted" aria-label="Pfad">
             {path.map((f) => (
               <span key={f.id} className="flex min-w-0 shrink items-center gap-1 @max-2xl:hidden">
@@ -861,88 +918,115 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         </div>
       ) : null}
 
-      {format === 'markdown' && effectiveMode !== 'read' ? (
-        <div className="border-b border-border">
-          <div className="mx-auto max-w-[50rem]">
-            <EditorToolbar getView={() => cmRef.current?.view() ?? null} onUpload={upload} onCreateCard={createCard} />
-          </div>
-        </div>
-      ) : null}
-
-      <div className={cn('min-h-0 flex-1', effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col')}>
-        {visual && effectiveMode !== 'split' ? (
-          visualEditor
-        ) : effectiveMode === 'read' ? null : format === 'richtext' ? (
-          <RichTextEditor
-            handleRef={richRef}
-            initialHtml={content}
-            onChange={onChange}
-            onSave={() => void sync.flush(note.id)}
-            onUpload={upload}
-            onCreateCard={createCard}
-            autoFocus={autoFocus}
-            spellcheck={spellcheck === '1'}
-            slashCommands={slashCommands === '1'}
-            header={titleInput}
+      <div ref={contentRef} className="relative flex min-h-0 flex-1">
+        {outlineOpen ? (
+          <OutlinePanel
+            id={outlineId}
+            format={format}
+            content={content}
+            mode={effectiveMode}
+            containerRef={contentRef}
+            getView={() => cmRef.current?.view() ?? null}
+            overlay={!outlineBeside}
+            autoFocus={outlineFocus}
+            onSelect={selectOutlineEntry}
+            onClose={closeOutline}
           />
-        ) : (
-          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
-              <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
-                {titleInput}
-                <div className="min-h-0 flex-1">
-                  <Editor
-                    key={format}
-                    ref={cmRef}
-                    initialDoc={content}
-                    onChange={onChange}
-                    onSave={() => void sync.flush(note.id)}
-                    onPasteFiles={upload}
-                    data={completionData}
-                    autoFocus={autoFocus}
-                    spellcheck={spellcheck === '1'}
-                    plain={format === 'text'}
-                    // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
-                    slashCommands={format === 'markdown' && slashCommands === '1'}
-                  />
-                </div>
+        ) : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {format === 'markdown' && effectiveMode !== 'read' ? (
+            <div className="border-b border-border">
+              <div className="mx-auto max-w-[50rem]">
+                <EditorToolbar
+                  getView={() => cmRef.current?.view() ?? null}
+                  onUpload={upload}
+                  onCreateCard={createCard}
+                />
               </div>
             </div>
-          </div>
-        )}
-        {visual && effectiveMode === 'split' ? (
-          <div className="flex min-h-0 flex-col">{visualEditor}</div>
-        ) : !visual && effectiveMode !== 'edit' ? (
-          <div className="note-desk min-h-0 flex-1 overflow-y-auto">
-            <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
-              {effectiveMode === 'read' ? (
-                <h1
-                  className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
-                  style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
-                >
-                  {title}
-                </h1>
-              ) : (
-                <div className="pt-6" />
-              )}
-              {readView}
-            </div>
-            {effectiveMode === 'read' ? (
-              // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
-              <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
-                {linkedCards > 0 || cardsInNote ? (
-                  <NoteCards
-                    count={linkedCards}
-                    onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
-                    onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
-                  />
+          ) : null}
+
+          <div
+            className={cn(
+              'min-h-0 flex-1',
+              effectiveMode === 'split' ? 'grid grid-cols-2 divide-x divide-border' : 'flex flex-col',
+            )}
+          >
+            {visual && effectiveMode !== 'split' ? (
+              visualEditor
+            ) : effectiveMode === 'read' ? null : format === 'richtext' ? (
+              <RichTextEditor
+                handleRef={richRef}
+                initialHtml={content}
+                onChange={onChange}
+                onSave={() => void sync.flush(note.id)}
+                onUpload={upload}
+                onCreateCard={createCard}
+                autoFocus={autoFocus}
+                spellcheck={spellcheck === '1'}
+                slashCommands={slashCommands === '1'}
+                header={titleInput}
+              />
+            ) : (
+              <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+                <div className="note-paper flex flex-col" onContextMenu={editorMenu}>
+                  <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col">
+                    {titleInput}
+                    <div className="min-h-0 flex-1">
+                      <Editor
+                        key={format}
+                        ref={cmRef}
+                        initialDoc={content}
+                        onChange={onChange}
+                        onSave={() => void sync.flush(note.id)}
+                        onPasteFiles={upload}
+                        data={completionData}
+                        autoFocus={autoFocus}
+                        spellcheck={spellcheck === '1'}
+                        plain={format === 'text'}
+                        // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
+                        slashCommands={format === 'markdown' && slashCommands === '1'}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {visual && effectiveMode === 'split' ? (
+              <div className="flex min-h-0 flex-col">{visualEditor}</div>
+            ) : !visual && effectiveMode !== 'edit' ? (
+              <div className="note-desk min-h-0 flex-1 overflow-y-auto">
+                <div className="note-paper" data-mode={effectiveMode} onContextMenu={readMenu}>
+                  {effectiveMode === 'read' ? (
+                    <h1
+                      className="mx-auto max-w-[44rem] px-5 pt-8 pb-3 leading-tight font-bold tracking-tight break-words"
+                      style={{ fontSize: 'calc(var(--editor-font-size, 16px) * 1.75)' }}
+                    >
+                      {title}
+                    </h1>
+                  ) : (
+                    <div className="pt-6" />
+                  )}
+                  {readView}
+                </div>
+                {effectiveMode === 'read' ? (
+                  // Rund um die Notiz, nicht Teil davon: neben dem Blatt auf dem Tisch
+                  <div className="mx-auto w-full max-w-[44rem] space-y-4 px-5 pt-6 pb-16 empty:hidden">
+                    {linkedCards > 0 || cardsInNote ? (
+                      <NoteCards
+                        count={linkedCards}
+                        onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
+                        onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
+                      />
+                    ) : null}
+                    <Backlinks id={note.id} />
+                    {hasLinks ? <NoteGraph id={note.id} /> : null}
+                  </div>
                 ) : null}
-                <Backlinks id={note.id} />
-                {hasLinks ? <NoteGraph id={note.id} /> : null}
               </div>
             ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
 
       <input
@@ -993,6 +1077,49 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         </div>
       </Modal>
     </div>
+  )
+}
+
+/**
+ * Gliederung mit Hervorhebung des aktuellen Abschnitts. Berechnet nur, solange sie offen ist, und aus dem verzögerten
+ * Stand – so kostet sie beim Tippen fast nichts, und geschlossen gar nichts
+ */
+function OutlinePanel({
+  format,
+  content,
+  mode,
+  containerRef,
+  getView,
+  onSelect,
+  ...props
+}: {
+  id: string
+  format: NoteFormat
+  content: string
+  mode: EditorMode
+  containerRef: React.RefObject<HTMLElement | null>
+  getView: () => EditorView | null
+  overlay: boolean
+  autoFocus: boolean
+  onSelect: (entry: OutlineEntry, byKeyboard: boolean) => void
+  onClose: () => void
+}) {
+  const deferredFormat = useDeferredValue(format)
+  const deferredContent = useDeferredValue(content)
+  const outline = useMemo(() => noteOutline(deferredFormat, deferredContent), [deferredFormat, deferredContent])
+  const spy = useOutlineSpy({ containerRef, format, mode, entries: outline.entries, getView })
+  return (
+    <NoteOutline
+      {...props}
+      format={format}
+      entries={outline.entries}
+      truncated={outline.truncated}
+      current={spy.current}
+      onSelect={(entry, byKeyboard) => {
+        spy.pin(outline.entries.indexOf(entry))
+        onSelect(entry, byKeyboard)
+      }}
+    />
   )
 }
 

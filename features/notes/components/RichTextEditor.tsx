@@ -11,10 +11,10 @@ import { EditMenuItems } from './EditorMenuItems'
 import { SlashMenu } from './SlashMenu'
 import { Bold, Italic, Layers, Strikethrough, Underline } from 'lucide-react'
 import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
-import type { NoteEditorHandle } from '../client/editor-handle'
+import type { RichTextHandle } from '../client/editor-handle'
 
 type Props = {
-  handleRef: React.Ref<NoteEditorHandle>
+  handleRef: React.Ref<RichTextHandle>
   initialHtml: string
   onChange: (html: string) => void
   onSave: () => void
@@ -167,6 +167,22 @@ export default function RichTextEditor(props: Props) {
         if (!editor) return ''
         const { from, to } = editor.state.selection
         return editor.state.doc.textBetween(from, to, '\n')
+      },
+      revealHeading: (index, focus) => {
+        if (!editor) return
+        let n = 0
+        let target = -1
+        editor.state.doc.descendants((node, pos) => {
+          if (target >= 0) return false
+          if (node.type.name !== 'heading') return true
+          if (n++ === index) target = pos
+          return false
+        })
+        if (target < 0) return
+        editor.commands.setTextSelection(target + 1)
+        const dom = editor.view.nodeDOM(target)
+        if (dom instanceof HTMLElement) dom.scrollIntoView({ block: 'start' })
+        if (focus) editor.commands.focus(undefined, { scrollIntoView: false })
       },
     }),
     [editor],

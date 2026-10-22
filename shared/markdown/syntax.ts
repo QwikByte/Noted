@@ -11,7 +11,7 @@ export type RenderEnv = {
   resolveNote?: (target: string) => ResolvedNote | null
   /** URL für einen Anhang (![[bild.png]]) */
   fileUrl?: (name: string) => string
-  /** Zeilenversatz (z. B. durch entferntes Frontmatter) für Checkbox-Zeilennummern */
+  /** Zeilenversatz (z. B. durch entferntes Frontmatter) für die Zeilennummern von Checkboxen und Überschriften */
   lineOffset?: number
   /** Links auf Notizen nur als Text – ohne Ziel, ID oder „anlegen“ (geteilte Ansicht für Gäste) */
   plainNoteLinks?: boolean
@@ -360,12 +360,14 @@ function tasksRule(state: StateCore) {
 }
 
 // ---------------------------------------------------------------------------
-// Überschriften-Anker (für [[Notiz#Abschnitt]])
+// Überschriften-Anker (für [[Notiz#Abschnitt]]) und Quellzeilen (data-line, für die Gliederung: Die Anker taugen
+// nicht als Schlüssel – doppelte werden durchnummeriert, und DOMPurify entfernt manche wie id="title")
 // ---------------------------------------------------------------------------
 
 function headingIdsRule(state: StateCore) {
   const used = new Map<string, number>()
   const tokens = state.tokens
+  const offset = (state.env as RenderEnv)?.lineOffset ?? 0
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].type !== 'heading_open') continue
     const inline = tokens[i + 1]
@@ -373,6 +375,8 @@ function headingIdsRule(state: StateCore) {
     const n = used.get(base) ?? 0
     used.set(base, n + 1)
     tokens[i].attrSet('id', n ? `${base}-${n}` : base)
+    const map = tokens[i].map
+    if (map) tokens[i].attrSet('data-line', String(map[0] + offset))
   }
 }
 
