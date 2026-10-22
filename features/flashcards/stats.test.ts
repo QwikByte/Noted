@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DAY, MINUTE, schedule } from './srs'
 import { localDate } from '@/features/calendar/dates'
 import { aggregateLog, dueForecast, reviewLogEntry, streaks, type LogRow } from './stats'
-import { stateMap } from './study'
+import { deckCounts, stateMap } from './study'
 import type { Card, CardReview } from './types'
 
 const NOW = new Date('2026-10-14T10:00:00').getTime()
@@ -99,7 +99,26 @@ describe('Auswertung', () => {
       at('c', 0, NOW + 6 * DAY),
       at('d', 0, NOW),
     ])
-    expect(dueForecast(cards, states, NOW, 7)).toEqual([2, 1, 0, 0, 0, 0, 1])
-    expect(dueForecast(cards, states, NOW, 3)).toEqual([2, 1, 0])
+    expect(dueForecast([{ id: 'd1' }], cards, states, NOW, 7)).toEqual([2, 1, 0, 0, 0, 0, 1])
+    expect(dueForecast([{ id: 'd1' }], cards, states, NOW, 3)).toEqual([2, 1, 0])
+  })
+
+  it('Vorschau vor einer Klausur: spätere Wiederholungen an den Tagen davor, wie beim Lernen', () => {
+    const decks = [{ id: 'd1', exams: [{ id: 'k', title: 'Analysis', date: localDate(new Date(NOW + 5 * DAY)) }] }]
+    const cards = Array.from({ length: 30 }, (_, i) => card(`c${i}`))
+    const states = stateMap(cards.map((c) => ({ cardId: c.id, side: 0, ...schedule(null, 4, NOW - 10 * DAY), due: NOW + 20 * DAY })))
+    const forecast = dueForecast(decks, cards, states, NOW, 30)
+    expect(forecast[20]).toBe(0)
+    // Klausur in 5 Tagen: verteilt auf die drei Tage davor (Tag 2–4)
+    expect(forecast[2] + forecast[3] + forecast[4]).toBe(30)
+    expect(forecast.filter((n) => n > 0).length).toBeGreaterThan(1)
+    // Am selben Tag, an dem der Stapel sie als fällig zählt
+    for (let day = 0; day < 5; day++) {
+      const at = NOW + day * DAY
+      const today = deckCounts({ newPerDay: 0, exams: decks[0].exams }, cards, states, at)
+      expect(today.review, `Tag ${day}`).toBe(dueForecast(decks, cards, states, at, 1)[0])
+    }
+    // Ohne Klausur bleibt es bei Tag 20
+    expect(dueForecast([{ id: 'd1' }], cards, states, NOW, 30)[20]).toBe(30)
   })
 })

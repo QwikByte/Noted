@@ -261,7 +261,7 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
 function Forecast({ now, className }: { now: number; className?: string }) {
   const { data } = useFlashcards()
   const [range, setRange] = useState<7 | 30>(7)
-  const counts = useMemo(() => (data ? dueForecast(data.cards, data.states, now, range) : []), [data, now, range])
+  const counts = useMemo(() => (data ? dueForecast(data.decks, data.cards, data.states, now, range) : []), [data, now, range])
   const max = Math.max(1, ...counts)
   const total = counts.reduce((s, n) => s + n, 0)
   const today = localDate(new Date(now))
