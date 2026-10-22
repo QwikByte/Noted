@@ -1,15 +1,16 @@
 'use client'
 // Abmelden: Sitzung beenden und alles entfernen, was das Konto auf dem Gerät hinterlassen hat
-// (Entwürfe, Lernfortschritte, Offline-Caches).
+// (Entwürfe, Lernfortschritte, Schmierzettel, Offline-Caches).
 import { api, clearCachedData } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
 import { focusSessions, GOAL_KEY, SUBJECT_KEY } from '@/features/focus/client/sessions'
 import { pdfAnnotations } from '@/features/pdf/client/annotations'
+import { scratchpad } from '@/features/scratchpad/client/scratchpad'
 
 export async function logout() {
-  // Noch nicht gesendete Lernfortschritte, Fokus-Runden und PDF-Anmerkungen möglichst mitnehmen
-  await Promise.all([reviewQueue.flush(), focusSessions.flush(), pdfAnnotations.flush()])
+  // Noch nicht gesendete Lernfortschritte, Fokus-Runden, PDF-Anmerkungen und den Schmierzettel möglichst mitnehmen
+  await Promise.all([reviewQueue.flush(), focusSessions.flush(), pdfAnnotations.flush(), scratchpad.flush()])
   try {
     await api('/api/auth/logout', { method: 'POST' })
   } catch {
@@ -19,6 +20,7 @@ export async function logout() {
   reviewQueue.clearAll()
   focusSessions.clearAll()
   pdfAnnotations.clearAll()
+  scratchpad.clearAll()
   // Zuletzt geöffnetes PDF und Lesepositionen gehören zum Konto
   for (const key of ['noted:pdf', 'noted:pdfpos', 'noted:lastDeck', SUBJECT_KEY, GOAL_KEY]) localStorage.removeItem(key)
   await clearCachedData()
@@ -27,7 +29,8 @@ export async function logout() {
 
 /** Abmelden – fragt nach, wenn noch Änderungen auf die Synchronisierung warten. */
 export async function confirmLogout() {
-  if (sync.hasPending() && !confirm('Es gibt noch nicht synchronisierte Änderungen. Beim Abmelden gehen sie verloren. Trotzdem abmelden?')) {
+  const pending = sync.hasPending() || scratchpad.hasPending()
+  if (pending && !confirm('Es gibt noch nicht synchronisierte Änderungen. Beim Abmelden gehen sie verloren. Trotzdem abmelden?')) {
     return
   }
   await logout()

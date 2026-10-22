@@ -251,3 +251,79 @@ test('Fokus-Timer: Countdown mit eigener Dauer und Systembenachrichtigung', asyn
   await expect(win.getByRole('button', { name: 'Start' })).toBeVisible()
   await expect(bar.getByTestId('focus-badge')).toHaveCount(0)
 })
+
+test('Schmierzettel: per Alt+J schreiben, auf zwei Geräten, in eine Notiz übernehmen', async ({ page, browser }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  // Alle Tests teilen sich den Server: Zettel des Admins leeren
+  const current = (await (await page.request.get('/api/scratchpad')).json()).scratchpad
+  const emptied = await page.request.put('/api/scratchpad', { headers, data: { content: '', baseVersion: current.version } })
+  expect(emptied.ok()).toBe(true)
+  const res = await page.request.post('/api/notes', { headers, data: { title: 'Vorlesung', content: 'Erster Absatz' } })
+  const note = (await res.json()).note as { id: string }
+  const cleanup = [note.id]
+
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${note.id}`)
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('Control+End')
+
+  // Alt+J öffnet den Zettel – die Leiste ist eingeklappt –, der Cursor steht im Textfeld, im Editor erscheint nichts
+  await page.keyboard.press('Alt+KeyJ')
+  const win = page.getByTestId('window-scratchpad')
+  const pad = win.getByRole('textbox', { name: 'Schmierzettel' })
+  await expect(pad).toBeFocused()
+  await page.keyboard.type('Raum 3.14 statt 2.01')
+  await expect(win.getByTestId('scratchpad-status')).toContainText('Gespeichert')
+  await expect(editor).toHaveText('Erster Absatz')
+  await shot(page, '58-scratchpad')
+
+  // Escape: zurück an die vorherige Stelle im Editor
+  await page.keyboard.press('Escape')
+  await expect(win).toBeHidden()
+  await expect(editor).toBeFocused()
+  await page.keyboard.type(' und mehr')
+  await expect(editor).toHaveText('Erster Absatz und mehr')
+
+  // Ein anderes Gerät sieht den Text und schreibt eine Zeile dazu
+  const context = await browser.newContext()
+  const other = await context.newPage()
+  other.on('pageerror', (err) => consoleErrors.push(String(err)))
+  await login(other)
+  await other.keyboard.press('Alt+KeyJ')
+  const otherPad = other.getByTestId('window-scratchpad').getByRole('textbox', { name: 'Schmierzettel' })
+  await expect(otherPad).toHaveValue('Raum 3.14 statt 2.01')
+  await otherPad.press('Control+End')
+  await other.keyboard.type('\nTel. 0123 456')
+  await expect(other.getByTestId('scratchpad-status')).toContainText('Gespeichert')
+  await context.close()
+
+  // Über die Leiste geöffnet, lädt der Zettel den Stand des anderen Geräts
+  await page.getByTestId('global-toolbar').getByRole('button', { name: 'Werkzeuge' }).click()
+  await page.getByRole('toolbar', { name: 'Werkzeuge' }).getByRole('button', { name: 'Schmierzettel' }).click()
+  await expect(pad).toHaveValue('Raum 3.14 statt 2.01\nTel. 0123 456')
+
+  // In die offene Notiz einfügen leert den Zettel, „Zurückholen“ stellt ihn wieder her
+  await win.getByRole('button', { name: 'In offene Notiz einfügen' }).click()
+  await expect(editor).toContainText('Tel. 0123 456')
+  await expect(pad).toHaveValue('')
+  await page.getByRole('status').getByRole('button', { name: 'Zurückholen' }).click()
+  await expect(pad).toHaveValue('Raum 3.14 statt 2.01\nTel. 0123 456')
+
+  // Leeren lässt sich rückgängig machen
+  await win.getByRole('button', { name: 'Leeren' }).click()
+  await expect(pad).toHaveValue('')
+  await page.getByRole('status').getByRole('button', { name: 'Rückgängig' }).click()
+  await expect(pad).toHaveValue('Raum 3.14 statt 2.01\nTel. 0123 456')
+
+  // Als neue Notiz: Die Ansicht bleibt, „Öffnen“ zeigt sie
+  await win.getByRole('button', { name: 'Als neue Notiz' }).click()
+  await expect(pad).toHaveValue('')
+  await expect(page.getByTestId('note-title')).toHaveValue('Vorlesung')
+  await page.getByRole('status').getByRole('button', { name: 'Öffnen' }).click()
+  await expect(page.getByTestId('note-title')).toHaveValue('Raum 3.14 statt 2.01')
+  await expect(page.getByTestId('save-status')).toContainText('Gespeichert')
+  cleanup.push(new URL(page.url()).searchParams.get('n')!)
+  for (const id of cleanup) await page.request.delete(`/api/notes/${id}?permanent=1`, { headers })
+})

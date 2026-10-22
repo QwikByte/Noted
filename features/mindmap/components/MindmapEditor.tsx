@@ -675,7 +675,10 @@ function MindmapFlow({ handleRef, content, title, onChange, readOnly, links, onU
       focus: () => focusFlow(),
       setDoc: (markdown) => setDoc({ source: markdown, root: parseMindmap(markdown, title) }),
       insert: (insertion) => {
-        // Seitenlink oder Zitate aus dem PDF als Unterpunkte des ausgewählten Knotens
+        // Seitenlink, Zitate aus dem PDF oder Zeilen vom Schmierzettel als Unterpunkte des ausgewählten Knotens
+        if (insertion.kind === 'text') {
+          return insert('child', insertion.text.split('\n').map(cleanNodeText).filter(Boolean))
+        }
         if (insertion.kind === 'page-link') return insert('child', cleanNodeText(pdfPageLink(insertion.ref)))
         const quotes = insertion.kind === 'quotes' ? insertion.quotes : [insertion]
         insert('child', quotes.map((q) => cleanNodeText(`„${q.text}“ ${pdfPageLink(q.ref)}`)))

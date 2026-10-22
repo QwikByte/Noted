@@ -40,8 +40,16 @@ function pdfLink(ref: PdfRef, label: string): string {
   return `<a href="${escapeHtml(defaultFileUrl(ref.file))}#page=${ref.page}">${escapeHtml(label)}</a>`
 }
 
-/** Seitenlink oder Zitat aus dem PDF-Viewer als HTML */
+/** Seitenlink oder Zitat aus dem PDF-Viewer bzw. Text vom Schmierzettel als HTML */
 export function insertionToHtml(insertion: Insertion): string {
+  if (insertion.kind === 'text') {
+    // Leerzeilen trennen Absätze, einzelne Zeilenumbrüche bleiben Umbrüche – Markup im Text bleibt Text
+    return insertion.text
+      .split(/\n(?:[ \t]*\n)+/)
+      .filter((p) => p.trim())
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+      .join('')
+  }
   if (insertion.kind === 'page-link') {
     const { ref } = insertion
     return `<p>${pdfLink(ref, `${ref.file}, S. ${ref.page}`)}</p>`

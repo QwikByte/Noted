@@ -490,4 +490,14 @@ export const migrations: string[] = [
     optimized_at INTEGER NOT NULL
   );
   `,
+
+  /* 24: Schmierzettel – ein Text je Konto, keine Notiz (nicht in Suche, Tags, Graph oder Export). version zählt
+     jede Änderung hoch; der Browser schickt die Version mit, auf der sein Text beruht (Konflikt zwischen Geräten). */ `
+  CREATE TABLE scratchpads (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ]

@@ -10,6 +10,7 @@ import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
 import { focusSessions } from '@/features/focus/client/sessions'
 import { pdfAnnotations } from '@/features/pdf/client/annotations'
+import { scratchpad } from '@/features/scratchpad/client/scratchpad'
 import { startUpdateWatcher } from '@/features/updates/client/app-update'
 import { applyTheme, type Theme } from '@/shared/client/prefs'
 import { UserProvider } from '@/features/auth/client/current-user'
@@ -46,6 +47,7 @@ export function AppProviders({
     reviewQueue.start(user.id, client)
     focusSessions.start(user.id, client)
     pdfAnnotations.start(user.id, client)
+    scratchpad.start(user.id, client)
     startUpdateWatcher()
     // Systemeinstellung „Dunkel“ live übernehmen
     const mq = matchMedia('(prefers-color-scheme: dark)')

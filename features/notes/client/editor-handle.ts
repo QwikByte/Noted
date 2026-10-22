@@ -7,7 +7,7 @@ export type NoteEditorHandle = {
   focus: () => void
   /** Inhalt komplett ersetzen, ohne ihn als Änderung zu speichern (z. B. neuerer Stand vom Server) */
   setDoc: (doc: string) => void
-  /** Seitenlink oder Zitat aus dem PDF-Viewer als eigenen Absatz einfügen */
+  /** Seitenlink oder Zitat aus dem PDF-Viewer bzw. Text vom Schmierzettel als eigenen Absatz einfügen */
   insert: (insertion: Insertion) => void
   /** Hochgeladenen Anhang an der Cursorposition einfügen */
   insertAttachment: (att: Attachment) => void

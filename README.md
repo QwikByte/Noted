@@ -93,9 +93,9 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **.ics-Import und -Export** (Menü ⋮ im Kalender): Stundenplan aus dem Vorlesungsverzeichnis, aus Outlook oder Google einmalig übernehmen. Zeiten aus anderen Zeitzonen rechnet Noted in die Ortszeit des Geräts um. Wöchentliche Serien bleiben Serien, einzelne Ausnahmen und Änderungen werden übernommen; andere Wiederholungen (täglich, monatlich) übernimmt Noted nur mit dem ersten Termin. Ein zweiter Import derselben Datei legt nichts doppelt an. Der Export (`Kalender.ics`) lässt sich in jede Kalender-App einlesen; ob ein Termin eine Klausur ist, steht nicht darin.
 - Zeiten gelten als Ortszeit – eine Vorlesung um 10:15 bleibt auch nach der Zeitumstellung um 10:15. Erinnerungen gibt es (noch) nicht. Zuletzt geladene Termine sind auch offline lesbar.
 
-**Werkzeugleiste und Fokus-Timer**
+**Werkzeugleiste, Fokus-Timer und Schmierzettel**
 - Ein schmaler Griff sitzt mittig am rechten Bildschirmrand – auf der ganzen App (Notizen, Karteikarten, Einstellungen, Administration). Ein Klick klappt die Werkzeugleiste auf, der Pfeil wieder zu; der Zustand bleibt auf dem Gerät gespeichert.
-- Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
+- Werkzeuge öffnen sich als kleine Fenster, die sich am Kopf verschieben lassen. Klicks auf Knöpfe in Leiste und Fenster lassen den Cursor im Editor, du kannst also nebenher weiterschreiben.
 - Der Mini-Timer verdeckt nichts: Er setzt sich über die Bewertungsknöpfe beim Lernen und steht neben der Seitenleiste.
 - **Fokus-Timer:**
   - *Pomodoro*: 25 Minuten Fokus, 5 Minuten Pause, nach 4 Runden eine lange Pause von 15 Minuten. Alle Zeiten sind einstellbar, Fokus und Pausen wechseln automatisch.
@@ -105,12 +105,16 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Am Ende einer Phase gibt es einen Ton und eine Meldung. Auf Wunsch kommt zusätzlich eine Systembenachrichtigung, wenn du gerade nicht in Noted bist.
   - Der Timer läuft beim Seitenwechsel und nach dem Neuladen weiter und gilt für alle offenen Tabs. Er wird nur auf dem Gerät gespeichert, nicht auf dem Server.
   - **Lernzeit pro Fach:** Trag im Fenster ein Fach (Vorschläge aus früheren Runden und deinen Stapeln) und optional ein Ziel ein. Nach jeder Fokus-Runde bzw. jedem Countdown fragt Noted, ob die Runde zählen soll – per „Zählen“ in der Meldung oder im Fenster. Gezählte Runden landen auf dem Server (offline gesammelt und später gesendet); die **Lernstatistik** zeigt die Lernzeit je Fach der letzten vier Wochen.
+- **Schmierzettel** (`Alt + J`, auch bei eingeklappter Leiste): ein Textfeld für alles, was nebenbei anfällt – Telefonnummer, Rechnung, Raumänderung, Idee in der Vorlesung. Ein Zettel je Konto, auf allen Geräten derselbe und offline nutzbar (gespeichert wird zuerst auf dem Gerät, dann auf dem Server; haben zwei Geräte gleichzeitig geändert, stehen danach beide Änderungen darin). Er zählt nicht als Notiz: Suche, Tags, Graph, Rückverweise und Export sehen ihn nicht. Höchstens 20 000 Zeichen.
+  - **In offene Notiz einfügen** setzt den Text als eigenen Absatz an die Cursorposition (im Lesemodus ans Ende; in einer Mindmap wird jede Zeile ein Unterpunkt, im Canvas eine Textkarte). **Als neue Notiz** legt eine Markdown-Notiz an, deren Titel aus der ersten Zeile kommt – die Ansicht bleibt, „Öffnen“ in der Meldung führt hin. **Leeren** leert ihn. Danach ist der Zettel leer; Einfügen und Leeren lassen sich über die Meldung zurückholen.
+  - `Alt + J` setzt den Cursor ins Textfeld, `Esc` schließt den Zettel und springt zurück an die vorherige Stelle im Editor.
 
 **Export & Import**
 - ZIP-Export aller Notizen mit Ordnerstruktur und Dateien (Ordner `Anhänge/`). Canvas-Karten mit Notizen und Dateien verweisen dabei auf die Pfade im ZIP.
 - Anmerkungen eines PDFs liegen daneben als lesbare Markdown-Datei (`Anhänge/Skript.pdf.anmerkungen.md`: Seite, Zitat, Kommentar). Beim Import eines Exports werden sie übersprungen.
 - Karteikarten-Stapel landen im Ordner `Karteikarten/` als Markdown (`Frage::Antwort`, `?`, Lückentexte mit `==…==`, `#flashcards/…`) – „Karteikarten aus Notiz“ erkennt sie wieder. Für Bildverdeckung gibt es kein Markdown-Format: Sie wird als Titel, Bild und die Beschriftungen als Lücken exportiert. Der Lernstand selbst wird nicht exportiert. Einzelne Stapel lassen sich auch über **⋮ → Als Markdown kopieren** übernehmen. Daneben liegt jeder Stapel als verlustfreie `.noted-deck.zip`; beim Import zählt dann nur sie, damit keine Notiz aus der `.md` entsteht.
 - Die Termine liegen als `Kalender.ics` im ZIP.
+- Der Schmierzettel gehört nicht zum Export.
 - Import von `.md`-Dateien (Mindmaps mit `mindmap-plugin: basic` werden als Mindmap erkannt), `.html`-Dateien (werden zu formatiertem Text), `.canvas`-Dateien, Kalendern (`.ics`, die Termine kommen in den Kalender), Karteikarten-Stapeln (`.noted-deck.zip`), ZIP-Archiven (z. B. einem Export aus Noted oder einem Ordner mit Markdown-Dateien) und beliebigen Dateien (kommen unter **Dateien**).
 
 **Unterwegs & offline (PWA)**
@@ -330,6 +334,7 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | --- | --- |
 | `Strg/⌘ + K` (oder `+ O`) | Schnellwechsler: Notiz suchen, öffnen oder anlegen |
 | `Alt + N` | Neue Notiz |
+| `Alt + J` | Schmierzettel öffnen bzw. den Cursor hineinsetzen (`Esc` springt zurück) |
 | `Strg/⌘ + Shift + F` | Volltextsuche |
 | `Strg/⌘ + S` | Sofort speichern (passiert sonst automatisch) |
 | `Strg/⌘ + F` | Im Editor suchen und ersetzen |
@@ -380,6 +385,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
   sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung
   focus/                Fokus-Timer: Pomodoro und Countdown, Ton und Benachrichtigung, gezählte Runden (Lernzeit pro Fach)
+  scratchpad/           Schmierzettel: ein Text je Konto, lokal zuerst gespeichert, Zusammenführen zwischen Geräten, Übernehmen in Notizen
   calendar/             Kalender: Termine und wöchentliche Serien, Woche/Monat, Terminliste, .ics lesen und schreiben
   pdf/                  PDF-Viewer (pdf.js), geteilte Ansicht und Anmerkungen (Markierungen mit Kommentar)
   transfer/             Export und Import (ZIP mit Ordnerstruktur, Dateien, Karteikarten und Kalender)

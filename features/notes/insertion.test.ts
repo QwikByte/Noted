@@ -28,4 +28,13 @@ describe('Einfügen aus dem PDF-Viewer', () => {
         '<blockquote><p>Entropie &lt;wächst&gt;<br>zweite Zeile<br><a href="/api/files/Skript.pdf#page=12">S. 12</a></p></blockquote>',
     )
   })
+
+  it('übernimmt Text vom Schmierzettel unverändert (Markdown) und als Absätze (formatierter Text)', () => {
+    const text = 'Raum 3.14 statt 2.01\nab 10 Uhr\n\n<b>Tel.</b> 0123 & 456'
+    expect(insertionToMarkdown({ kind: 'text', text })).toBe(text)
+    expect(insertionToHtml({ kind: 'text', text })).toBe(
+      '<p>Raum 3.14 statt 2.01<br>ab 10 Uhr</p><p>&lt;b&gt;Tel.&lt;/b&gt; 0123 &amp; 456</p>',
+    )
+    expect(insertionToHtml({ kind: 'text', text: 'eins\n \n\n\nzwei' })).toBe('<p>eins</p><p>zwei</p>')
+  })
 })
