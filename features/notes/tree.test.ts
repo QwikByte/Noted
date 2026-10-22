@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canMoveTo } from './tree'
+import { canMoveTo, folderByPath } from './tree'
 import type { Folder, NoteSummary } from './types'
 
 const folder = (id: string, parentId: string | null = null): Folder => ({
@@ -69,5 +69,26 @@ describe('Verschieben per Drag & Drop', () => {
     expect(canMoveTo({ kind: 'folder', id: 'geheim' }, null, notes, all)).toBe(false)
     expect(canMoveTo({ kind: 'folder', id: 'privat' }, 'tresor', notes, all)).toBe(false)
     expect(canMoveTo({ kind: 'folder', id: 'tresor' }, 'uni', notes, all)).toBe(false)
+  })
+})
+
+describe('Ordner zu einem Pfad', () => {
+  const folders = [
+    folder('Physik'),
+    { ...folder('w1', 'Physik'), name: 'Wellen' },
+    folder('Mathe'),
+    { ...folder('w2', 'Mathe'), name: 'Wellen' },
+    { ...folder('Tresor'), vault: true },
+  ]
+
+  it('sucht ab der obersten Ebene, Groß-/Kleinschreibung egal', () => {
+    expect(folderByPath(folders, ['physik'])).toBe(folders[0])
+    expect(folderByPath(folders, ['Mathe', 'WELLEN'])).toBe(folders[3])
+  })
+
+  it('findet nichts bei unbekanntem Pfad, Unterordnern ohne Pfad und im Tresor', () => {
+    expect(folderByPath(folders, ['Chemie'])).toBeNull()
+    expect(folderByPath(folders, ['Wellen'])).toBeNull()
+    expect(folderByPath(folders, ['Tresor'])).toBeNull()
   })
 })

@@ -420,3 +420,41 @@ test('Notiz per Link teilen: Gäste lesen ohne Konto, nach dem Widerruf ist der 
   await expect(g.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible()
   await guest.close()
 })
+
+test('Links ins Leere: ungültige Zeichen fragen nach, ein Ordnerpfad legt im Ordner an', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = (await (await page.request.post('/api/folders', { headers, data: { name: 'Physik Linkziele' } })).json()).folder
+  cleanup.unshift(`/api/folders/${folder.id}`)
+  const note = (
+    await (
+      await page.request.post('/api/notes', {
+        headers,
+        data: { title: 'Linkziele', content: '[[Was ist Entropie?]] und [[Physik Linkziele/Wellen Linkziele]]' },
+      })
+    ).json()
+  ).note
+  cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+  const titles = async () =>
+    ((await (await page.request.get('/api/notes')).json()).notes as { title: string; folderId: string | null; id: string }[])
+      .filter((n) => n.title.includes('Entropie') || n.title.includes('Wellen'))
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+
+  // Ungültiges Zeichen: kein Entwurf, der beim Speichern scheitert, sondern der Dialog mit bereinigtem Titel
+  await page.locator('.markdown-body a.wikilink.unresolved', { hasText: 'Was ist Entropie?' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Neue Notiz' })
+  await expect(dialog.getByLabel('Titel')).toHaveValue('Was ist Entropie-')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator('.markdown-body')).toBeVisible()
+  expect(await titles()).toEqual([])
+
+  // Ordner/Titel: „Wellen Linkziele“ im Ordner „Physik Linkziele“, der Link ist danach aufgelöst
+  await page.locator('.markdown-body a.wikilink.unresolved', { hasText: 'Wellen Linkziele' }).click()
+  await expect.poll(async () => (await titles()).map((n) => [n.title, n.folderId])).toEqual([['Wellen Linkziele', folder.id]])
+  cleanup.unshift(`/api/notes/${(await titles())[0].id}?permanent=1`)
+  await page.goto(`/?n=${note.id}`)
+  await expect(page.locator('.markdown-body a.wikilink', { hasText: 'Wellen Linkziele' })).not.toHaveClass(/unresolved/)
+})

@@ -422,7 +422,9 @@ export default function PdfPanel({
       action: {
         label: 'Neue Notiz',
         onClick: () =>
-          void app.createNote({ title: baseName(file), folderId: null, format: 'markdown', content: insertionToMarkdown(insertion) + '\n' }),
+          void app
+            .createNote({ title: baseName(file), folderId: null, format: 'markdown', content: insertionToMarkdown(insertion) + '\n' })
+            .catch((err) => toast.error(errorMessage(err))),
       },
     })
   }

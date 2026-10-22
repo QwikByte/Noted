@@ -63,7 +63,8 @@ import { attachmentsKey, useAttachments } from '@/features/attachments/client/qu
 import { conflictCopyTitle, sync, type NoteSyncStatus } from '../client/sync'
 import { usePref, type EditorMode } from '@/shared/client/prefs'
 import { copyHtml, copyText } from '@/shared/client/clipboard'
-import { folderPath } from '../tree'
+import { folderByPath, folderPath } from '../tree'
+import { noteFromLinkTarget } from '../link-target'
 import { formatDateTime, formatRelative, wordCount } from '@/shared/lib/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import type { Attachment } from '@/features/attachments/types'
@@ -561,12 +562,21 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         app.go({ kind: 'note', id, heading: isVaultNote(id) ? undefined : target })
       },
       isVaultNote,
-      // Ein unaufgelöster Link im Tresor legt die neue Notiz im selben Tresor-Ordner an
-      onCreateNote: (t) => void app.createNote({ title: t, folderId }).catch((err) => toast.error(errorMessage(err))),
+      onCreateNote: (target) => {
+        const next = noteFromLinkTarget(target)
+        if ('error' in next) {
+          // Nicht still anlegen (der Server lehnte den Titel ab), sondern mit bereinigtem Titel nachfragen
+          toast.show(`${next.error} Der Link „${target}“ passt danach nicht mehr zum Titel.`)
+          return app.openNewNote({ title: next.suggestion, folderId })
+        }
+        // [[Ordner/Titel]] legt im passenden Ordner an, sonst im Ordner dieser Notiz – im Tresor immer im selben Ordner
+        const folder = !inVault && next.folderPath.length > 0 ? folderByPath(folders, next.folderPath) : null
+        void app.createNote({ title: next.title, folderId: folder?.id ?? folderId }).catch((err) => toast.error(errorMessage(err)))
+      },
       onOpenTag: (tag) => app.go({ kind: 'tag', tag }),
       onOpenPdf: app.openPdf,
     }),
-    [resolveNote, isVaultNote, app, folderId, toast],
+    [resolveNote, isVaultNote, app, folderId, toast, inVault, folders],
   )
 
   /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */

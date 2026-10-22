@@ -46,6 +46,19 @@ export function folderPath(folders: Folder[], id: string | null): Folder[] {
   return path
 }
 
+/** Ordner zu einem Pfad ab der obersten Ebene, z. B. ["Semester 1", "Analysis"] – Groß-/Kleinschreibung egal, ohne Tresor */
+export function folderByPath(folders: Folder[], path: string[]): Folder | null {
+  let parentId: string | null = null
+  let found: Folder | undefined
+  for (const name of path) {
+    const parent: string | null = parentId
+    found = folders.find((f) => !f.vault && f.parentId === parent && f.name.toLowerCase() === name.toLowerCase())
+    if (!found) return null
+    parentId = found.id
+  }
+  return found ?? null
+}
+
 /** Alle Unterordner-IDs (inkl. des Ordners selbst) */
 export function descendantFolderIds(folders: Folder[], id: string): Set<string> {
   const result = new Set([id])
