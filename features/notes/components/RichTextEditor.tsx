@@ -4,9 +4,11 @@
 import { useEffect, useImperativeHandle, useRef } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { richTextExtensions } from '../client/rich-text'
+import { useRichSlash } from '../client/rich-slash'
 import { attachmentHtml, insertionToHtml } from '../rich-html'
 import { RichTextToolbar } from './RichTextToolbar'
 import { EditMenuItems } from './EditorMenuItems'
+import { SlashMenu } from './SlashMenu'
 import { Bold, Italic, Layers, Strikethrough, Underline } from 'lucide-react'
 import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import type { NoteEditorHandle } from '../client/editor-handle'
@@ -20,6 +22,8 @@ type Props = {
   onCreateCard: () => void
   autoFocus?: boolean
   spellcheck?: boolean
+  /** Menü mit Befehlen nach „/“ */
+  slashCommands?: boolean
   /** Über dem Text, z. B. das Titelfeld */
   header: React.ReactNode
 }
@@ -34,6 +38,8 @@ export default function RichTextEditor(props: Props) {
   useEffect(() => {
     latest.current = props
   })
+  // Zustand des Menüs „/“ für handleKeyDown – der Editor wird nur einmal angelegt
+  const slashRef = useRef<ReturnType<typeof useRichSlash> | null>(null)
 
   const editor = useEditor({
     extensions: richTextExtensions({ placeholder: 'Schreib los …' }),
@@ -50,6 +56,22 @@ export default function RichTextEditor(props: Props) {
         'data-testid': 'rich-editor',
       },
       handleKeyDown: (_view, event) => {
+        // Offenes Menü „/“: Pfeiltasten wählen, Enter fügt ein, Esc schließt – Tab rückt weiter ein
+        const slash = slashRef.current
+        if (slash?.match && !event.isComposing) {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            slash.move(event.key === 'ArrowDown' ? 1 : -1)
+            return true
+          }
+          if (event.key === 'Enter') {
+            slash.run(slash.selected)
+            return true
+          }
+          if (event.key === 'Escape') {
+            slash.dismiss()
+            return true
+          }
+        }
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return false
         event.preventDefault()
         latest.current.onSave()
@@ -77,6 +99,11 @@ export default function RichTextEditor(props: Props) {
       if (!transaction.docChanged) return
       latest.current.onChange(e.isEmpty ? '' : e.getHTML())
     },
+  })
+
+  const slash = useRichSlash(editor, { enabled: props.slashCommands !== false, onUpload: props.onUpload })
+  useEffect(() => {
+    slashRef.current = slash
   })
 
   const openContextMenu = useContextMenu()
@@ -161,6 +188,9 @@ export default function RichTextEditor(props: Props) {
           <EditorContent editor={editor} />
         </div>
       </div>
+      {editor && slash.match ? (
+        <SlashMenu editor={editor} from={slash.match.from} items={slash.items} selected={slash.selected} onPick={slash.run} />
+      ) : null}
     </div>
   )
 }

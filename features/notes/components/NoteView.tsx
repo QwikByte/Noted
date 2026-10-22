@@ -237,6 +237,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [shareOpen, setShareOpen] = useState(false)
   const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
+  const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -872,6 +873,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
             onCreateCard={createCard}
             autoFocus={autoFocus}
             spellcheck={spellcheck === '1'}
+            slashCommands={slashCommands === '1'}
             header={titleInput}
           />
         ) : (
@@ -891,6 +893,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                     autoFocus={autoFocus}
                     spellcheck={spellcheck === '1'}
                     plain={format === 'text'}
+                    // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
+                    slashCommands={format === 'markdown' && slashCommands === '1'}
                   />
                 </div>
               </div>

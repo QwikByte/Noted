@@ -34,6 +34,13 @@ export function wrapSelection(view: EditorView, before: string, after = before, 
   view.focus()
 }
 
+/** Präfix einfügen – ein Cursor genau an der Stelle (z. B. in einer leeren Zeile) landet dahinter, nicht davor */
+function dispatchKeepingCursorAfter(view: EditorView, spec: ChangeSpec) {
+  const changes = view.state.changes(spec)
+  view.dispatch({ changes, selection: view.state.selection.map(changes, 1), userEvent: 'input', scrollIntoView: true })
+  view.focus()
+}
+
 const LINE_PREFIX_RE = /^(\s*)(#{1,6}\s+|>\s?|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)?/
 
 /** Präfix für alle ausgewählten Zeilen setzen/entfernen (Listen, Zitate, Überschriften). */
@@ -62,8 +69,7 @@ export function toggleLinePrefix(view: EditorView, prefix: string | ((i: number)
     const p = typeof prefix === 'string' ? prefix : prefix(i)
     changes.push({ from, to, insert: allHave && existing ? '' : p })
   })
-  view.dispatch({ changes, userEvent: 'input', scrollIntoView: true })
-  view.focus()
+  dispatchKeepingCursorAfter(view, changes)
 }
 
 export function setHeading(view: EditorView, level: number) {
@@ -72,11 +78,7 @@ export function setHeading(view: EditorView, level: number) {
   const m = /^(#{1,6})\s+/.exec(line.text)
   const current = m ? m[1].length : 0
   const prefix = current === level ? '' : '#'.repeat(level) + ' '
-  view.dispatch({
-    changes: { from: line.from, to: line.from + (m ? m[0].length : 0), insert: prefix },
-    userEvent: 'input',
-  })
-  view.focus()
+  dispatchKeepingCursorAfter(view, { from: line.from, to: line.from + (m ? m[0].length : 0), insert: prefix })
 }
 
 /** Text an der Cursorposition einfügen; `cursor` = Position des Cursors innerhalb des Texts. */
@@ -93,7 +95,7 @@ export function insertText(view: EditorView, text: string, cursor = text.length,
 }
 
 /** Block (z. B. Tabelle, Callout) in eigenen Zeilen einfügen. */
-function insertBlock(view: EditorView, block: string, cursorInBlock?: number) {
+export function insertBlock(view: EditorView, block: string, cursorInBlock?: number) {
   const { state } = view
   const range = state.selection.main
   const line = state.doc.lineAt(range.from)

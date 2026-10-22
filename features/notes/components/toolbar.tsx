@@ -1,8 +1,8 @@
 'use client'
 // Bausteine der Editor-Werkzeugleisten (Markdown und formatierter Text)
-import { useRef } from 'react'
 import { Camera, Paperclip } from 'lucide-react'
 import { cn } from '@/shared/ui/cn'
+import { pickFiles } from '../client/pick-files'
 
 export function ToolButton({
   label,
@@ -47,23 +47,18 @@ export const Divider = () => <div className="mx-1 h-5 w-px shrink-0 bg-border" /
 
 /** Datei anhängen und (auf dem Handy) direkt ein Foto aufnehmen */
 export function AttachButtons({ onUpload }: { onUpload: (files: File[]) => void }) {
-  const fileInput = useRef<HTMLInputElement>(null)
-  const cameraInput = useRef<HTMLInputElement>(null)
-  const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    e.target.value = ''
-    if (files.length) onUpload(files)
-  }
+  const pick = (opts?: { accept: string; capture: string }) =>
+    void pickFiles(opts).then((files) => {
+      if (files.length) onUpload(files)
+    })
   return (
     <>
-      <ToolButton label="Datei anhängen" onClick={() => fileInput.current?.click()}>
+      <ToolButton label="Datei anhängen" onClick={() => pick()}>
         <Paperclip />
       </ToolButton>
-      <ToolButton label="Foto aufnehmen" onClick={() => cameraInput.current?.click()} className="sm:hidden">
+      <ToolButton label="Foto aufnehmen" onClick={() => pick({ accept: 'image/*', capture: 'environment' })} className="sm:hidden">
         <Camera />
       </ToolButton>
-      <input ref={fileInput} type="file" multiple hidden onChange={pick} />
-      <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={pick} />
     </>
   )
 }

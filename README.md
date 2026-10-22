@@ -19,6 +19,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Aufgaben (`- [ ]`, in der Vorschau abhakbar)
   - `==Markierungen==`, Fußnoten, Code-Hervorhebung, `%%Kommentare%%`
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
+- **Befehle mit `/`:** Ein `/` am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü: Überschriften, Listen, Aufgaben, Zitat, Callout, Tabelle, Formeln, Code, Mermaid-Diagramm, Trennlinie, Wikilink, Karteikarte, Datum von heute sowie Bild oder Datei. Weitertippen filtert (`/tab`, `/h2`, `/formel`), `Enter`, Klick oder Antippen fügt ein, `Esc` schließt. In Code, Formeln, Properties und Tabellenzeilen bleibt das `/` einfach ein Zeichen. Abschaltbar unter **Einstellungen → Darstellung**.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
@@ -31,7 +32,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **Fünf Formate für Notizen**
 - Beim Anlegen wählst du das Format; Noted merkt sich die Wahl für die nächste Notiz.
   - **Markdown** (Standard): alles oben Beschriebene.
-  - **Formatierter Text**: schreiben wie in Word – Überschriften, fett, kursiv, unterstrichen, Schriftgröße, Schriftfarbe, farbige Markierungen, Ausrichtung, Listen, Aufgaben, Tabellen, Links und Bilder. Gespeichert wird HTML; der Export legt solche Notizen als `.html` ab. Kopieren übernimmt die Formatierung, z. B. zum Einfügen in Word.
+  - **Formatierter Text**: schreiben wie in Word – Überschriften, fett, kursiv, unterstrichen, Schriftgröße, Schriftfarbe, farbige Markierungen, Ausrichtung, Listen, Aufgaben, Tabellen, Links und Bilder – auch hier mit Befehlen nach `/`. Gespeichert wird HTML; der Export legt solche Notizen als `.html` ab. Kopieren übernimmt die Formatierung, z. B. zum Einfügen in Word.
   - **Einfacher Text**: nur Text, nichts wird als Formatierung gelesen. Export und Download als `.md`.
   - **Mindmap**: Gedanken als Baum um ein zentrales Thema, die Hauptäste farbig abwechselnd rechts und links. Bedienung wie in Mindmap-Programmen: `Tab` legt einen Unterpunkt an, `Enter` den nächsten Punkt, Pfeiltasten wählen, `F2`, Doppelklick oder einfach lostippen bearbeitet, `Entf` löscht, `Alt+↑/↓` verschiebt, `Strg+Z` macht rückgängig. Äste lassen sich einklappen und per Drag & Drop umhängen. Auf dem Handy: Knoten antippen, nochmal antippen zum Bearbeiten, Unterpunkte über die Werkzeugleiste. Punkte können Markdown, `[[Links]]`, `#Tags`, Bilder und Aufgaben (`[ ]`) enthalten. Gespeichert wird eine Markdown-Gliederung (`mindmap-plugin: basic`, Wurzel als `#`, erste Ebene als `##`, darunter Listen) – jeder Markdown-Editor zeigt sie als Gliederung an. In der geteilten Ansicht bearbeitest du die Gliederung als Text, die Mindmap daneben folgt.
   - **Canvas**: freie Fläche mit Textkarten (Markdown), eingebetteten Notizen, Bildern und PDFs, Links und Gruppen. Karten verschieben, in der Größe ändern, färben und mit Pfeilen verbinden (vom Rand einer Karte zur nächsten ziehen, Beschriftung per Doppelklick). Doppelklick auf die Fläche legt eine Karte an; Dateien lassen sich hineinziehen oder einfügen. Mit der Tastatur: Pfeiltasten wählen Karten, `Alt+Pfeil` verschiebt (mit `Umschalt` weiter), `Strg/⌘+Pfeil` ändert die Größe, `V` verbindet (Ziel mit den Pfeiltasten wählen, `Enter`), `Enter` bearbeitet bzw. öffnet, `Entf` löscht. Gespeichert im offenen Format [JSON Canvas](https://jsoncanvas.org); der Export legt `.canvas`-Dateien ab.
@@ -331,6 +332,7 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Strg/⌘ + F` | Im Editor suchen und ersetzen |
 | `Strg/⌘ + B` / `I` | Fett / kursiv |
 | `Strg/⌘ + Shift + H` | ==Markieren== |
+| `/` (am Zeilenanfang oder nach einem Leerzeichen) | Im Editor: Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … |
 | `Strg/⌘ + Klick` | In Notizlisten: Notiz auswählen bzw. abwählen |
 | `Umschalt + Klick` | In Notizlisten: Bereich bis hierher auswählen (mit `Strg/⌘` dazu) |
 | `Strg/⌘ + A` | In Notizlisten: alle Notizen auswählen |

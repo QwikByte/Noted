@@ -7,6 +7,7 @@ import {
   ViewPlugin,
   keymap,
   placeholder as placeholderExt,
+  tooltips,
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view'
@@ -27,6 +28,7 @@ import {
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { tags as t } from '@lezer/highlight'
 import { wrapSelection } from './commands'
+import { slashCompletion, slashExtensions } from './slash'
 
 const highlightStyle = HighlightStyle.define([
   { tag: t.heading1, class: 'cm-md-h1' },
@@ -113,7 +115,7 @@ const CALLOUT_TYPES = [
   ['abstract', 'Abstract'],
 ]
 
-function completions(data: CompletionData) {
+function completions(data: CompletionData, slash: { onFiles: (files: File[]) => void } | null) {
   return (ctx: CompletionContext): CompletionResult | null => {
     // [[Wikilinks]] und ![[Einbettungen]]
     const link = ctx.matchBefore(/!?\[\[[^\]\n|#]*$/)
@@ -154,9 +156,32 @@ function completions(data: CompletionData) {
         validFor: /^[\p{L}\p{N}_\-/]*$/u,
       }
     }
-    return null
+    // Befehle mit „/“ – als letzter Zweig, damit sie sich nie mit den Vorschlägen oben mischen
+    return slash ? slashCompletion(ctx, slash) : null
   }
 }
+
+/** Sichtbarer Bereich – auf dem Handy ohne die Bildschirmtastatur (iOS verkleinert dafür nur den visualViewport) */
+function visibleRect() {
+  const vv = window.visualViewport
+  if (!vv) return { top: 0, left: 0, bottom: innerHeight, right: innerWidth }
+  return { top: vv.offsetTop, left: vv.offsetLeft, bottom: vv.offsetTop + vv.height, right: vv.offsetLeft + vv.width }
+}
+
+/** Vorschläge neu platzieren, wenn die Bildschirmtastatur auf- oder zugeht */
+const followVisualViewport = ViewPlugin.fromClass(
+  class {
+    constructor(private view: EditorView) {
+      window.visualViewport?.addEventListener('resize', this.measure)
+      window.visualViewport?.addEventListener('scroll', this.measure)
+    }
+    measure = () => this.view.requestMeasure()
+    destroy() {
+      window.visualViewport?.removeEventListener('resize', this.measure)
+      window.visualViewport?.removeEventListener('scroll', this.measure)
+    }
+  },
+)
 
 const theme = EditorView.theme({
   '&': { backgroundColor: 'transparent', color: 'var(--text)' },
@@ -179,6 +204,8 @@ export function createExtensions(opts: {
   placeholder?: string
   spellcheck?: boolean
   plain?: boolean
+  /** Menü mit Befehlen nach „/“ (nur Markdown) */
+  slashCommands?: boolean
 }): Extension[] {
   const common: Extension[] = [
     history(),
@@ -212,7 +239,14 @@ export function createExtensions(opts: {
     syntaxHighlighting(highlightStyle),
     extendedSyntaxHighlight,
     closeBrackets(),
-    autocompletion({ override: [completions(opts.data)], icons: false, activateOnTyping: true }),
+    tooltips({ tooltipSpace: visibleRect }),
+    followVisualViewport,
+    ...(opts.slashCommands ? slashExtensions() : []),
+    autocompletion({
+      override: [completions(opts.data, opts.slashCommands ? { onFiles: opts.onPasteFiles } : null)],
+      icons: false,
+      activateOnTyping: true,
+    }),
     keymap.of([
       save,
       { key: 'Mod-b', preventDefault: true, run: (v) => (wrapSelection(v, '**', '**', 'fett'), true) },
