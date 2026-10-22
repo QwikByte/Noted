@@ -69,8 +69,8 @@ function nextDifficulty(d: number, rating: number, w: readonly number[]): number
 }
 
 /**
- * Neue Stabilität und Schwierigkeit nach einer Bewertung. `elapsedDays` seit der letzten Bewertung – unter einem Tag
- * (Lernschritte, mehrfach am selben Tag) gilt die Kurzzeitformel von FSRS-5.
+ * Neue Stabilität und Schwierigkeit nach einer Bewertung. `elapsedDays`: Kalendertage seit der letzten Bewertung – am
+ * selben Tag (0, z. B. Lernschritte) gilt die Kurzzeitformel von FSRS-5.
  */
 export function nextMemory(
   memory: Memory,

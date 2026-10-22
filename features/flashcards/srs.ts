@@ -58,7 +58,16 @@ function fsrsMemory(prev: SrsState | null, rating: Rating, now: number, weights?
     prev.stability != null && prev.difficulty != null
       ? { stability: prev.stability, difficulty: prev.difficulty }
       : memoryFromSm2(prev.interval, prev.ease, weights)
-  return nextMemory(memory, rating, (now - prev.reviewedAt) / DAY, weights)
+  return nextMemory(memory, rating, calendarDays(prev.reviewedAt, now), weights)
+}
+
+/**
+ * Vergangene Kalendertage (Ortszeit) – wie beim Optimieren der Gewichte (fsrs-dataset.ts). Karten sind ab 0 Uhr ihres
+ * Fälligkeitstags dran: Abends bewertet und am nächsten Morgen wiederholt ist ein Tag, nicht ein halber.
+ */
+function calendarDays(from: number, to: number): number {
+  // Gerundet, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
+  return Math.round((startOfDay(to) - startOfDay(from)) / DAY)
 }
 
 /** Neuer Lernstand nach einer Bewertung. `prev` = null bei einer neuen Karte. */
