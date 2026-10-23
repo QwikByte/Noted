@@ -5,7 +5,7 @@ import { useImperativeHandle, useRef, useState } from 'react'
 import { cn } from '@/shared/ui/cn'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { MAX_MASKS } from '../limits'
-import { fitMask, maskName, MIN_MASK_SIZE, moveMask, newMask, resizeMask } from '../occlusion'
+import { fitMask, maskId, maskName, MIN_MASK_SIZE, moveMask, newMask, resizeMask } from '../occlusion'
 import type { Occlusion, OcclusionMask } from '../types'
 
 const place = (m: OcclusionMask) => ({
@@ -186,7 +186,7 @@ export function OcclusionEditor({
     setDraft(null)
     // Ein Tippen ohne Ziehen legt keine Fläche an
     if (draft && draft.w >= MIN_MASK_SIZE && draft.h >= MIN_MASK_SIZE) {
-      onChange([...masks, fitMask(draft)])
+      onChange([...masks, { ...fitMask(draft), id: maskId(masks) }])
       onSelect(masks.length)
     }
   }

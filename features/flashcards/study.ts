@@ -1,6 +1,6 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
-import { clozeCount } from './cloze'
+import { clozeCount, clozeTexts } from './cloze'
 import { daysUntil, examDue, nextExam } from './exam'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
@@ -25,6 +25,73 @@ export function sidesOf(card: Sided): Side[] {
   if (card.type === 'occlusion') return Array.from({ length: card.occlusion?.masks.length ?? 0 }, (_, i) => i)
   return card.type === 'reversed' ? [0, 1] : [0]
 }
+
+/**
+ * Lücken über ihren Text zuordnen: gleiche in derselben Reihenfolge (längste gemeinsame Teilfolge), dann umgestellte
+ * mit gleichem Text. Liegen zwischen zwei in Reihenfolge gefundenen gleich viele übrige, sind sie umformuliert und
+ * werden paarweise zugeordnet; sonst gelten sie als neu.
+ */
+function matchInOrder(before: string[], after: string[]): (Side | null)[] {
+  const n = before.length
+  const m = after.length
+  // common[i][j]: Länge der längsten gemeinsamen Teilfolge von before[i…] und after[j…]
+  const common = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      common[i][j] = before[i] === after[j] ? common[i + 1][j + 1] + 1 : Math.max(common[i + 1][j], common[i][j + 1])
+    }
+  }
+  const map = new Array<Side | null>(m).fill(null)
+  const anchors: [number, number][] = []
+  for (let i = 0, j = 0; i < n && j < m; ) {
+    if (before[i] === after[j]) {
+      anchors.push([i, j])
+      map[j++] = i++
+    } else if (common[i + 1][j] >= common[i][j + 1]) i++
+    else j++
+  }
+  const taken = new Set(map)
+  for (let j = 0; j < m; j++) {
+    if (map[j] !== null) continue
+    const i = before.findIndex((text, k) => text === after[j] && !taken.has(k))
+    if (i >= 0) {
+      map[j] = i
+      taken.add(i)
+    }
+  }
+  let pi = -1
+  let pj = -1
+  for (const [i, j] of [...anchors, [n, m]]) {
+    const olds = Array.from({ length: i - pi - 1 }, (_, k) => pi + 1 + k).filter((k) => !taken.has(k))
+    const news = Array.from({ length: j - pj - 1 }, (_, k) => pj + 1 + k).filter((k) => map[k] === null)
+    if (olds.length === news.length) news.forEach((k, x) => (map[k] = olds[x]))
+    pi = i
+    pj = j
+  }
+  return map
+}
+
+/**
+ * Für jede Seite der bearbeiteten Karte die bisherige Seite (null = neu), damit der Lernstand bei seiner Lücke bzw.
+ * Fläche bleibt: Lücken werden über ihren Text zugeordnet, Flächen über ihre Kennung. Ändert sich die Kartenart oder
+ * ist es eine andere, bleibt es bei der Position.
+ */
+export function remapSides(before: Sided, after: Sided): (Side | null)[] {
+  if (before.type === 'cloze' && after.type === 'cloze') {
+    const text = (front: string) => clozeTexts(front).map((t) => t.trim())
+    return matchInOrder(text(before.front), text(after.front))
+  }
+  if (before.type === 'occlusion' && after.type === 'occlusion') {
+    const old = new Map(before.occlusion?.masks.map((m, i) => [m.id, i]))
+    return (after.occlusion?.masks ?? []).map((m) => (m.id === undefined ? null : (old.get(m.id) ?? null)))
+  }
+  const count = sidesOf(before).length
+  return sidesOf(after).map((side) => (side < count ? side : null))
+}
+
+/** Neue Nummer jeder bisherigen Seite zu `remapSides` – weggefallene Seiten fehlen */
+export const movedSides = (sideMap: (Side | null)[]) =>
+  new Map(sideMap.flatMap((old, side) => (old === null ? [] : [[old, side] as const])))
 
 export function stateMap(reviews: CardReview[]): StateMap {
   const map: StateMap = new Map()

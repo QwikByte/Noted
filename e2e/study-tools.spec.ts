@@ -836,6 +836,20 @@ test('Bildverdeckung: Flächen über ein Bild ziehen und einzeln lernen', async 
     })
     .toEqual([0])
 
+  // Die gelernte erste Fläche fällt weg: Ihr Lernstand geht mit, die zweite bleibt neu
+  const [aorta, vene] = saved.occlusion.masks as { id: string }[]
+  expect(aorta.id).toBeTruthy()
+  expect(vene.id).not.toBe(aorta.id)
+  await page.goto(`/?d=${deck.id}`)
+  await item.getByRole('button', { name: 'Karte bearbeiten' }).click()
+  await dialog.getByRole('button', { name: 'Fläche 1 entfernen' }).click()
+  await expect(dialog.getByTestId('occlusion-editor').locator('[data-mask]')).toHaveCount(1)
+  await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const edited = (await flashcards(page)).cards.find((c: { id: string }) => c.id === saved.id)
+  expect(edited.occlusion.masks.map((m: { id: string }) => m.id)).toEqual([vene.id])
+  expect((await flashcards(page)).reviews.filter((r: { cardId: string }) => r.cardId === saved.id)).toEqual([])
+
   // Eine PDF-Seite als Bild übernehmen
   await page.goto(`/?d=${deck.id}`)
   await page.getByTestId('add-card').click()

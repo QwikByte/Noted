@@ -64,3 +64,6 @@ export const clozeBlanks = (text: string) => render(text, () => GAP)
 
 /** Inhalt der abgefragten Lücke (z. B. zum Vergleich beim Eintippen) */
 export const clozeText = (text: string, index: number) => spans(text, MARK_RE)[index]?.inner ?? ''
+
+/** Inhalt aller Lücken in ihrer Reihenfolge */
+export const clozeTexts = (text: string) => spans(text, MARK_RE).map((s) => s.inner)
