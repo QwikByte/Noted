@@ -19,16 +19,26 @@ import { clozeCount, clozeQuestion, hasCloze, normalizeCloze } from '../cloze'
 import { occlusionError } from '../occlusion'
 import { OcclusionImage } from './Occlusion'
 import { OcclusionFields } from './OcclusionFields'
+import { insertAt } from '../card-editor'
+import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
+import { attachmentsKey } from '@/features/attachments/client/queries'
 import type { CardOption, CardType, Occlusion } from '../types'
 
 const NEW_DECK = '__new__'
 
-/** Mehrzeiliges Eingabefeld, das mit dem Inhalt wächst. */
+/** Ausgewählter Bereich eines Textfelds */
+type TextRange = { start: number; end: number }
+
+/**
+ * Mehrzeiliges Eingabefeld, das mit dem Inhalt wächst. `onFiles`: Dateien, die eingefügt oder hineingezogen werden,
+ * samt der Stelle, an der sie landen sollen (z. B. ein Screenshot aus den Folien).
+ */
 export const AutoTextarea = forwardRef<
   HTMLTextAreaElement,
-  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }
->(function AutoTextarea({ className, minRows = 2, ...props }, forwarded) {
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number; onFiles?: (files: File[], at: TextRange) => void }
+>(function AutoTextarea({ className, minRows = 2, onFiles, ...props }, forwarded) {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const [dropTarget, setDropTarget] = useState(false)
   useImperativeHandle(forwarded, () => ref.current!)
   useLayoutEffect(() => {
     const el = ref.current
@@ -44,15 +54,37 @@ export const AutoTextarea = forwardRef<
       return () => cancelAnimationFrame(frame)
     }
   }, [props.value])
+  const takeFiles = (e: React.SyntheticEvent<HTMLTextAreaElement>, files: FileList | undefined) => {
+    if (!onFiles || !files?.length) return false
+    e.preventDefault()
+    const el = e.currentTarget
+    onFiles(Array.from(files), { start: el.selectionStart, end: el.selectionEnd })
+    return true
+  }
   return (
     <textarea
       ref={ref}
       rows={minRows}
       className={cn(
         'w-full resize-none rounded-xl border border-border bg-elevated px-3.5 py-2.5 text-[15px] leading-relaxed text-fg outline-none transition placeholder:text-faint focus:border-accent focus:ring-3 focus:ring-accent/15',
+        dropTarget && 'border-accent ring-3 ring-accent/15',
         className,
       )}
       {...props}
+      onPaste={(e) => takeFiles(e, e.clipboardData?.files) || props.onPaste?.(e)}
+      onDragOver={(e) => {
+        if (!onFiles || !e.dataTransfer.types.includes('Files')) return props.onDragOver?.(e)
+        e.preventDefault()
+        setDropTarget(true)
+      }}
+      onDragLeave={(e) => {
+        setDropTarget(false)
+        props.onDragLeave?.(e)
+      }}
+      onDrop={(e) => {
+        setDropTarget(false)
+        if (!takeFiles(e, e.dataTransfer?.files)) props.onDrop?.(e)
+      }}
     />
   )
 })
@@ -128,7 +160,10 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Name der Datei, die gerade hochgeladen wird – solange ist Speichern gesperrt
+  const [uploading, setUploading] = useState<string | null>(null)
   const frontRef = useRef<HTMLTextAreaElement>(null)
+  const backRef = useRef<HTMLTextAreaElement>(null)
   const optionRefs = useRef<(HTMLInputElement | null)[]>([])
   const focusOption = useRef<number | null>(null)
   const note = noteId ? notes.find((n) => n.id === noteId) : undefined
@@ -204,6 +239,35 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
     }
   }
 
+  /** Eingefügte oder hineingezogene Dateien hochladen und an der Stelle einbetten (Bilder, Audio, PDF) bzw. verlinken */
+  async function addFiles(field: 'front' | 'back', files: File[], at: { start: number; end: number }) {
+    setError(null)
+    const embeds: string[] = []
+    try {
+      for (const file of files) {
+        const name = niceFileName(file)
+        setUploading(name)
+        embeds.push(attachmentMarkdown(await uploadAttachment(file, name)))
+      }
+    } catch (err) {
+      setError(`Hochladen fehlgeschlagen: ${errorMessage(err)}`)
+    } finally {
+      setUploading(null)
+    }
+    if (embeds.length === 0) return
+    void qc.invalidateQueries({ queryKey: attachmentsKey })
+    const el = field === 'front' ? frontRef.current : backRef.current
+    const set = field === 'front' ? setFront : setBack
+    const value = field === 'front' ? front : back
+    // Was während des Hochladens getippt wurde, bleibt: eingesetzt wird in den aktuellen Text
+    const result = insertAt(el?.value ?? value, at, embeds.join('\n'))
+    set(result.text)
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(result.cursor, result.cursor)
+    })
+  }
+
   const correctCount = options.filter((o) => o.correct && o.text.trim()).length
   const gapCount = type === 'cloze' ? clozeCount(normalizeCloze(front)) : 0
   const maskCount = occlusion?.masks.length ?? 0
@@ -240,13 +304,16 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
               {error}
             </p>
           ) : null}
+          <p className={cn('self-center text-sm text-muted', !error && 'mr-auto')} aria-live="polite">
+            {uploading ? `Lade „${uploading}“ hoch …` : ''}
+          </p>
           <Button onClick={onClose}>Abbrechen</Button>
           {!editing ? (
-            <Button onClick={() => void save(true)} disabled={saving} title="Strg + Enter">
+            <Button onClick={() => void save(true)} disabled={saving || !!uploading} title="Strg + Enter">
               Speichern & nächste
             </Button>
           ) : null}
-          <Button variant="primary" onClick={() => void save(false)} loading={saving}>
+          <Button variant="primary" onClick={() => void save(false)} loading={saving} disabled={!!uploading}>
             Speichern
           </Button>
         </>
@@ -353,7 +420,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                   ? 'Jede Lücke wird einzeln abgefragt: Text auswählen und „Als Lücke“ – oder ==Begriff== bzw. {{Begriff}} schreiben.'
                   : type === 'occlusion'
                     ? 'Steht beim Lernen über dem Bild.'
-                    : 'Markdown, $Formeln$, Bilder ![[…]] und Links wie [[Skript.pdf#page=3]] sind möglich.'
+                    : 'Markdown, $Formeln$, Bilder ![[…]] (auch einfügen oder hineinziehen) und Links wie [[Skript.pdf#page=3]] sind möglich.'
               }
             >
               {(id) => (
@@ -374,6 +441,7 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
                     }
                     minRows={type === 'occlusion' ? 1 : 2}
                     autoFocus={!front}
+                    onFiles={(files, at) => void addFiles('front', files, at)}
                     data-testid="card-front"
                   />
                   {type === 'cloze' ? (
@@ -466,8 +534,10 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
               {(id) => (
                 <AutoTextarea
                   id={id}
+                  ref={backRef}
                   value={back}
                   onChange={(e) => setBack(e.target.value)}
+                  onFiles={(files, at) => void addFiles('back', files, at)}
                   placeholder={
                     type === 'mc' ? 'Wird nach dem Prüfen angezeigt' : type === 'cloze' || type === 'occlusion' ? 'Wird nach dem Aufdecken angezeigt' : 'Antwort'
                   }

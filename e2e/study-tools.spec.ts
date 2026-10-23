@@ -197,6 +197,47 @@ test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitz
   expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
 })
 
+test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Folien' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('add-card').click()
+  const dialog = page.getByRole('dialog')
+  const front = dialog.getByTestId('card-front')
+  const back = dialog.getByTestId('card-back')
+  await front.fill('Welche Schicht zeigt die Folie? ')
+  // Ein Screenshot aus der Zwischenablage bzw. eine Datei aus dem Dateimanager
+  const send = (testId: string, type: 'paste' | 'drop', name: string) =>
+    page.evaluate(
+      ({ testId, type, name }) => {
+        const png = Uint8Array.from(
+          atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+          (c) => c.charCodeAt(0),
+        )
+        const data = new DataTransfer()
+        data.items.add(new File([png], name, { type: 'image/png' }))
+        const el = document.querySelector(`[data-testid="${testId}"]`)!
+        const init = { bubbles: true, cancelable: true }
+        el.dispatchEvent(type === 'paste' ? new ClipboardEvent('paste', { ...init, clipboardData: data }) : new DragEvent('drop', { ...init, dataTransfer: data }))
+      },
+      { testId, type, name },
+    )
+  await front.focus()
+  await send('card-front', 'paste', 'Folie 3.png')
+  await expect(front).toHaveValue('Welche Schicht zeigt die Folie? ![[Folie 3.png]]')
+  await send('card-back', 'drop', 'Lösung.png')
+  await expect(back).toHaveValue('![[Lösung.png]]')
+  await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const item = page.getByTestId('card-list').locator('> li').first()
+  await expect(item.locator('img')).toHaveCount(2)
+  const { attachments } = await (await page.request.get('/api/attachments')).json()
+  for (const a of attachments as { id: string; filename: string }[]) {
+    if (['Folie 3.png', 'Lösung.png'].includes(a.filename)) cleanup.push(`/api/attachments/${a.id}`)
+  }
+})
+
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {
   await login(page)
   const note = await post(
