@@ -1,6 +1,6 @@
 // Befehle mit „/“ im Editor: welche es gibt, wann das Menü aufgeht und wie Weitertippen filtert. Rein – ohne Editor,
 // Browser oder React –, damit der Markdown-Editor und der formatierte Text dieselben Regeln nutzen.
-import { splitFrontmatter, stripCode } from '@/shared/markdown/meta'
+import { isProseAt } from './markdown-context'
 import { fuzzyScore } from './tree'
 
 type SlashCommand = {
@@ -63,10 +63,6 @@ export function matchSlash(textBefore: string): { offset: number; query: string 
   return m ? { offset: textBefore.length - m[1].length - 1, query: m[1] } : null
 }
 
-/** Einzelne, nicht maskierte „$“ (ohne „$$“) */
-const countDollars = (text: string) => (text.replace(/\$\$/g, '').match(/(?<!\\)\$/g) ?? []).length
-const countBlockMath = (text: string) => (text.match(/\$\$/g) ?? []).length
-
 /**
  * Menü im Markdown an der Cursorposition `pos`? Nicht in Properties, Code, Kommentaren, Formeln, nach einem offenen
  * „[[“ und in Tabellenzeilen. `from`: Position des „/“.
@@ -79,15 +75,7 @@ export function markdownSlashAt(doc: string, pos: number): { from: number; query
   const from = lineStart + m.offset
   const head = line.slice(0, m.offset)
   if (line.trimStart().startsWith('|') || head.lastIndexOf('[[') > head.lastIndexOf(']]')) return null
-  const fm = splitFrontmatter(doc)
-  const bodyStart = fm ? doc.length - fm.body.length : 0
-  if (from < bodyStart) return null
-  // Code und Kommentare sind danach Leerzeichen – auch das „/“, wenn es darin steht
-  const plain = stripCode(doc)
-  if (plain[from] !== '/') return null
-  if (countBlockMath(plain.slice(bodyStart, from)) % 2 === 1) return null
-  if (countDollars(plain.slice(lineStart, from)) % 2 === 1) return null
-  return { from, query: m.query }
+  return isProseAt(doc, from) ? { from, query: m.query } : null
 }
 
 /**

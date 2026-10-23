@@ -29,6 +29,8 @@ type Props = {
   slashCommands?: boolean
   /** Links per Strg/⌘-Klick öffnen und beim Überfahren zeigen */
   links?: EditorLinkActions
+  /** Beim Einfügen Formatierung übernehmen (HTML → Markdown) – wirkt sofort */
+  pasteFormatted?: boolean
 }
 
 const NO_LINKS: EditorLinkActions = { open: () => {}, describe: () => null }
@@ -100,6 +102,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           plain: latest.current.plain,
           slashCommands: latest.current.slashCommands,
           links: latest.current.links ? () => latest.current.links ?? NO_LINKS : undefined,
+          pasteFormatted: () => !!latest.current.pasteFormatted,
         }),
       }),
     })

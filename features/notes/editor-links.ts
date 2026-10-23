@@ -1,6 +1,7 @@
 // Links im Markdown-Editor: Was steht an einer Stelle – Wikilink, Datei, #Tag oder Adresse? Für Strg/⌘-Klick,
 // Vorschau beim Überfahren und das Kontextmenü. Reine Logik ohne DOM.
-import { isFileTarget, parseWikiTarget, splitFrontmatter, stripCode } from '@/shared/markdown/meta'
+import { isFileTarget, parseWikiTarget } from '@/shared/markdown/meta'
+import { isProseAt } from './markdown-context'
 
 export type EditorLink =
   | { kind: 'note'; target: string; heading: string | null }
@@ -48,25 +49,10 @@ export function linkAt(line: string, offset: number): EditorLink | null {
   return null
 }
 
-/** Einzelne, nicht maskierte „$“ (ohne „$$“) bzw. „$$“ – ungerade Zahl: Die Stelle liegt in einer Formel */
-const countDollars = (text: string) => (text.replace(/\$\$/g, '').match(/(?<!\\)\$/g) ?? []).length
-const countBlockMath = (text: string) => (text.match(/\$\$/g) ?? []).length
-
 /** Link im Dokument an der Stelle `pos` – nicht in Properties, Code, Kommentaren und Formeln */
 export function linkAtPos(doc: string, pos: number): EditorLink | null {
-  const fm = splitFrontmatter(doc)
-  const bodyStart = fm ? doc.length - fm.body.length : 0
-  if (pos < bodyStart) return null
   const lineStart = doc.lastIndexOf('\n', pos - 1) + 1
   const lineEnd = doc.indexOf('\n', pos)
-  const line = doc.slice(lineStart, lineEnd < 0 ? doc.length : lineEnd)
-  const link = linkAt(line, pos - lineStart)
-  if (!link) return null
-  // Code und Kommentare sind danach Leerzeichen
-  const plain = stripCode(doc)
-  const at = Math.min(pos, doc.length - 1)
-  if (plain[at] !== doc[at]) return null
-  if (countBlockMath(plain.slice(bodyStart, pos)) % 2 === 1) return null
-  if (countDollars(plain.slice(lineStart, pos)) % 2 === 1) return null
-  return link
+  const link = linkAt(doc.slice(lineStart, lineEnd < 0 ? doc.length : lineEnd), pos - lineStart)
+  return link && isProseAt(doc, pos) ? link : null
 }

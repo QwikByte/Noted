@@ -156,3 +156,46 @@ test('Einfacher Text: keine Formatierung, Format wird für die nächste Notiz ge
   await shot(page, '43-new-note-dialog')
   await page.getByRole('dialog').getByRole('button', { name: 'Abbrechen' }).click()
 })
+
+test('Markdown: formatiert einfügen – HTML wird Markdown, Adresse über Markierung wird Link', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const note = (await (await page.request.post('/api/notes', { headers, data: { title: 'Einfügen', content: '' } })).json()).note
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  const paste = (data: Record<string, string>) =>
+    page.evaluate((entries) => {
+      const transfer = new DataTransfer()
+      for (const [type, value] of Object.entries(entries)) transfer.setData(type, value)
+      document
+        .querySelector('.cm-content')!
+        .dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }))
+    }, data)
+
+  // Ein Abschnitt aus einer Webseite
+  await paste({
+    'text/html': '<h2>Wellen</h2><ul><li>Eine <strong>Welle</strong> transportiert Energie</li></ul><p>Mehr bei <a href="https://de.wikipedia.org/wiki/Welle">Wikipedia</a></p>',
+    'text/plain': 'Wellen\nEine Welle transportiert Energie\nMehr bei Wikipedia',
+  })
+  await expect.poll(async () => (await savedContent(page, note.id)).content).toContain('## Wellen')
+  const content = (await savedContent(page, note.id)).content
+  expect(content).toContain('- Eine **Welle** transportiert Energie')
+  expect(content).toContain('[Wikipedia](https://de.wikipedia.org/wiki/Welle)')
+
+  // Wort markieren und eine Adresse einfügen
+  await page.keyboard.press('Control+End')
+  await page.keyboard.insertText('\n\nSkript im Moodle')
+  await page.keyboard.press('Shift+Control+ArrowLeft')
+  await paste({ 'text/plain': 'https://moodle.example.org/kurs' })
+  await expect(editor).toContainText('Skript im [Moodle](https://moodle.example.org/kurs)')
+
+  // Im Code-Block bleibt es Text
+  await page.keyboard.press('Control+End')
+  await page.keyboard.insertText('\n\n```\n\n```')
+  await page.keyboard.press('ArrowUp')
+  await paste({ 'text/html': '<b>fett</b>', 'text/plain': 'fett' })
+  await expect.poll(async () => (await savedContent(page, note.id)).content).toContain('```\nfett\n```')
+  await page.request.delete(`/api/notes/${note.id}?permanent=1`, { headers })
+})

@@ -350,6 +350,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
+  const [pasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -1213,6 +1214,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                         // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
                         slashCommands={format === 'markdown' && slashCommands === '1'}
                         links={format === 'markdown' ? editorLinks : undefined}
+                        pasteFormatted={format === 'markdown' && pasteHtml === '1'}
                       />
                     </div>
                   </div>
