@@ -108,6 +108,35 @@ describe('Wiederholungsplan mit FSRS', () => {
     expect(previewIntervals(due, NOW, FSRS)[3]).toBe(next.due - NOW)
   })
 
+  it('zählt Kalendertage: abends bewertet und am nächsten Morgen wiederholt ist ein Tag', () => {
+    const evening = new Date('2026-10-14T20:00:00').getTime()
+    const prev: SrsState = {
+      phase: 'review',
+      step: 0,
+      interval: 1,
+      ease: 2.5,
+      stability: 1.2,
+      difficulty: 5,
+      reps: 3,
+      lapses: 0,
+      due: evening + DAY,
+      reviewedAt: evening,
+      introducedAt: evening - 2 * DAY,
+    }
+    const memory = { stability: 1.2, difficulty: 5 }
+    // Nur 12 Stunden später, aber am nächsten Tag – Langzeitformel statt der für denselben Tag
+    const morning = schedule(prev, 3, new Date('2026-10-15T08:00:00').getTime(), FSRS)
+    expect(morning.stability).toBeCloseTo(nextMemory(memory, 3, 1).stability, 6)
+    expect(morning.stability).toBeGreaterThan(4)
+    // Kurz vor und kurz nach Mitternacht ist ebenfalls ein Tag
+    const late = { ...prev, reviewedAt: new Date('2026-10-14T23:50:00').getTime() }
+    const night = schedule(late, 3, new Date('2026-10-15T00:10:00').getTime(), FSRS)
+    expect(night.stability).toBeCloseTo(nextMemory(memory, 3, 1).stability, 6)
+    // Am selben Tag bleibt es die Kurzzeitformel
+    const sameDay = schedule(prev, 3, new Date('2026-10-14T23:00:00').getTime(), FSRS)
+    expect(sameDay.stability).toBeCloseTo(nextMemory(memory, 3, 0).stability, 6)
+  })
+
   it('SM-2 bleibt unverändert und ohne Stabilität', () => {
     const s = schedule(null, 4, NOW)
     expect(s.interval).toBe(4)

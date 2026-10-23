@@ -2,13 +2,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { createExtensions, externalChange, type CompletionData } from '../client/editor/setup'
+import { createExtensions, type CompletionData } from '../client/editor/setup'
+import { docReplacement } from '../client/editor/replace'
 import { insertionToMarkdown } from '../client/active-editor'
 import type { NoteEditorHandle } from '../client/editor-handle'
 import { attachmentMarkdown } from '@/features/attachments/client/upload'
 
 export type EditorHandle = NoteEditorHandle & {
   view: () => EditorView | null
+  /** Inhalt ersetzen, den der Aufrufer selbst speichert (Aufgabe abgehakt, Mindmap daneben) – mit Strg+Z rückgängig */
+  replaceDoc: (doc: string) => void
 }
 
 type Props = {
@@ -39,13 +42,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
     focus: () => viewRef.current?.focus(),
     setDoc: (doc: string) => {
       const view = viewRef.current
-      if (!view) return
-      const head = Math.min(view.state.selection.main.head, doc.length)
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: doc },
-        selection: { anchor: head },
-        annotations: externalChange.of(true),
-      })
+      if (view) view.dispatch(docReplacement(view.state.doc, doc, false))
+    },
+    replaceDoc: (doc: string) => {
+      const view = viewRef.current
+      if (view) view.dispatch(docReplacement(view.state.doc, doc, true))
     },
     insert: (insertion) => {
       const view = viewRef.current

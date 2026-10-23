@@ -731,7 +731,11 @@ function CanvasFlow({
   // Ohne Abhängigkeitsliste: Der Handle soll immer den aktuellen Stand sehen
   useImperativeHandle(handleRef, () => ({
     focus: () => focusFlow(),
-    setDoc: (json) => setDoc({ source: json, data: parseCanvas(json) ?? EMPTY }),
+    setDoc: (json) => {
+      // Stand von außen: Rückgängig holte sonst einen älteren Stand zurück und speicherte ihn darüber
+      history.current = { past: [], future: [] }
+      setDoc({ source: json, data: parseCanvas(json) ?? EMPTY })
+    },
     // Seitenlink oder Zitat aus dem PDF als Textkarte
     insert: (insertion) => addText(insertionToMarkdown(insertion)),
     insertAttachment: (att) => {

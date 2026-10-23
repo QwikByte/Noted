@@ -27,6 +27,8 @@ const GRADUATING_INTERVAL = 1
 const EASY_INTERVAL = 4
 const START_EASE = 2.5
 const MIN_EASE = 1.3
+/** Obergrenze wie auf dem Server (Anki-Importe bringen bis zu 10 mit) */
+const MAX_EASE = 10
 const EASY_BONUS = 1.3
 const HARD_FACTOR = 1.2
 /** Anteil des bisherigen Abstands nach dem Vergessen */
@@ -40,7 +42,7 @@ export const DEFAULT_NEW_PER_DAY = 20
 /** Gewünschte Behaltensrate mit FSRS */
 export const DEFAULT_RETENTION = 0.9
 
-const clampEase = (e: number) => Math.max(MIN_EASE, Math.round(e * 100) / 100)
+const clampEase = (e: number) => Math.min(MAX_EASE, Math.max(MIN_EASE, Math.round(e * 100) / 100))
 const clampInterval = (d: number) => Math.min(MAX_INTERVAL, Math.max(1, Math.round(d)))
 
 /**
@@ -58,7 +60,16 @@ function fsrsMemory(prev: SrsState | null, rating: Rating, now: number, weights?
     prev.stability != null && prev.difficulty != null
       ? { stability: prev.stability, difficulty: prev.difficulty }
       : memoryFromSm2(prev.interval, prev.ease, weights)
-  return nextMemory(memory, rating, (now - prev.reviewedAt) / DAY, weights)
+  return nextMemory(memory, rating, calendarDays(prev.reviewedAt, now), weights)
+}
+
+/**
+ * Vergangene Kalendertage (Ortszeit) – wie beim Optimieren der Gewichte (fsrs-dataset.ts). Karten sind ab 0 Uhr ihres
+ * Fälligkeitstags dran: Abends bewertet und am nächsten Morgen wiederholt ist ein Tag, nicht ein halber.
+ */
+function calendarDays(from: number, to: number): number {
+  // Gerundet, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
+  return Math.round((startOfDay(to) - startOfDay(from)) / DAY)
 }
 
 /** Neuer Lernstand nach einer Bewertung. `prev` = null bei einer neuen Karte. */

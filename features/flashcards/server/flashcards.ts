@@ -493,6 +493,24 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
   return { saved, logged }
 }
 
+/**
+ * Bewertungen aus dem Browser: Jeder Eintrag wird einzeln geprüft – ein ungültiger verwirft nicht die übrigen, die
+ * womöglich tagelang offline gesammelt wurden.
+ */
+export function saveSubmittedReviews(userId: number, reviews: unknown[], log: unknown[] = []) {
+  const validReviews = reviews.flatMap((r) => {
+    const parsed = reviewSchema.safeParse(r)
+    return parsed.success ? [parsed.data] : []
+  })
+  const validLog = log.flatMap((e) => {
+    const parsed = reviewLogSchema.safeParse(e)
+    return parsed.success ? [parsed.data] : []
+  })
+  const rejected = reviews.length - validReviews.length + log.length - validLog.length
+  if (rejected > 0) console.error(`[noted] ${rejected} ungültige Bewertungen verworfen`)
+  return { ...saveReviews(userId, validReviews, validLog), rejected }
+}
+
 // ---------------------------------------------------------------------------
 // Eingabeprüfung für die API
 // ---------------------------------------------------------------------------

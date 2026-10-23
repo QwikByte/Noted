@@ -10,7 +10,7 @@ import { MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { Panel } from '@/shared/ui/panel'
 import { useNow } from '@/shared/client/now'
 import { useFlashcards, type Flashcards } from '../client/flashcards'
-import { deckCounts } from '../study'
+import { cardsByDeck, deckCounts } from '../study'
 import { ProgressBar, statusCounts } from './common'
 
 /** Höchstens so viele Klausuren – die nächsten zuerst */
@@ -48,9 +48,11 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
   const cards = data?.cards.filter((c) => deckIds.has(c.deckId) && !c.suspended) ?? []
   const status = data ? statusCounts(cards, data.states) : null
   const total = status ? status.new + status.learning + status.young + status.mature : 0
-  const due = data
-    ? decks.reduce((sum, d) => sum + deckCounts(d, data.cards.filter((c) => c.deckId === d.id), data.states, now).due, 0)
-    : 0
+  let due = 0
+  if (data) {
+    const byDeck = cardsByDeck(data.cards)
+    due = decks.reduce((sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now).due, 0)
+  }
   const canStudy = decks.length > 0 && total > 0
   const learn = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'learn' })
   const practice = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'practice' })

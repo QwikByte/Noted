@@ -179,6 +179,9 @@ export default function NotesApp() {
   const [defaultFormat] = useDefaultNoteFormat()
   const createNote = useCallback<AppActions['createNote']>(
     async ({ title, folderId, content = '', format = defaultFormat }) => {
+      // Ungültige Titel nicht als Entwurf anlegen: Der Server lehnte ihn ab, im Tresor prüft ihn niemand
+      const invalid = validateName(title)
+      if (invalid) throw new Error(invalid)
       // Ungefilterte Ordner: Gesperrt fehlen die Unterordner des Tresors in der Liste
       const inVault = !!folderId && !!qc.getQueryData<Folder[]>(keys.folders)?.find((f) => f.id === folderId)?.vault
       let id: string

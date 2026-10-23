@@ -32,7 +32,7 @@ export async function logout() {
 
 /** Abmelden – fragt nach, wenn noch Änderungen auf die Synchronisierung warten. */
 export async function confirmLogout() {
-  const pending = sync.hasPending() || scratchpad.hasPending()
+  const pending = sync.hasPending() || scratchpad.hasPending() || pdfAnnotations.hasPending()
   if (pending && !confirm('Es gibt noch nicht synchronisierte Änderungen. Beim Abmelden gehen sie verloren. Trotzdem abmelden?')) {
     return
   }

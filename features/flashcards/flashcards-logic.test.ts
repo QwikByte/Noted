@@ -5,6 +5,7 @@ import {
   PracticeSession,
   allItems,
   cardLapses,
+  cardsByDeck,
   deckCounts,
   isCorrectSelection,
   isProblemCard,
@@ -105,6 +106,16 @@ describe('Wiederholungsplan', () => {
     expect(cardStatus(null)).toBe('new')
     expect(cardStatus(schedule(null, 3, NOW))).toBe('learning')
     expect(cardStatus({ ...run([4]), interval: 30 })).toBe('mature')
+  })
+})
+
+describe('Leichtigkeit', () => {
+  it('bleibt nach beliebig vielen „Einfach“ bei höchstens 10 – mehr nimmt der Server nicht an', () => {
+    const learned = run([4], NOW - 5 * DAY)
+    expect(schedule({ ...learned, ease: 9.95 }, 4, learned.due).ease).toBe(10)
+    let s: SrsState = learned
+    for (let i = 0; i < 60; i++) s = schedule(s, 4, s.due)
+    expect(s.ease).toBe(10)
   })
 })
 
@@ -221,6 +232,18 @@ describe('Lernsitzung', () => {
     expect(isCorrectSelection(options, new Set([0, 2]))).toBe(true)
     expect(isCorrectSelection(options, new Set([0]))).toBe(false)
     expect(isCorrectSelection(options, new Set([0, 1, 2]))).toBe(false)
+  })
+
+  it('gruppiert auch große Stapel schnell nach Stapel, in der bisherigen Reihenfolge', () => {
+    // Große Anki-Decks: Bisher wurde je Karte die Liste ihres Stapels kopiert – bei 50 000 Karten rund 19 s
+    const cards = Array.from({ length: 50_000 }, (_, i) => card(`c${i}`, { deckId: i % 1000 === 0 ? 'd2' : 'd1' }))
+    const start = performance.now()
+    const byDeck = cardsByDeck(cards)
+    expect(performance.now() - start).toBeLessThan(1000)
+    expect(byDeck.get('d1')).toHaveLength(49_950)
+    expect(byDeck.get('d2')?.map((c) => c.id)).toEqual(Array.from({ length: 50 }, (_, i) => `c${i * 1000}`))
+    expect(byDeck.get('d1')?.slice(0, 2).map((c) => c.id)).toEqual(['c1', 'c2'])
+    expect(byDeck.has('d3')).toBe(false)
   })
 })
 

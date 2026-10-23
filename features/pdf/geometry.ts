@@ -66,6 +66,21 @@ export function mergeLineRects(rects: ViewRect[]): ViewRect[] {
   return lines.slice(0, MAX_RECTS)
 }
 
+/** Teil einer Textauswahl auf einer Seite: Text und Rechtecke in PDF-Koordinaten */
+export type SelectionPart = { page: number; text: string; rects: PdfRect[] }
+
+/**
+ * Auswahl über eine oder mehrere Seiten: die Teile in Seitenfolge (ohne leere) und der Text aller Seiten. Fehlt eine
+ * Seite dazwischen (pdf.js zeichnet den Text nur für sichtbare Seiten) oder gibt es keinen Teil, gilt `whole` – der
+ * Text der ganzen Auswahl, wie ihn der Browser liefert.
+ */
+export function joinSelection(parts: SelectionPart[], whole: string): { text: string; parts: SelectionPart[] } {
+  const sorted = parts.filter((p) => p.text.trim() || p.rects.length > 0).sort((a, b) => a.page - b.page)
+  const gap = sorted.some((p, i) => i > 0 && p.page > sorted[i - 1].page + 1)
+  const text = sorted.length === 0 || gap ? whole : sorted.map((p) => p.text).join('\n')
+  return { text: text.replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim(), parts: sorted }
+}
+
 /** Markierter Text als Zitat: Leerraum bereinigt, auf MAX_QUOTE Zeichen gekürzt */
 export function cleanQuote(text: string): string {
   const clean = text.replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim()

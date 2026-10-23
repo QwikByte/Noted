@@ -5,7 +5,10 @@ import type { Attachment } from '@/features/attachments/types'
 /** Was die Notizansicht mit dem Editor des jeweiligen Formats tun kann */
 export type NoteEditorHandle = {
   focus: () => void
-  /** Inhalt komplett ersetzen, ohne ihn als Änderung zu speichern (z. B. neuerer Stand vom Server) */
+  /**
+   * Stand von außen übernehmen (anderes Gerät, Konflikt, Wiederherstellen): nicht als Änderung gespeichert und nicht
+   * per Rückgängig zurückzuholen
+   */
   setDoc: (doc: string) => void
   /** Seitenlink oder Zitat aus dem PDF-Viewer bzw. Text vom Schmierzettel als eigenen Absatz einfügen */
   insert: (insertion: Insertion) => void

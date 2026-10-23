@@ -63,7 +63,8 @@ import { attachmentsKey, useAttachments } from '@/features/attachments/client/qu
 import { conflictCopyTitle, sync, type NoteSyncStatus } from '../client/sync'
 import { usePref, type EditorMode } from '@/shared/client/prefs'
 import { copyHtml, copyText } from '@/shared/client/clipboard'
-import { folderPath } from '../tree'
+import { folderByPath, folderPath } from '../tree'
+import { noteFromLinkTarget } from '../link-target'
 import { formatDateTime, formatRelative, wordCount } from '@/shared/lib/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import type { Attachment } from '@/features/attachments/types'
@@ -143,19 +144,34 @@ function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   return wide
 }
 
-function StatusIndicator({ status }: { status: NoteSyncStatus }) {
+function useMemoryOnly(): boolean {
+  return useSyncExternalStore(
+    sync.subscribe,
+    () => sync.isMemoryOnly(),
+    () => false,
+  )
+}
+
+const MEMORY_ONLY_HINT =
+  'Der Speicher des Browsers ist voll – die Änderungen liegen nur im Arbeitsspeicher. ' +
+  'Schließe den Tab nicht, bis wieder eine Verbindung besteht.'
+
+function StatusIndicator({ status, memoryOnly }: { status: NoteSyncStatus; memoryOnly: boolean }) {
+  // Offline und der lokale Speicher voll: Die Änderungen liegen nur im Arbeitsspeicher
+  const unsaved = memoryOnly && status.state === 'offline'
   const map = {
     saved: { icon: <Check className="size-3.5" />, label: 'Gespeichert', cls: 'text-faint' },
     pending: { icon: <Cloud className="size-3.5" />, label: 'Ungespeichert', cls: 'text-faint' },
     saving: { icon: <Loader2 className="size-3.5 animate-spin" />, label: 'Speichert …', cls: 'text-faint' },
     offline: { icon: <CloudOff className="size-3.5" />, label: 'Offline – lokal gesichert', cls: 'text-warning' },
+    unsaved: { icon: <AlertTriangle className="size-3.5" />, label: 'Offline – nicht gesichert', cls: 'text-danger' },
     conflict: { icon: <AlertTriangle className="size-3.5" />, label: 'Konflikt', cls: 'text-danger' },
     error: { icon: <AlertTriangle className="size-3.5" />, label: 'Fehler', cls: 'text-danger' },
-  }[status.state]
+  }[unsaved ? 'unsaved' : status.state]
   return (
     <span
       className={cn('inline-flex items-center gap-1 text-xs whitespace-nowrap', map.cls)}
-      title={status.error ?? map.label}
+      title={unsaved ? MEMORY_ONLY_HINT : (status.error ?? map.label)}
       data-testid="save-status"
     >
       {map.icon}
@@ -304,6 +320,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const { data: tags = [] } = useTags()
   const { data: attachments = [] } = useAttachments()
   const status = useSyncStatus(note.id)
+  const memoryOnly = useMemoryOnly()
   const rootRef = useRef<HTMLDivElement>(null)
   const isWide = useIsWide(rootRef, 960)
   const outlineWide = useIsWide(rootRef, OUTLINE_BESIDE_WIDTH)
@@ -561,18 +578,27 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         app.go({ kind: 'note', id, heading: isVaultNote(id) ? undefined : target })
       },
       isVaultNote,
-      // Ein unaufgelöster Link im Tresor legt die neue Notiz im selben Tresor-Ordner an
-      onCreateNote: (t) => void app.createNote({ title: t, folderId }).catch((err) => toast.error(errorMessage(err))),
+      onCreateNote: (target) => {
+        const next = noteFromLinkTarget(target)
+        if ('error' in next) {
+          // Nicht still anlegen (der Server lehnte den Titel ab), sondern mit bereinigtem Titel nachfragen
+          toast.show(`${next.error} Der Link „${target}“ passt danach nicht mehr zum Titel.`)
+          return app.openNewNote({ title: next.suggestion, folderId })
+        }
+        // [[Ordner/Titel]] legt im passenden Ordner an, sonst im Ordner dieser Notiz – im Tresor immer im selben Ordner
+        const folder = !inVault && next.folderPath.length > 0 ? folderByPath(folders, next.folderPath) : null
+        void app.createNote({ title: next.title, folderId: folder?.id ?? folderId }).catch((err) => toast.error(errorMessage(err)))
+      },
       onOpenTag: (tag) => app.go({ kind: 'tag', tag }),
       onOpenPdf: app.openPdf,
     }),
-    [resolveNote, isVaultNote, app, folderId, toast],
+    [resolveNote, isVaultNote, app, folderId, toast, inVault, folders],
   )
 
   /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */
   const onVisualChange = (doc: string) => {
     onChange(doc)
-    if (effectiveMode === 'split') cmRef.current?.setDoc(doc)
+    if (effectiveMode === 'split') cmRef.current?.replaceDoc(doc)
   }
 
   const toggleTask = useCallback(
@@ -581,7 +607,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       if (line < 0 || line >= lines.length) return
       lines[line] = lines[line].replace(/\[([ xX/\-><!?*])\]/, checked ? '[x]' : '[ ]')
       const next = lines.join('\n')
-      cmRef.current?.setDoc(next)
+      cmRef.current?.replaceDoc(next)
       onChange(next)
     },
     [content, onChange],
@@ -977,7 +1003,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Badge>
             ) : null}
           </nav>
-          <StatusIndicator status={status} />
+          <StatusIndicator status={status} memoryOnly={memoryOnly} />
           <Menu
             className="max-h-[60vh] w-72 overflow-y-auto"
             trigger={(p) => (

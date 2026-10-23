@@ -204,3 +204,127 @@ test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {
   await panel.getByRole('button', { name: 'PDF schließen' }).click()
   await expect(panel).toHaveCount(0)
 })
+
+test('PDF-Viewer räumt beim Schließen auf und lässt Bilder für die Notiz in Ruhe', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Aufräumen.pdf', mimeType: 'application/pdf', buffer: makePdf([['Seite eins'], ['Seite zwei']]) } },
+  })
+  expect(up.status()).toBe(201)
+  const res = await page.request.post('/api/notes', { headers, data: { title: 'Aufräumen', content: '![[Skript Aufräumen.pdf]]\n' } })
+  const noteId = (await res.json()).note.id as string
+
+  // Listener am Dokument zählen (wie die Entwicklerwerkzeuge)
+  const cdp = await page.context().newCDPSession(page)
+  const listeners = async (type: string) => {
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'document' })
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! })
+    return listeners.filter((l) => l.type === type).length
+  }
+
+  // Ausgangslage im Editor – CodeMirror hat eigene Listener am Dokument
+  await page.goto(`/?n=${noteId}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(page.locator('.cm-content')).toBeVisible()
+  const before = { drop: await listeners('drop'), selection: await listeners('selectionchange') }
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  // pdf.js hängt keinen eigenen Drop-Handler an das Dokument
+  expect(await listeners('drop')).toBe(before.drop)
+
+  // Ein Bild, das in die Notiz gezogen wird, landet nicht als Stempel im PDF
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await page.evaluate(() => {
+    const png = Uint8Array.from(
+      atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+      (c) => c.charCodeAt(0),
+    )
+    const data = new DataTransfer()
+    data.items.add(new File([png], 'Foto.png', { type: 'image/png' }))
+    document.querySelector('.cm-content')!.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+  })
+  await expect(page.locator('.cm-content')).toContainText('.png]]')
+  await expect(panel.locator('.stampEditor')).toHaveCount(0)
+
+  // Nach dem Schließen sind keine Listener des Viewers übrig
+  await panel.getByRole('button', { name: 'PDF schließen' }).click()
+  await expect(panel).toHaveCount(0)
+  expect(await listeners('drop')).toBe(before.drop)
+  expect(await listeners('selectionchange')).toBe(before.selection)
+})
+
+test('PDF: Auswahl über eine Seitengrenze markieren und zitieren', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: {
+      file: {
+        name: 'Skript Grenze.pdf',
+        mimeType: 'application/pdf',
+        buffer: makePdf([
+          ['Seite eins', 'Ende des Satzes'],
+          ['Anfang zwei', 'Rest'],
+        ]),
+      },
+    },
+  })
+  expect(up.status()).toBe(201)
+  const attachmentId = (await up.json()).attachment.id as string
+  const res = await page.request.post('/api/notes', { headers, data: { title: 'Grenze', content: '![[Skript Grenze.pdf]]\n' } })
+  const noteId = (await res.json()).note.id as string
+
+  await page.goto(`/?n=${noteId}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  const span = (n: number, text: string) => panel.locator(`.page[data-page-number="${n}"] .textLayer span`, { hasText: text })
+  await expect(span(1, 'Ende des Satzes')).toHaveCount(1, { timeout: 15_000 })
+  // Seite 2 zeichnen lassen; Seite 1 bleibt gezeichnet
+  const pageInput = panel.getByLabel('Seite', { exact: true })
+  await pageInput.fill('2')
+  await pageInput.press('Enter')
+  await expect(span(2, 'Anfang zwei')).toHaveCount(1)
+  await expect(span(1, 'Ende des Satzes')).toHaveCount(1)
+
+  // Vom Ende der ersten bis zum Anfang der zweiten Seite auswählen
+  const select = () =>
+    page.evaluate(() => {
+      const find = (n: number, text: string) =>
+        [...document.querySelectorAll(`.page[data-page-number="${n}"] .textLayer span`)].find((s) => s.textContent?.includes(text))!
+      const range = document.createRange()
+      range.setStart(find(1, 'Ende des Satzes').firstChild!, 0)
+      range.setEnd(find(2, 'Anfang zwei').firstChild!, 'Anfang zwei'.length)
+      getSelection()!.removeAllRanges()
+      getSelection()!.addRange(range)
+    })
+  await select()
+  const bar = panel.getByTestId('pdf-selection')
+  await expect(bar).toContainText('Ende des Satzes')
+  await expect(bar).toContainText('Anfang zwei')
+
+  // Markieren: je Seite eine Markierung
+  await bar.getByRole('button', { name: 'Markieren' }).click()
+  await expect(panel.locator('.page[data-page-number="1"] .pdf-annotation')).toHaveCount(1)
+  await expect(panel.locator('.page[data-page-number="2"] .pdf-annotation')).toHaveCount(1)
+  await expect
+    .poll(async () => {
+      const list = (await page.evaluate((id) => fetch(`/api/attachments/${id}/annotations`).then((r) => r.json()), attachmentId))
+        .annotations as { page: number; quote: string }[]
+      return list.map((a) => `${a.page}: ${a.quote}`).sort()
+    })
+    .toEqual(['1: Ende des Satzes', '2: Anfang zwei'])
+
+  // Als Zitat: der Text beider Seiten, verlinkt auf die erste
+  await select()
+  await bar.getByRole('button', { name: 'Als Zitat einfügen' }).click()
+  await expect(page.locator('.markdown-body blockquote')).toContainText('Ende des Satzes')
+  await expect(page.locator('.markdown-body blockquote')).toContainText('Anfang zwei')
+  await expect
+    .poll(async () => (await page.evaluate((id) => fetch(`/api/notes/${id}`).then((r) => r.json()), noteId)).note.content)
+    .toContain('[[Skript Grenze.pdf#page=1|S. 1]]')
+})
