@@ -52,7 +52,10 @@ import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Menu, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
-import { MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
+import { EditorLinkMenuItems, MarkdownEditorMenu, ReadViewMenu } from './EditorMenuItems'
+import { LINK_CLICK, type EditorLinkActions } from '../client/editor/links'
+import { linkAtPos } from '../editor-links'
+import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
 import { usePrintShortcut } from '@/shared/ui/print-view'
@@ -347,6 +350,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const sharing = useSharingEnabled()
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
+  const [pasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -595,6 +599,48 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     [resolveNote, isVaultNote, app, folderId, toast, inVault, folders],
   )
 
+  // Links im Editor: Strg/⌘-Klick wie ein Klick im Lesemodus, beim Überfahren eine Vorschau
+  const tagCounts = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t.count])), [tags])
+  const editorLinks = useMemo<EditorLinkActions>(() => {
+    const isPdf = (target: string) => /\.pdf$/i.test(target)
+    return {
+      open: (link) => {
+        if (link.kind === 'note') {
+          // [[#Abschnitt]] springt in dieser Notiz
+          const found = link.target ? resolveNote(link.target) : { id: note.id }
+          if (found) previewLinks.onOpenNote(found.id, link.heading ?? undefined)
+          else previewLinks.onCreateNote(link.target)
+        } else if (link.kind === 'file') {
+          if (isPdf(link.target)) app.openPdf(link.target, link.page ?? undefined)
+          else window.open(defaultFileUrl(link.target), '_blank', 'noopener')
+        } else if (link.kind === 'tag') previewLinks.onOpenTag(link.tag)
+        else window.open(link.href, '_blank', 'noopener')
+      },
+      describe: (link) => {
+        if (link.kind === 'tag') {
+          const count = tagCounts.get(link.tag) ?? 0
+          return { title: `#${link.tag}`, text: count === 1 ? '1 Notiz' : `${count} Notizen` }
+        }
+        if (link.kind === 'url') return { title: link.href, text: `${LINK_CLICK} öffnet die Seite in einem neuen Tab` }
+        if (link.kind === 'file') {
+          return {
+            title: link.target,
+            detail: link.page ? `Seite ${link.page}` : undefined,
+            text: `${LINK_CLICK} öffnet ${isPdf(link.target) ? 'das PDF daneben' : 'die Datei'}`,
+          }
+        }
+        if (!link.target) return link.heading ? { title: link.heading, text: 'Abschnitt dieser Notiz' } : null
+        const found = resolveNote(link.target)
+        const target = found ? notes.find((n) => n.id === found.id) : undefined
+        if (!found || !target) return { title: link.target, text: `Die Notiz gibt es noch nicht – ${LINK_CLICK} legt sie an.` }
+        // Tresor: weder Ordnernamen noch Auszug (der Server kennt keinen)
+        const path = target.vault ? '' : folderPath(folders, target.folderId).map((f) => f.name).join(' / ')
+        const detail = [path, link.heading && `› ${link.heading}`].filter(Boolean).join(' ')
+        return { title: target.title, detail: detail || undefined, text: target.vault ? undefined : target.excerpt || undefined }
+      },
+    }
+  }, [app, folders, note.id, notes, previewLinks, resolveNote, tagCounts])
+
   /** Mindmap ändert ihre Gliederung – in der geteilten Ansicht auch den Text daneben */
   const onVisualChange = (doc: string) => {
     onChange(doc)
@@ -771,7 +817,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   )
   const editorMenu = (e: React.MouseEvent) => {
     const view = cmRef.current?.view()
-    const items = view ? <MarkdownEditorMenu view={view} markdown={format !== 'text'} onCreateCard={createCard} /> : null
+    // Link unter dem Zeiger – per Tastatur (Umschalt+F10) an der Cursorposition
+    const pos = view ? (view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? view.state.selection.main.head) : null
+    const link = view && pos !== null && format === 'markdown' ? linkAtPos(view.state.doc.toString(), pos) : null
+    const linked = link?.kind === 'note' && link.target ? resolveNote(link.target) : null
+    const linkItems = link ? (
+      <EditorLinkMenuItems link={link} noteId={linked?.id ?? null} vault={!!linked && isVaultNote(linked.id)} onOpen={() => editorLinks.open(link)} />
+    ) : null
+    const items = view ? (
+      <MarkdownEditorMenu view={view} markdown={format !== 'text'} linkItems={linkItems} onCreateCard={createCard} />
+    ) : null
     openContextMenu(e, items, { text: true })
   }
   const readMenu = (e: React.MouseEvent) =>
@@ -1158,6 +1213,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                         plain={format === 'text'}
                         // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
                         slashCommands={format === 'markdown' && slashCommands === '1'}
+                        links={format === 'markdown' ? editorLinks : undefined}
+                        pasteFormatted={format === 'markdown' && pasteHtml === '1'}
                       />
                     </div>
                   </div>

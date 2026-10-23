@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { localDate } from '@/features/calendar/dates'
 import { DAY, MINUTE, formatInterval, previewIntervals, schedule, cardStatus, type Rating } from './srs'
 import {
   LearnSession,
@@ -156,6 +157,91 @@ describe('Lernsitzung', () => {
     expect(seen).toEqual([])
     const fresh = new LearnSession([deck], cards, new Map(), NOW, fromNote)
     expect(fresh.remaining()).toEqual({ new: 3, learning: 0, review: 0 })
+  })
+
+  it('nimmt eine ausgesetzte Karte mit allen Seiten aus der Sitzung – auch aus der Lernphase', () => {
+    const cards = [card('c1', { type: 'reversed' }), card('c2'), card('c3')]
+    const reviews: CardReview[] = [
+      { cardId: 'c1', side: 0, ...run([4], NOW - 5 * DAY) },
+      { cardId: 'c1', side: 1, ...run([4], NOW - 6 * DAY) },
+    ]
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, stateMap(reviews), NOW)
+    // Von c1 kommt nur eine Seite heute (Geschwister), dazu die neuen c2 und c3
+    expect(session.remaining()).toEqual({ new: 2, learning: 0, review: 1 })
+    // c2 vergessen: kommt in der Lernphase wieder
+    session.answered({ card: cards[1], side: 0, kind: 'new' }, schedule(null, 1, NOW), NOW)
+    session.skipCard('c1')
+    session.skipCard('c2')
+    const rest: string[] = []
+    for (let item = session.next(NOW); item; item = session.next(NOW)) rest.push(item.card.id)
+    expect(rest).toEqual(['c3'])
+  })
+
+  it('Übungsmodus: ausgesetzte Karten kommen nicht mehr dran und zählen nicht mit', () => {
+    const cards = [card('c1', { type: 'reversed' }), card('c2')]
+    const session = new PracticeSession(allItems(cards), () => 0.5)
+    expect(session.total).toBe(3)
+    const first = session.next()!
+    session.answered(first, false)
+    session.skipCard(first.card.id)
+    const rest: string[] = []
+    for (let item = session.next(); item; item = session.next()) rest.push(item.card.id)
+    expect(rest.every((id) => id !== first.card.id)).toBe(true)
+    expect(session.total).toBe(first.card.id === 'c1' ? 1 : 2)
+    expect(session.missed(allItems(cards))).toEqual([])
+  })
+
+  describe('Geschwister einer Karte', () => {
+    const plan = { id: 'd1', newPerDay: 20 }
+    const ids = (session: LearnSession) => {
+      const seen: string[] = []
+      for (let item = session.next(NOW); item; item = session.next(NOW)) seen.push(`${item.card.id}:${item.side}`)
+      return seen
+    }
+
+    it('fragt von einem Lückentext je Tag nur eine fällige Lücke ab – die am längsten überfällige', () => {
+      const cloze = card('c1', { type: 'cloze', front: '==Paris== ist die Hauptstadt von ==Frankreich==, ==Berlin== nicht.' })
+      const reviews: CardReview[] = [
+        { cardId: 'c1', side: 0, ...run([4], NOW - 6 * DAY) },
+        { cardId: 'c1', side: 1, ...run([4], NOW - 8 * DAY) },
+        { cardId: 'c1', side: 2, ...run([4], NOW - 7 * DAY) },
+      ]
+      const states = stateMap(reviews)
+      expect(ids(new LearnSession([plan], [cloze], states, NOW))).toEqual(['c1:1'])
+      expect(deckCounts(plan, [cloze], states, NOW)).toMatchObject({ review: 1, due: 1, dueTomorrow: 2 })
+      // Am nächsten Tag die nächste
+      const answered = stateMap([...reviews.filter((r) => r.side !== 1), { cardId: 'c1', side: 1, ...schedule(states.get('c1:1')!, 3, NOW) }])
+      expect(ids(new LearnSession([plan], [cloze], answered, NOW + DAY))).toEqual(['c1:2'])
+    })
+
+    it('fragt keine Seite mehr ab, wenn heute schon eine gelernt wurde – Lernschritte laufen weiter', () => {
+      const reversed = card('c1', { type: 'reversed' })
+      const today = { cardId: 'c1', side: 0 as const, ...schedule(run([4], NOW - 6 * DAY), 3, NOW - 60 * MINUTE) }
+      const due = { cardId: 'c1', side: 1 as const, ...run([4], NOW - 6 * DAY) }
+      expect(ids(new LearnSession([plan], [reversed], stateMap([today, due]), NOW))).toEqual([])
+      // Heute vergessen (Wiederlernen in 10 Minuten): kommt trotzdem wieder
+      const relearning = { ...today, ...schedule(run([4], NOW - 6 * DAY), 1, NOW - 60 * MINUTE) }
+      expect(ids(new LearnSession([plan], [reversed], stateMap([relearning, due]), NOW))).toEqual(['c1:0'])
+    })
+
+    it('bringt keine neue Seite, wenn heute eine andere Seite der Karte dran ist', () => {
+      const reversed = card('c1', { type: 'reversed' })
+      const due = { cardId: 'c1', side: 0 as const, ...run([4], NOW - 6 * DAY) }
+      expect(ids(new LearnSession([plan], [reversed], stateMap([due]), NOW))).toEqual(['c1:0'])
+      expect(deckCounts(plan, [reversed], stateMap([due]), NOW)).toMatchObject({ newToday: 0, review: 1 })
+    })
+
+    it('stellt am Tag vor der Klausur nichts zurück', () => {
+      const cloze = card('c1', { type: 'cloze', front: '==a== und ==b==' })
+      const reviews: CardReview[] = [
+        { cardId: 'c1', side: 0, ...run([4], NOW - 6 * DAY) },
+        { cardId: 'c1', side: 1, ...run([4], NOW - 7 * DAY) },
+      ]
+      const tomorrow = { ...plan, exams: [{ id: 'k', title: 'Klausur', date: localDate(new Date(NOW + DAY)) }] }
+      expect(ids(new LearnSession([tomorrow], [cloze], stateMap(reviews), NOW)).sort()).toEqual(['c1:0', 'c1:1'])
+      const later = { ...plan, exams: [{ id: 'k', title: 'Klausur', date: localDate(new Date(NOW + 5 * DAY)) }] }
+      expect(ids(new LearnSession([later], [cloze], stateMap(reviews), NOW))).toHaveLength(1)
+    })
   })
 
   it('wiederholt Karten in der Lernphase innerhalb der Sitzung', () => {

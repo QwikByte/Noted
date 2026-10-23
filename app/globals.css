@@ -444,6 +444,43 @@ html.dragging * {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+/* Vorschau eines Links beim Überfahren im Editor (features/notes/client/editor/links.ts) – CodeMirror legt sie in
+   einen gemeinsamen Container für Hover-Tooltips */
+.cm-tooltip.cm-tooltip-hover {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+.cm-link-preview {
+  max-width: min(22rem, calc(100vw - 32px));
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+}
+.cm-link-preview-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.cm-link-preview-detail {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.cm-link-preview-text {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+/* Strg/⌘ gedrückt: Links und Tags lassen sich anklicken */
+.cm-links-active .cm-md-wikilink,
+.cm-links-active .cm-md-tag {
+  text-decoration: underline;
+  cursor: pointer;
+}
 .cm-completionDetail {
   color: var(--text-faint);
   font-style: normal;

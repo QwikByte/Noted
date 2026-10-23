@@ -328,3 +328,73 @@ test('PDF: Auswahl über eine Seitengrenze markieren und zitieren', async ({ pag
     .poll(async () => (await page.evaluate((id) => fetch(`/api/notes/${id}`).then((r) => r.json()), noteId)).note.content)
     .toContain('[[Skript Grenze.pdf#page=1|S. 1]]')
 })
+
+test('PDF-Viewer mit der Tastatur: suchen, blättern, zoomen und markieren', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Kapitel eins', 'Welle und Teilchen'], ['Kapitel zwei', 'Welle im Medium'], ['Kapitel drei', 'Zusammenfassung']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Tastatur.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  const res = await page.request.post('/api/notes', { headers, data: { title: 'Tastatur', content: '![[Skript Tastatur.pdf]]\n' } })
+  const noteId = (await res.json()).note.id as string
+  await page.goto(`/?n=${noteId}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  const pages = panel.locator('.pdf-container')
+
+  // Strg+F im PDF: die Suche des PDFs (nicht die des Browsers), F3 zum nächsten Treffer
+  await pages.focus()
+  await page.keyboard.press('Control+f')
+  const input = panel.getByPlaceholder('Im PDF suchen …')
+  await expect(input).toBeFocused()
+  await page.keyboard.type('Welle')
+  const counter = panel.getByRole('status')
+  await expect(counter).toHaveText('1 / 2')
+  await page.keyboard.press('F3')
+  await expect(counter).toHaveText('2 / 2')
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveCount(0)
+
+  // Blättern und zoomen
+  await pages.focus()
+  const pageInput = panel.getByLabel('Seite', { exact: true })
+  await page.keyboard.press('Home')
+  await expect(pageInput).toHaveValue('1')
+  await page.keyboard.press('ArrowRight')
+  await expect(pageInput).toHaveValue('2')
+  await page.keyboard.press('End')
+  await expect(pageInput).toHaveValue('3')
+  const width = async () => (await panel.locator('.page[data-page-number="3"]').boundingBox())!.width
+  const fitted = await width()
+  await page.keyboard.press('+')
+  await expect.poll(width).toBeGreaterThan(fitted + 10)
+  await page.keyboard.press('0')
+  await expect.poll(async () => Math.round(await width())).toBe(Math.round(fitted))
+
+  // Ausgewählten Text mit Strg+Umschalt+H markieren
+  await expect(panel.locator('.page[data-page-number="3"] .textLayer span', { hasText: 'Zusammenfassung' })).toHaveCount(1)
+  await page.evaluate(() => {
+    const span = [...document.querySelectorAll('.page[data-page-number="3"] .textLayer span')].find((s) =>
+      s.textContent?.includes('Zusammenfassung'),
+    )!
+    const range = document.createRange()
+    range.selectNodeContents(span)
+    getSelection()!.removeAllRanges()
+    getSelection()!.addRange(range)
+  })
+  await expect(panel.getByTestId('pdf-selection')).toBeVisible()
+  await page.keyboard.press('Control+Shift+H')
+  await expect(panel.locator('.page[data-page-number="3"] .pdf-annotation')).toHaveCount(1)
+
+  // Im Editor bleibt Strg+F die Suche des Editors
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Control+f')
+  await expect(page.locator('.cm-search')).toBeVisible()
+  await expect(input).toHaveCount(0)
+})

@@ -34,6 +34,7 @@ import { startDrag, useDraggedIds, useDropTarget } from '../client/drag'
 import { NoteSelectionContext, useNoteSelection, useNoteSelectionContext } from '../client/selection'
 import { folderPath, sortByName } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
+import { parseSearch } from '@/shared/lib/search-query'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
@@ -465,8 +466,11 @@ function snippetHtml(snippet: string) {
   return escapeHtml(snippet).replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>')
 }
 
-/** Treffer in einer Datei: PDFs öffnen im eingebauten Viewer auf der Seite, andere Dateien werden heruntergeladen */
-function FileHit({ hit }: { hit: FileSearchResult }) {
+/**
+ * Treffer in einer Datei: PDFs öffnen im eingebauten Viewer auf der Seite, mit den Suchwörtern `terms` hervorgehoben;
+ * andere Dateien werden heruntergeladen
+ */
+function FileHit({ hit, terms }: { hit: FileSearchResult; terms: string[] }) {
   const app = useApp()
   const pdf = hit.mime === 'application/pdf'
   const className =
@@ -487,7 +491,7 @@ function FileHit({ hit }: { hit: FileSearchResult }) {
     </>
   )
   return pdf ? (
-    <button type="button" onClick={() => app.openPdf(hit.filename, hit.page)} className={className}>
+    <button type="button" onClick={() => app.openPdf(hit.filename, hit.page, { find: terms })} className={className}>
       {body}
     </button>
   ) : (
@@ -526,6 +530,8 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
   })
   const results = search.data?.results ?? []
   const files = search.data?.files ?? []
+  // Dieselben Wörter wie auf dem Server (ohne #tags) – der PDF-Viewer hebt sie hervor
+  const fileTerms = useMemo(() => parseSearch(debounced).terms, [debounced])
 
   // Offline: zumindest Titel und Auszüge lokal durchsuchen – wie online ohne den Tresor
   const offlineResults = useMemo(() => {
@@ -606,7 +612,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
                 </h2>
                 <NoteList>
                   {files.map((f) => (
-                    <FileHit key={`${f.id}:${f.page}`} hit={f} />
+                    <FileHit key={`${f.id}:${f.page}`} hit={f} terms={fileTerms} />
                   ))}
                 </NoteList>
               </section>

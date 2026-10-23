@@ -334,6 +334,7 @@ function AppearanceSection() {
   const [mode, setMode] = usePref<EditorMode>('noted:mode', 'edit')
   const [spellcheck, setSpellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands, setSlashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
+  const [pasteHtml, setPasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
   return (
     <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
@@ -371,6 +372,14 @@ function AppearanceSection() {
             onChange={(v) => setSlashCommands(v ? '1' : '0')}
             label="Befehle mit „/“"
             description="Ein „/“ am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … Wirkt beim nächsten Öffnen einer Notiz."
+          />
+        </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={pasteHtml === '1'}
+            onChange={(v) => setPasteHtml(v ? '1' : '0')}
+            label="Beim Einfügen Formatierung übernehmen"
+            description="Aus Webseiten, Moodle oder Word Kopiertes kommt als Markdown an – Überschriften, Listen, Fettdruck, Links und Tabellen bleiben. Eine Adresse über markiertem Text wird zum Link. Strg/⌘ + Umschalt + V fügt immer nur den Text ein."
           />
         </div>
         <Field label="Notizen öffnen im Modus" className="max-w-sm">

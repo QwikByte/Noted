@@ -120,7 +120,7 @@ export default function NotesApp() {
 
   // PDF neben der aktuellen Ansicht – bleibt beim Wechseln der Notiz und nach dem Neuladen offen
   const [pdfPref, setPdfPref] = usePref<string>('noted:pdf', '')
-  const [pdfJump, setPdfJump] = useState<{ page?: number; nonce: number }>({ nonce: 0 })
+  const [pdfJump, setPdfJump] = useState<{ page?: number; find?: string[]; nonce: number }>({ nonce: 0 })
   const [pdfFull, setPdfFull] = usePref<'1' | '0'>('noted:pdfFull', '0')
   const [pdfSize, setPdfSize] = usePref<string>('noted:pdfSize', '50')
   const pdf = readPdfPref(pdfPref)
@@ -306,9 +306,9 @@ export default function NotesApp() {
       resolveTitle,
       openCardEditor: (init = {}) => setCardEditor((c) => ({ init, n: (c?.n ?? 0) + 1 })),
       openCardsFromNote: setFromNote,
-      openPdf: (file, page) => {
+      openPdf: (file, page, opts) => {
         setPdfPref(JSON.stringify({ file }))
-        setPdfJump((j) => ({ page, nonce: j.nonce + 1 }))
+        setPdfJump((j) => ({ page, find: opts?.find, nonce: j.nonce + 1 }))
         setSidebarOpen(false)
       },
     }),
@@ -462,6 +462,7 @@ export default function NotesApp() {
                   <PdfPanel
                     file={pdf.file}
                     page={pdfJump.page}
+                    find={pdfJump.find}
                     nonce={pdfJump.nonce}
                     full={pdfFull === '1'}
                     onToggleFull={() => setPdfFull(pdfFull === '1' ? '0' : '1')}

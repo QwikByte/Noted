@@ -28,6 +28,7 @@ import { copyText, readText } from '@/shared/client/clipboard'
 import { insertLink, wrapSelection } from '../client/editor/commands'
 import { attachmentFromUrl } from '../rich-html'
 import type { PreviewLinks } from './Preview'
+import type { EditorLink } from '../editor-links'
 
 /** Wo die Befehle wirken. Ausschneiden und Kopieren laufen über den Editor selbst (er schreibt Text und Format). */
 type EditTarget = {
@@ -83,10 +84,13 @@ export function EditMenuItems({ target }: { target: EditTarget }) {
 export function MarkdownEditorMenu({
   view,
   markdown,
+  linkItems,
   onCreateCard,
 }: {
   view: EditorView
   markdown: boolean
+  /** Rechtsklick auf einen Link: was er kann (EditorLinkMenuItems) */
+  linkItems?: React.ReactNode
   onCreateCard: () => void
 }) {
   const run = (fn: (v: EditorView) => unknown) => () => {
@@ -96,6 +100,12 @@ export function MarkdownEditorMenu({
   const hasSelection = !view.state.selection.main.empty
   return (
     <>
+      {linkItems ? (
+        <>
+          {linkItems}
+          <MenuSeparator />
+        </>
+      ) : null}
       <EditMenuItems
         target={{
           focus: () => view.focus(),
@@ -129,6 +139,74 @@ export function MarkdownEditorMenu({
       <MenuSeparator />
       <MenuItem icon={<Layers />} onSelect={onCreateCard}>
         {hasSelection ? 'Karteikarte aus Markierung' : 'Karteikarte erstellen'}
+      </MenuItem>
+    </>
+  )
+}
+
+/**
+ * Rechtsklick auf einen Link im Editor – dasselbe wie Strg/⌘-Klick (`onOpen`), bei Notizen auch in einem neuen Tab.
+ * `noteId`: die verlinkte Notiz, null wenn es sie noch nicht gibt; `vault`: sie liegt im Tresor.
+ */
+export function EditorLinkMenuItems({
+  link,
+  noteId,
+  vault,
+  onOpen,
+}: {
+  link: EditorLink
+  noteId: string | null
+  vault: boolean
+  onOpen: () => void
+}) {
+  if (link.kind === 'tag') {
+    return (
+      <MenuItem icon={<Hash />} onSelect={onOpen}>
+        Tag „#{link.tag}“ anzeigen
+      </MenuItem>
+    )
+  }
+  if (link.kind === 'url') {
+    return (
+      <MenuItem icon={<ExternalLink />} onSelect={onOpen}>
+        Link in neuem Tab öffnen
+      </MenuItem>
+    )
+  }
+  if (link.kind === 'file') {
+    return (
+      <MenuItem icon={<FileText />} onSelect={onOpen}>
+        {/\.pdf$/i.test(link.target) ? 'PDF daneben öffnen' : 'Datei öffnen'}
+      </MenuItem>
+    )
+  }
+  if (!link.target) {
+    return (
+      <MenuItem icon={<FileText />} onSelect={onOpen}>
+        Zum Abschnitt „{link.heading}“
+      </MenuItem>
+    )
+  }
+  if (!noteId) {
+    return (
+      <MenuItem icon={<FilePlus />} onSelect={onOpen}>
+        Notiz „{link.target}“ anlegen
+      </MenuItem>
+    )
+  }
+  return (
+    <>
+      <MenuItem icon={<FileText />} onSelect={onOpen}>
+        Notiz öffnen
+      </MenuItem>
+      <MenuItem
+        icon={<ExternalLink />}
+        onSelect={() =>
+          // Überschriften aus dem Tresor nicht in die Adresse (Browserverlauf)
+          window.open(viewToUrl({ kind: 'note', id: noteId, heading: vault ? undefined : (link.heading ?? undefined) }), '_blank', 'noopener')
+        }
+      >
+        In neuem Tab öffnen
       </MenuItem>
     </>
   )

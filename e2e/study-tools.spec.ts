@@ -156,6 +156,88 @@ test('Problemkarten erkennen, aussetzen und neu lernen', async ({ page }) => {
   expect(data.reviews.find((r: { cardId: string }) => r.cardId === hard.id)).toBeUndefined()
 })
 
+test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitzung', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Aussetzen' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    {
+      cards: [
+        { type: 'basic', front: 'Nicht klausurrelevant', back: 'a' },
+        { type: 'basic', front: 'Später überarbeiten', back: 'b' },
+        { type: 'basic', front: 'Bleibt', back: 'c' },
+      ],
+    },
+    'cards',
+  )
+  await page.goto(`/?d=${deck.id}`)
+  const items = page.getByTestId('card-list').locator('> li')
+  const first = items.filter({ hasText: 'Nicht klausurrelevant' })
+  await first.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Aussetzen' }).click()
+  await expect(page.getByText('Karte ausgesetzt')).toBeVisible()
+  await expect(first).toContainText('Ausgesetzt')
+  await expect(page.getByRole('radiogroup', { name: 'Karten filtern' }).getByRole('radio', { name: /Ausgesetzt/ })).toBeVisible()
+
+  // In der Lernsitzung: die angezeigte Karte aussetzen – weiter mit der nächsten
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  await expect(studyCard).toContainText('Später überarbeiten')
+  await page.getByRole('button', { name: 'Karte aussetzen' }).click()
+  await expect(studyCard).toContainText('Bleibt')
+  await expect(page.getByText('im Stapel unter „Ausgesetzt“')).toBeVisible()
+  // Die Leertaste deckt auf (setzt nicht die nächste Karte aus); „Einfach“ – sonst käme die neue Karte gleich wieder
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  const { cards } = await flashcards(page)
+  const suspended = (front: string) => cards.find((c: { front: string }) => c.front === front).suspended
+  expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
+})
+
+test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Folien' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('add-card').click()
+  const dialog = page.getByRole('dialog')
+  const front = dialog.getByTestId('card-front')
+  const back = dialog.getByTestId('card-back')
+  await front.fill('Welche Schicht zeigt die Folie? ')
+  // Ein Screenshot aus der Zwischenablage bzw. eine Datei aus dem Dateimanager
+  const send = (testId: string, type: 'paste' | 'drop', name: string) =>
+    page.evaluate(
+      ({ testId, type, name }) => {
+        const png = Uint8Array.from(
+          atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+          (c) => c.charCodeAt(0),
+        )
+        const data = new DataTransfer()
+        data.items.add(new File([png], name, { type: 'image/png' }))
+        const el = document.querySelector(`[data-testid="${testId}"]`)!
+        const init = { bubbles: true, cancelable: true }
+        el.dispatchEvent(type === 'paste' ? new ClipboardEvent('paste', { ...init, clipboardData: data }) : new DragEvent('drop', { ...init, dataTransfer: data }))
+      },
+      { testId, type, name },
+    )
+  await front.focus()
+  await send('card-front', 'paste', 'Folie 3.png')
+  await expect(front).toHaveValue('Welche Schicht zeigt die Folie? ![[Folie 3.png]]')
+  await send('card-back', 'drop', 'Lösung.png')
+  await expect(back).toHaveValue('![[Lösung.png]]')
+  await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const item = page.getByTestId('card-list').locator('> li').first()
+  await expect(item.locator('img')).toHaveCount(2)
+  const { attachments } = await (await page.request.get('/api/attachments')).json()
+  for (const a of attachments as { id: string; filename: string }[]) {
+    if (['Folie 3.png', 'Lösung.png'].includes(a.filename)) cleanup.push(`/api/attachments/${a.id}`)
+  }
+})
+
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {
   await login(page)
   const note = await post(
@@ -796,6 +878,11 @@ test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite'
   await hit.click()
   const panel = page.getByTestId('pdf-panel')
   await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('3')
+  // Der Suchbegriff kommt mit: Suchleiste offen, Treffer auf der Seite hervorgehoben
+  await expect(panel.getByPlaceholder('Im PDF suchen …')).toHaveValue('lichtwellen')
+  await expect(panel.locator('.page[data-page-number="3"] .textLayer .highlight').first()).toBeVisible()
+  await expect(panel.getByRole('status')).toHaveText('1 / 1')
   await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('3')
 
   // Im Bereich „Dateien“ steht, dass die Datei durchsuchbar ist

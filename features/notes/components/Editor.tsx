@@ -4,6 +4,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { createExtensions, type CompletionData } from '../client/editor/setup'
 import { docReplacement } from '../client/editor/replace'
+import type { EditorLinkActions } from '../client/editor/links'
 import { insertionToMarkdown } from '../client/active-editor'
 import type { NoteEditorHandle } from '../client/editor-handle'
 import { attachmentMarkdown } from '@/features/attachments/client/upload'
@@ -26,7 +27,13 @@ type Props = {
   plain?: boolean
   /** Menü mit Befehlen nach „/“ – wirkt beim Öffnen */
   slashCommands?: boolean
+  /** Links per Strg/⌘-Klick öffnen und beim Überfahren zeigen */
+  links?: EditorLinkActions
+  /** Beim Einfügen Formatierung übernehmen (HTML → Markdown) – wirkt sofort */
+  pasteFormatted?: boolean
 }
+
+const NO_LINKS: EditorLinkActions = { open: () => {}, describe: () => null }
 
 /** Editor für Markdown und einfachen Text (CodeMirror) */
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref) {
@@ -94,6 +101,8 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           spellcheck: latest.current.spellcheck,
           plain: latest.current.plain,
           slashCommands: latest.current.slashCommands,
+          links: latest.current.links ? () => latest.current.links ?? NO_LINKS : undefined,
+          pasteFormatted: () => !!latest.current.pasteFormatted,
         }),
       }),
     })
