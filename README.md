@@ -57,7 +57,8 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 **PDF-Viewer neben der Notiz**
 - PDFs (z. B. Vorlesungsfolien) öffnen direkt in der App, ohne neues Browserfenster: Auf dem Desktop stehen PDF und Notiz nebeneinander, auf dem Handy übereinander. Den Trenner kannst du verschieben (Doppelklick: halbe-halbe); auf Wunsch füllt das PDF die ganze Fläche.
 - Öffnen über den Knopf **PDF** in der Notiz (zeigt zuerst die PDFs, die in der Notiz vorkommen), per Klick auf `![[Skript.pdf]]` oder unter **Dateien**. Neue PDFs lassen sich dort direkt hochladen; sie werden dabei in die Notiz eingebettet.
-- Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
+- Seiten blättern, zoomen (auch mit Strg + Mausrad oder zwei Fingern), im PDF suchen – auf Wunsch mit Groß-/Kleinschreibung oder nur ganze Wörter.
+- **Tastatur** (Fokus im PDF): `Strg/⌘ + F` sucht, `F3`/`Umschalt + F3` springt zum nächsten/vorigen Treffer, `←`/`→` blättert, `Pos1`/`Ende` springt zur ersten/letzten Seite, `+`/`-` zoomt, `0` passt die Seitenbreite ein, `G` setzt den Cursor ins Seitenfeld, `Strg/⌘ + Umschalt + H` markiert die Auswahl, `Esc` schließt Suche bzw. Markierung. Das PDF bleibt beim Wechseln zwischen Notizen geöffnet, Noted merkt sich die zuletzt gelesene Seite.
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
 - Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen. Die Auswahl darf über eine Seitengrenze gehen; der Seitenlink zeigt dann auf die erste Seite, markiert wird auf jeder Seite.
 - **Anmerkungen:** Ausgewählten Text **markieren** oder **kommentieren** – wie mit einem Textmarker, in sechs Farben. Ein Klick auf eine Markierung öffnet Kommentar, Farbe, **Als Zitat einfügen** und Löschen. Die Seitenleiste **Anmerkungen** (Textmarker-Knopf oben) listet alle Markierungen des PDFs nach Seite; ein Klick springt zur Stelle, **Alle als Zitate einfügen** übernimmt sie mit Seitenlinks in die Notiz. Markierungen liegen auf dem Server (auf jedem Gerät an derselben Textstelle, auch nach dem Zoomen) und entstehen auch offline – sie werden gesendet, sobald wieder Verbindung besteht. Gescannte PDFs ohne Textebene lassen sich nicht markieren.
@@ -354,9 +355,9 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Alt + J` | Schmierzettel öffnen bzw. den Cursor hineinsetzen (`Esc` springt zurück) |
 | `Strg/⌘ + Shift + F` | Volltextsuche |
 | `Strg/⌘ + S` | Sofort speichern (passiert sonst automatisch) |
-| `Strg/⌘ + F` | Im Editor suchen und ersetzen |
+| `Strg/⌘ + F` | Im Editor suchen und ersetzen – im PDF die Suche im PDF (ausgewählter Text wird übernommen) |
 | `Strg/⌘ + B` / `I` | Fett / kursiv |
-| `Strg/⌘ + Shift + H` | ==Markieren== |
+| `Strg/⌘ + Shift + H` | ==Markieren== – im PDF: ausgewählten Text markieren |
 | `Strg/⌘ + P` | Drucken (Notiz, Glossar, Stapel) – sonst Schnellwechsler |
 | `/` (am Zeilenanfang oder nach einem Leerzeichen) | Im Editor: Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … |
 | `Strg/⌘ + Klick` | In Notizlisten: Notiz auswählen bzw. abwählen |

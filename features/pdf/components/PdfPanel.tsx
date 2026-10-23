@@ -3,6 +3,7 @@ import 'pdfjs-dist/legacy/web/pdf_viewer.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  CaseSensitive,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -24,6 +25,7 @@ import {
   Search,
   Trash2,
   Upload,
+  WholeWord,
   X,
   ZoomIn,
   ZoomOut,
@@ -47,6 +49,7 @@ import { pdfAnnotations, useAnnotations } from '../client/annotations'
 import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
 import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
+import { pdfKeyAction } from '../keyboard'
 import type { AnnotationColor, PdfAnnotation } from '../types'
 import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
@@ -73,6 +76,7 @@ function savePosition(file: string, page: number) {
 }
 
 const AUTO_SCALES = new Set(['page-width', 'page-fit', 'auto'])
+const NO_FIND_OPTIONS = { caseSensitive: false, entireWord: false }
 const baseName = (file: string) => file.split('/').pop()!.replace(/\.pdf$/i, '')
 /** Farbe für neue Markierungen (zuletzt gewählte) */
 const COLOR_KEY = 'noted:pdf:color'
@@ -137,6 +141,12 @@ export default function PdfPanel({
   const searchTerms = useRef<string[] | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
+  const pageInputRef = useRef<HTMLInputElement>(null)
+  // Suchoptionen – als Ref, damit `find` stabil bleibt (das Öffnen aus der Volltextsuche hängt daran)
+  const findOptions = useRef(NO_FIND_OPTIONS)
+  const [findOpts, setFindOpts] = useState(NO_FIND_OPTIONS)
+  // Ansage für Bildschirmleser, wenn per Tastatur geblättert wird
+  const [announce, setAnnounce] = useState('')
   const findButtonRef = useRef<HTMLButtonElement>(null)
 
   const [status, setStatus] = useState<{ state: 'loading' | 'ready' | 'error'; message?: string }>({ state: 'loading' })
@@ -398,8 +408,7 @@ export default function PdfPanel({
       source: null,
       type,
       query: terms && value === terms.join(' ') ? terms : value,
-      caseSensitive: false,
-      entireWord: false,
+      ...findOptions.current,
       highlightAll: true,
       findPrevious: previous,
       matchDiacritics: false,
@@ -431,6 +440,27 @@ export default function PdfPanel({
     busRef.current?.dispatch('find', { source: null, type: '', query: '', highlightAll: false })
     // Die Suchleiste verschwindet samt Fokus – zurück zum Knopf, der sie geöffnet hat
     findButtonRef.current?.focus()
+  }
+
+  const toggleFindOption = (option: 'caseSensitive' | 'entireWord') => {
+    findOptions.current = { ...findOptions.current, [option]: !findOptions.current[option] }
+    setFindOpts(findOptions.current)
+    if (findRef.current?.value) find('')
+  }
+
+  /** Suchleiste öffnen und fokussieren – `prefill`: ausgewählter Text als Suchbegriff */
+  const openFind = (prefill?: string) => {
+    const text = prefill?.split('\n')[0].trim().slice(0, 200)
+    if (text) {
+      searchTerms.current = null
+      setQuery(text)
+    }
+    setFindOpen(true)
+    setTimeout(() => {
+      findRef.current?.focus()
+      findRef.current?.select()
+      if (text) find('')
+    }, 0)
   }
 
   const goTo = (n: number) => {
@@ -572,6 +602,71 @@ export default function PdfPanel({
     } catch (err) {
       toast.error(errorMessage(err))
     }
+  }
+
+  /** Tastenkürzel, solange der Fokus im Panel liegt (Zuordnung in keyboard.ts) */
+  function onPanelKeyDown(e: React.KeyboardEvent) {
+    const container = containerRef.current
+    const action = pdfKeyAction(e, {
+      inField: e.target instanceof Element && !!e.target.closest('input, textarea, select, [contenteditable="true"]'),
+      scrollsSideways: !!container && container.scrollWidth > container.clientWidth + 1,
+    })
+    const v = viewerRef.current
+    if (!action || (!ready && action !== 'escape')) return
+    const page = (n: number) => {
+      if (!v?.pagesCount) return
+      const target = Math.max(1, Math.min(v.pagesCount, n))
+      goTo(target)
+      setAnnounce(`Seite ${target} von ${v.pagesCount}`)
+    }
+    switch (action) {
+      case 'find':
+        openFind(selection?.text)
+        break
+      case 'findNext':
+      case 'findPrevious':
+        if (findOpen && findRef.current?.value) find('again', action === 'findPrevious')
+        else openFind(selection?.text)
+        break
+      case 'prevPage':
+        page(current - 1)
+        break
+      case 'nextPage':
+        page(current + 1)
+        break
+      case 'firstPage':
+        page(1)
+        break
+      case 'lastPage':
+        page(numPages)
+        break
+      case 'zoomIn':
+        v?.increaseScale()
+        break
+      case 'zoomOut':
+        v?.decreaseScale()
+        break
+      case 'fitWidth':
+        if (v) v.currentScaleValue = 'page-width'
+        break
+      case 'highlight':
+        if (!canMark) return
+        markSelection(false)
+        break
+      case 'pageInput':
+        pageInputRef.current?.focus()
+        pageInputRef.current?.select()
+        break
+      case 'escape':
+        if (findOpen) closeFind()
+        else if (activeId) setActiveId(null)
+        else if (selection) {
+          document.getSelection()?.removeAllRanges()
+          setSelection(null)
+        } else return
+        break
+    }
+    e.preventDefault()
   }
 
   // ---- Kontextmenü ----
@@ -722,7 +817,11 @@ export default function PdfPanel({
       className="@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-subtle"
       aria-label={`PDF: ${file}`}
       data-testid="pdf-panel"
+      onKeyDown={onPanelKeyDown}
     >
+      <p className="sr-only" aria-live="polite">
+        {announce}
+      </p>
       {/* Werkzeugleiste – passt sich der Breite des Panels an */}
       <div className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border bg-bg px-1.5">
         <div className="min-w-0 flex-1">
@@ -769,6 +868,7 @@ export default function PdfPanel({
               className="flex items-center gap-1 text-xs text-muted"
             >
               <input
+                ref={pageInputRef}
                 value={pageInput}
                 onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))}
                 onBlur={() => setPageInput(String(current))}
@@ -879,6 +979,28 @@ export default function PdfPanel({
             aria-label="Im PDF suchen"
             className="h-7 min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => toggleFindOption('caseSensitive')}
+            aria-label="Groß-/Kleinschreibung beachten"
+            aria-pressed={findOpts.caseSensitive}
+            title="Groß-/Kleinschreibung beachten"
+            className={cn(findOpts.caseSensitive && 'bg-accent-soft text-accent-text')}
+          >
+            <CaseSensitive className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => toggleFindOption('entireWord')}
+            aria-label="Nur ganze Wörter"
+            aria-pressed={findOpts.entireWord}
+            title="Nur ganze Wörter"
+            className={cn(findOpts.entireWord && 'bg-accent-soft text-accent-text')}
+          >
+            <WholeWord className="size-4" />
+          </Button>
           <span className="w-16 text-center text-xs text-muted tabular-nums" role="status">
             {query && matches ? (matches.total ? `${matches.current} / ${matches.total}` : 'Keine') : ''}
           </span>
