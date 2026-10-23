@@ -9,8 +9,11 @@ export type CardType = 'basic' | 'reversed' | 'mc' | 'cloze' | 'occlusion'
 
 export type CardOption = { text: string; correct: boolean }
 
-/** Verdeckte Fläche – Lage und Größe relativ zum Bild (0–1), label = was darunter steht (optional) */
-export type OcclusionMask = { x: number; y: number; w: number; h: number; label: string }
+/**
+ * Verdeckte Fläche – Lage und Größe relativ zum Bild (0–1), label = was darunter steht (optional). `id`: Kennung
+ * innerhalb der Karte, an der der Lernstand der Fläche hängt (fehlt nur bei Karten aus älteren Ständen und Importen).
+ */
+export type OcclusionMask = { id?: string; x: number; y: number; w: number; h: number; label: string }
 
 /**
  * Bildverdeckung: `image` ist der Dateiname eines Anhangs. hideAll: Beim Abfragen sind alle Flächen verdeckt,
@@ -56,6 +59,12 @@ export type Card = {
   createdAt: number
   updatedAt: number
 }
+
+/**
+ * Antwort beim Bearbeiten einer Karte. `sideMap[Seite]` = bisherige Seite (null = neu): Der Lernstand wandert mit
+ * seiner Lücke bzw. Fläche, auch wenn sich deren Reihenfolge ändert.
+ */
+export type CardUpdateResult = { card: Card; sideMap: (number | null)[] }
 
 export type CardPhase = 'learning' | 'review' | 'relearning'
 

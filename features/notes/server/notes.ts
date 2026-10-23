@@ -6,10 +6,11 @@ import { isValidId, uuid } from '@/shared/server/crypto'
 import { getConfig } from '@/shared/server/config'
 import { buildFtsQuery, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
 import { parseSearch } from '@/shared/lib/search-query'
-import { extractLinks, extractTags, linkKey, makeExcerpt } from '@/shared/markdown/meta'
+import { extractLinks, extractTags, linkFolders, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
 import { escapeRegExp } from '@/shared/lib/regexp'
 import { noteText } from '../format'
+import { linkTargets } from '../link-resolve'
 import { mapCanvasNodes, parseCanvas } from '@/features/canvas/canvas'
 import { getVersion, snapshotIfDue } from './versions'
 import {
@@ -268,16 +269,54 @@ export function deleteFolder(userId: number, id: string): { trashedNotes: number
 /** Tags, Links und Suchindex aus dem Text der Notiz (bei formatiertem Text ohne HTML, siehe noteText) */
 function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; text: string }) {
   db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(note.id)
-  db.prepare('DELETE FROM note_links WHERE note_id = ?').run(note.id)
   unindexNote(db, note.id)
   const insTag = db.prepare('INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)')
   for (const tag of extractTags(note.text)) insTag.run(note.id, tag)
-  const insLink = db.prepare('INSERT OR IGNORE INTO note_links (note_id, target) VALUES (?, ?)')
-  for (const target of extractLinks(note.text)) insLink.run(note.id, target)
+  indexLinks(db, note.id, note.text)
   const info = db
     .prepare('INSERT INTO notes_fts (note_id, user_id, title, content) VALUES (?, ?, ?, ?)')
     .run(note.id, note.user_id, note.title, note.text)
   db.prepare('INSERT OR REPLACE INTO notes_fts_map (note_id, fts_rowid) VALUES (?, ?)').run(note.id, info.lastInsertRowid)
+}
+
+function indexLinks(db: Database.Database, noteId: string, text: string) {
+  db.prepare('DELETE FROM note_links WHERE note_id = ?').run(noteId)
+  const insert = db.prepare('INSERT OR IGNORE INTO note_links (note_id, target, path) VALUES (?, ?, ?)')
+  for (const { key, path } of extractLinks(text)) insert.run(noteId, key, path)
+}
+
+/**
+ * Einmal nach dem Update auf Links mit Ordnerpfad (Migration 2): Notizen mit [[Ordner/…]] neu einlesen, damit auch
+ * vorhandene Links ihren Ordner kennen. Läuft beim Serverstart, solange der Merker der Migration steht.
+ */
+export function reindexLinkPaths(): number {
+  const db = getDb()
+  if (!db.prepare("SELECT 1 FROM settings WHERE key = 'reindex_link_paths'").get()) return 0
+  // Nur Notizen, in denen ein Link mit „/“ stehen kann; Tresor-Notizen haben keine Links auf dem Server
+  const rows = db
+    .prepare("SELECT id, format, content FROM notes WHERE vault = 0 AND content LIKE '%[[%/%'")
+    .all() as Pick<NoteRow, 'id' | 'format' | 'content'>[]
+  db.transaction(() => {
+    for (const r of rows) indexLinks(db, r.id, noteText(r.format, r.content))
+    db.prepare("DELETE FROM settings WHERE key = 'reindex_link_paths'").run()
+  })()
+  return rows.length
+}
+
+/**
+ * Notizen mit dem Titel-Schlüssel `key` (linkKey) und ihr Ordnerpfad – damit ein Link nur für die Notizen zählt, die
+ * er meint (linkTargets). Verglichen wird in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein,
+ * „Übungen“ bliebe sonst unerkannt.
+ */
+function sameTitle(userId: number, key: string) {
+  const notes = (
+    getDb()
+      .prepare('SELECT id, title, folder_id AS folderId FROM notes WHERE user_id = ? AND deleted_at IS NULL AND vault = 0')
+      .all(userId) as { id: string; title: string; folderId: string | null }[]
+  ).filter((n) => linkKey(n.title) === key)
+  const paths = folderPathMap(userId)
+  const foldersOf = (n: { folderId: string | null }) => (n.folderId ? (paths.get(n.folderId) ?? []) : [])
+  return { notes, foldersOf }
 }
 
 function unindexNote(db: Database.Database, noteId: string) {
@@ -430,10 +469,18 @@ type NotePatch = {
   reason?: 'conflict' | 'restore'
 }
 
-export function updateNote(userId: number, id: string, patch: NotePatch): { note: Note; linksUpdated: number } {
+/**
+ * linksUpdated: beim Umbenennen angepasste Links in anderen Notizen; linksSkipped: Links, die stehen blieben, weil
+ * sie auch eine andere Notiz mit dem alten Titel meinen können (ohne Ordner im Link).
+ */
+export function updateNote(
+  userId: number,
+  id: string,
+  patch: NotePatch,
+): { note: Note; linksUpdated: number; linksSkipped: number } {
   const db = getDb()
   const current = getNoteRow(userId, id)
-  if (current.vault === 1) return { note: updateVaultNote(userId, current, patch), linksUpdated: 0 }
+  if (current.vault === 1) return { note: updateVaultNote(userId, current, patch), linksUpdated: 0, linksSkipped: 0 }
   if (patch.titleEnc !== undefined) throw vaultBoundary()
   const format = patch.format ?? current.format
   const contentChanged = (patch.content !== undefined && patch.content !== current.content) || format !== current.format
@@ -470,7 +517,7 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
   const content = patch.content ?? current.content
   const pinned = patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : current.pinned
   const bump = contentChanged || title !== current.title
-  let linksUpdated = 0
+  let links = { updated: 0, skipped: 0 }
 
   const text = contentChanged || bump ? noteText(format, content) : ''
   const snapshotReason: NoteVersionReason | null =
@@ -495,9 +542,9 @@ export function updateNote(userId: number, id: string, patch: NotePatch): { note
       userId,
     )
     if (bump) indexNote(db, { id, user_id: userId, title, text })
-    if (title !== current.title) linksUpdated = rewriteLinks(db, userId, id, current.title, title)
+    if (title !== current.title) links = rewriteLinks(db, userId, id, current.title, title)
   })()
-  return { note: getNote(userId, id), linksUpdated }
+  return { note: getNote(userId, id), linksUpdated: links.updated, linksSkipped: links.skipped }
 }
 
 /** Tresor-Notiz ändern: nur Umschläge, verschieben nur innerhalb des Tresors, sonst wie updateNote */
@@ -555,47 +602,66 @@ export function restoreVersion(userId: number, noteId: string, versionId: number
   })
 }
 
-/** Ersetzt [[Alt]], [[Alt|…]], [[Alt#…]], [[Ordner/Alt]] in allen verlinkenden Notizen. */
-function rewriteLinks(db: Database.Database, userId: number, noteId: string, oldTitle: string, newTitle: string): number {
+/**
+ * Ersetzt [[Alt]], [[Alt|…]], [[Alt#…]], [[Ordner/Alt]] in allen verlinkenden Notizen – soweit der Link nur diese
+ * Notiz meint (linkTargets: Ordner im Link, sonst der Ordner der verlinkenden Notiz). Links, die auch eine andere Notiz
+ * mit dem alten Titel meinen können, bleiben stehen und zählen als `skipped`.
+ */
+function rewriteLinks(
+  db: Database.Database,
+  userId: number,
+  noteId: string,
+  oldTitle: string,
+  newTitle: string,
+): { updated: number; skipped: number } {
   const key = linkKey(oldTitle)
   const sources = db
     .prepare(
-      `SELECT n.* FROM notes n JOIN note_links l ON l.note_id = n.id
+      `SELECT DISTINCT n.* FROM notes n JOIN note_links l ON l.note_id = n.id
        WHERE n.user_id = ? AND n.deleted_at IS NULL AND l.target = ? AND n.id != ?`,
     )
     .all(userId, key, noteId) as NoteRow[]
-  // Gibt es noch eine andere Notiz mit dem alten Titel, sind die Links mehrdeutig – dann nichts ändern. Verglichen wird
-  // in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein, „Übungen“ bliebe sonst unerkannt
-  const others = db
-    .prepare('SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND vault = 0 AND id != ?')
-    .all(userId, noteId) as { title: string }[]
-  if (others.some((n) => linkKey(n.title) === key)) return 0
+  if (sources.length === 0) return { updated: 0, skipped: 0 }
+  // Die umbenannte Notiz hat schon ihren neuen Titel – sie zählt hier mit dem alten
+  const { notes, foldersOf } = sameTitle(userId, key)
+  const self = getNoteRow(userId, noteId)
+  const candidates = [{ id: noteId, folderId: self.folder_id }, ...notes.filter((n) => n.id !== noteId)]
+  let updated = 0
+  let skipped = 0
+  /** Ob ein Link mit diesem Ziel (Ordnerteil und Titel) aus der Notiz `src` angepasst wird */
+  const meansThis = (target: string, src: NoteRow) => {
+    const targets = linkTargets(candidates, linkFolders(target), foldersOf, src.folder_id)
+    if (!targets.some((c) => c.id === noteId)) return false
+    if (targets.length === 1) return true
+    skipped++
+    return false
+  }
 
   // In formatiertem Text (HTML) steht „&“ als „&amp;“ – andere Sonderzeichen sind in Titeln nicht erlaubt
   const pattern = (title: string) =>
     new RegExp(`(!?\\[\\[)((?:[^[\\]|#\\n]*/)?)${escapeRegExp(title)}(\\.md)?(?=[\\]|#])`, 'gi')
   const forHtml = (s: string) => s.replace(/&/g, '&amp;')
-  let count = 0
-  const rewrite = (text: string, html: boolean) =>
-    text.replace(pattern(html ? forHtml(oldTitle) : oldTitle), (_m, open: string, prefix: string) => {
-      count++
+  const rewrite = (src: NoteRow, text: string, html: boolean) =>
+    text.replace(pattern(html ? forHtml(oldTitle) : oldTitle), (m, open: string, prefix: string) => {
+      if (!meansThis(`${prefix}${oldTitle}`, src)) return m
+      updated++
       return `${open}${prefix}${html ? forHtml(newTitle) : newTitle}`
     })
   // Im Canvas: Wikilinks in Textkarten und Karten, die die Notiz selbst zeigen
-  const rewriteCanvas = (json: string) =>
-    mapCanvasNodes(json, (n) => {
+  const rewriteCanvas = (src: NoteRow) =>
+    mapCanvasNodes(src.content, (n) => {
       if (n.type === 'text') {
-        const text = rewrite(n.text, false)
+        const text = rewrite(src, n.text, false)
         return text === n.text ? n : { ...n, text }
       }
-      if (n.type === 'file' && linkKey(n.file) === key) {
-        count++
+      if (n.type === 'file' && linkKey(n.file) === key && meansThis(n.file, src)) {
+        updated++
         return { ...n, file: newTitle }
       }
       return n
     })
   for (const src of sources) {
-    const content = src.format === 'canvas' ? rewriteCanvas(src.content) : rewrite(src.content, src.format === 'richtext')
+    const content = src.format === 'canvas' ? rewriteCanvas(src) : rewrite(src, src.content, src.format === 'richtext')
     if (content !== src.content) {
       const text = noteText(src.format, content)
       db.prepare(
@@ -604,7 +670,7 @@ function rewriteLinks(db: Database.Database, userId: number, noteId: string, old
       indexNote(db, { id: src.id, user_id: userId, title: src.title, text })
     }
   }
-  return count
+  return { updated, skipped }
 }
 
 export function trashNote(userId: number, id: string) {
@@ -781,13 +847,25 @@ export function listBacklinks(userId: number, id: string): { id: string; title: 
   const note = getNoteRow(userId, id)
   // Im Tresor gesperrt: Der Server kennt den Titel nicht, und Tresor-Notizen tauchen nirgends sonst auf
   if (note.vault === 1) return []
-  return getDb()
+  const key = linkKey(note.title)
+  const rows = getDb()
     .prepare(
-      `SELECT n.id, n.title, n.folder_id AS folderId FROM notes n JOIN note_links l ON l.note_id = n.id
+      `SELECT n.id, n.title, n.folder_id AS folderId, l.path FROM notes n JOIN note_links l ON l.note_id = n.id
        WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 AND l.target = ? AND n.id != ?
-       ORDER BY n.updated_at DESC`,
+       ORDER BY n.updated_at DESC, l.path`,
     )
-    .all(userId, linkKey(note.title), id) as { id: string; title: string; folderId: string | null }[]
+    .all(userId, key, id) as { id: string; title: string; folderId: string | null; path: string }[]
+  if (rows.length === 0) return []
+  // Gleichnamige Notizen: Ein Link mit Ordner zählt nur für die Notiz dort, einer ohne zuerst für die im eigenen Ordner
+  const { notes, foldersOf } = sameTitle(userId, key)
+  const seen = new Set<string>()
+  return rows.flatMap(({ path, ...source }) => {
+    if (seen.has(source.id)) return []
+    const targets = linkTargets(notes, path ? path.split('/') : [], foldersOf, source.folderId)
+    if (!targets.some((n) => n.id === id)) return []
+    seen.add(source.id)
+    return [source]
+  })
 }
 
 /** Pfad eines Ordners als Array von Namen (für den Export – ohne Tresor, dessen Namen der Server nicht kennt). */

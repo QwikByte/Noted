@@ -14,11 +14,21 @@ import {
   MAX_OPTIONS,
 } from '../limits'
 import { clozeCount, normalizeCloze } from '../cloze'
-import { fitMask, occlusionError } from '../occlusion'
-import { sidesOf } from '../study'
+import { fitMask, occlusionError, withMaskIds } from '../occlusion'
+import { movedSides, remapSides, sidesOf } from '../study'
 import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
 import { getFsrsParams } from './fsrs-params'
-import type { Card, CardOption, CardReview, CardType, Deck, FlashcardData, Occlusion, ReviewLogEntry } from '../types'
+import type {
+  Card,
+  CardOption,
+  CardReview,
+  CardType,
+  CardUpdateResult,
+  Deck,
+  FlashcardData,
+  Occlusion,
+  ReviewLogEntry,
+} from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
 const MAX_DECK_NAME = 200
@@ -94,7 +104,9 @@ function parseOcclusion(raw: string | null): Occlusion | null {
   if (!raw) return null
   try {
     const o = JSON.parse(raw) as Occlusion
-    return Array.isArray(o.masks) && typeof o.image === 'string' ? o : null
+    if (!Array.isArray(o.masks) || typeof o.image !== 'string') return null
+    // Flächen aus der Zeit vor den Kennungen: die Position als Kennung, bis die Karte das nächste Mal gespeichert wird
+    return o.masks.every((m) => m.id) ? o : { ...o, masks: o.masks.map((m, i) => ({ ...m, id: String(i) })) }
   } catch {
     return null
   }
@@ -264,9 +276,10 @@ type CleanCard = {
 
 /**
  * Prüft und bereinigt eine Karte (Texte begrenzt, Multiple Choice mit mind. 2 Antworten, davon mind. 1 richtig,
- * Lückentext mit mind. einer Lücke – {{Lücke}} wird dabei zu ==Lücke==, Bildverdeckung mit Bild und mind. einer Fläche).
+ * Lückentext mit mind. einer Lücke – {{Lücke}} wird dabei zu ==Lücke==, Bildverdeckung mit Bild und mind. einer Fläche,
+ * jede mit eigener Kennung). `previous`: die Bildverdeckung vor dem Bearbeiten.
  */
-function cleanCard(input: CardInput): CleanCard {
+function cleanCard(input: CardInput, previous: Occlusion | null = null): CleanCard {
   const raw = input.front.replace(/\r\n?/g, '\n').trim()
   const front = input.type === 'cloze' ? normalizeCloze(raw) : raw
   const back = (input.back ?? '').replace(/\r\n?/g, '\n').trim()
@@ -290,7 +303,7 @@ function cleanCard(input: CardInput): CleanCard {
     if (n > MAX_CLOZES) throw badRequest(`Höchstens ${MAX_CLOZES} Lücken pro Karte.`)
   } else if (input.type === 'occlusion') {
     const o = input.occlusion
-    occlusion = o ? { image: o.image.trim(), masks: o.masks.map(fitMask), hideAll: !!o.hideAll } : null
+    occlusion = o ? { image: o.image.trim(), masks: withMaskIds(o.masks.map(fitMask), previous?.masks), hideAll: !!o.hideAll } : null
     const error = occlusion ? occlusionError(occlusion) : 'Bitte wähle ein Bild.'
     if (error) throw badRequest(error)
   } else if (!back) {
@@ -314,7 +327,7 @@ function nextPosition(deckId: string): number {
 /** Legt eine oder mehrere Karten am Ende des Stapels an. */
 export function createCards(userId: number, deckId: string, inputs: CardInput[]): Card[] {
   getDeckRow(userId, deckId)
-  const cleaned = inputs.map(cleanCard)
+  const cleaned = inputs.map((input) => cleanCard(input))
   const db = getDb()
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM cards WHERE user_id = ?').get(userId) as { n: number }
   if (n + cleaned.length > MAX_CARDS_PER_USER) {
@@ -381,17 +394,21 @@ export function updateCard(
   userId: number,
   id: string,
   patch: Partial<CardInput> & { deckId?: string; suspended?: boolean },
-): Card {
+): CardUpdateResult {
   const row = getCardRow(userId, id)
   const current = toCard(row)
-  const next = cleanCard({
-    type: patch.type ?? current.type,
-    front: patch.front ?? current.front,
-    back: patch.back ?? current.back,
-    options: patch.options ?? current.options,
-    occlusion: patch.occlusion !== undefined ? patch.occlusion : current.occlusion,
-    noteId: patch.noteId !== undefined ? patch.noteId : current.noteId,
-  })
+  const next = cleanCard(
+    {
+      type: patch.type ?? current.type,
+      front: patch.front ?? current.front,
+      back: patch.back ?? current.back,
+      options: patch.options ?? current.options,
+      occlusion: patch.occlusion !== undefined ? patch.occlusion : current.occlusion,
+      noteId: patch.noteId !== undefined ? patch.noteId : current.noteId,
+    },
+    current.occlusion,
+  )
+  const sideMap = remapSides(current, next)
   const db = getDb()
   let deckId = row.deck_id
   let position = row.position
@@ -420,10 +437,45 @@ export function updateCard(
       id,
       userId,
     )
-    // Weggefallene Seiten verlieren ihren Lernstand (aus beidseitig wird einseitig, eine Lücke oder Fläche fällt weg)
-    db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side >= ?').run(id, sidesOf(next).length)
+    moveSides(userId, id, sideMap, sidesOf(current).length)
   })()
-  return toCard(getCardRow(userId, id))
+  return { card: toCard(getCardRow(userId, id)), sideMap }
+}
+
+/**
+ * Lernstand und Protokoll ziehen mit ihrer Lücke bzw. Fläche um (`sideMap` aus `remapSides`). Weggefallene Seiten
+ * (aus beidseitig wird einseitig, eine Lücke oder Fläche fällt weg) verlieren ihren Lernstand. Ihre Protokolleinträge
+ * bleiben für die Statistik, gehören aber wie die gelöschter Karten zu keiner Karte mehr – sonst vermischte der
+ * FSRS-Optimierer sie mit dem Verlauf der Seite, die jetzt diese Nummer trägt. Läuft in der Transaktion des Aufrufers.
+ */
+function moveSides(userId: number, cardId: string, sideMap: (number | null)[], before: number) {
+  if (sideMap.length === before && sideMap.every((old, side) => old === side)) return
+  const db = getDb()
+  const moved = movedSides(sideMap)
+  // Neu einfügen statt umnummerieren – der Primärschlüssel (card_id, side) ließe kein Tauschen zu
+  const reviews = db.prepare('SELECT * FROM card_reviews WHERE card_id = ? AND user_id = ?').all(cardId, userId) as ReviewRow[]
+  db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND user_id = ?').run(cardId, userId)
+  const insert = db.prepare(
+    `INSERT INTO card_reviews
+       (card_id, side, user_id, phase, step, interval, ease, stability, difficulty, reps, lapses, due, reviewed_at, introduced_at)
+     VALUES (@card_id, @side, @user_id, @phase, @step, @interval, @ease, @stability, @difficulty, @reps, @lapses, @due,
+       @reviewed_at, @introduced_at)`,
+  )
+  for (const r of reviews) {
+    const side = moved.get(r.side)
+    if (side !== undefined) insert.run({ ...r, side })
+  }
+  // Erst alle Einträge beiseite, dann an ihre neue Seite – sonst stießen sie unterwegs an den eindeutigen Index
+  const parked = `${cardId}:${Date.now()}`
+  db.prepare('UPDATE review_log SET card_id = ? WHERE user_id = ? AND card_id = ?').run(parked, userId, cardId)
+  const sides = db.prepare('SELECT DISTINCT side FROM review_log WHERE user_id = ? AND card_id = ?').all(userId, parked) as {
+    side: number
+  }[]
+  const move = db.prepare('UPDATE review_log SET card_id = ?, side = ? WHERE user_id = ? AND card_id = ? AND side = ?')
+  for (const { side } of sides) {
+    const to = moved.get(side)
+    move.run(to === undefined ? `${parked}:${side}` : cardId, to ?? side, userId, parked, side)
+  }
 }
 
 /** Karte neu lernen (z. B. nach dem Überarbeiten einer Problemkarte): Lernstand weg, Aussetzen aufgehoben. */
@@ -538,6 +590,10 @@ export const cardSchema = z.object({
       masks: z
         .array(
           z.object({
+            id: z
+              .string()
+              .regex(/^[\w-]{1,64}$/)
+              .optional(),
             x: z.number().min(0).max(1),
             y: z.number().min(0).max(1),
             w: z.number().min(0).max(1),

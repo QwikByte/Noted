@@ -111,7 +111,9 @@ test('Bildverdeckung: Fläche hinzufügen, mit der Tastatur verschieben, in der 
   await expect(dialog).toBeHidden()
   const saved = (await flashcards(page)).cards.find((c: { deckId: string }) => c.deckId === deck.id)
   const near = (n: number) => expect.closeTo(n, 4)
-  expect(saved.occlusion.masks).toEqual([{ x: near(0.42), y: near(0.49), w: near(0.25), h: near(0.11), label: 'Herz' }])
+  expect(saved.occlusion.masks).toEqual([
+    { id: expect.any(String), x: near(0.42), y: near(0.49), w: near(0.25), h: near(0.11), label: 'Herz' },
+  ])
 
   const { attachments } = await (await page.request.get('/api/attachments')).json()
   for (const a of attachments as { id: string; filename: string }[]) {

@@ -72,4 +72,23 @@ describe('Datenbank', () => {
     expect(db.prepare('SELECT COUNT(*) FROM review_log').pluck().get()).toBe(1)
     db.close()
   })
+
+  it('Links mit Ordnerpfad (Migration 2): vorhandene Links bleiben, ihr Ordner wird beim Start nachgetragen', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = ON')
+    db.exec(migrations[0])
+    db.exec(`
+      INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
+      INSERT INTO notes (id, user_id, title, content, created_at, updated_at) VALUES ('n', 1, 'Plan', '[[Analysis/Übung 1]]', 0, 0);
+      INSERT INTO note_links (note_id, target) VALUES ('n', 'übung 1');
+    `)
+    db.exec(migrations[1])
+    expect(db.prepare('SELECT note_id, target, path FROM note_links').all()).toEqual([{ note_id: 'n', target: 'übung 1', path: '' }])
+    expect(db.prepare("SELECT value FROM settings WHERE key = 'reindex_link_paths'").pluck().get()).toBe('1')
+    // Derselbe Titel mit verschiedenen Ordnern in einer Notiz
+    db.exec(`INSERT INTO note_links (note_id, target, path) VALUES ('n', 'übung 1', 'analysis')`)
+    db.exec(`DELETE FROM notes WHERE id = 'n'`)
+    expect(db.prepare('SELECT COUNT(*) FROM note_links').pluck().get()).toBe(0)
+    db.close()
+  })
 })

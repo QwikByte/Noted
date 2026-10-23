@@ -8,13 +8,14 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/client/api'
 import { deviceTimeZone, useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
-import { reviewKey, sidesOf, stateMap, type StateMap } from '../study'
+import { movedSides, reviewKey, sidesOf, stateMap, type Side, type StateMap } from '../study'
 import type {
   AnkiImportResult,
   Card,
   CardOption,
   CardReview,
   CardType,
+  CardUpdateResult,
   Deck,
   DeckImportResult,
   FlashcardData,
@@ -170,6 +171,37 @@ export class ReviewQueue {
     for (const map of [this.pending, this.acked]) {
       for (const [key, r] of map) if (cardIds.has(r.cardId)) map.delete(key)
     }
+    this.persist()
+    this.emit()
+  }
+
+  /**
+   * Seiten einer bearbeiteten Karte umnummerieren wie auf dem Server (`sideMap` aus `remapSides`): Bewertungen ziehen
+   * mit ihrer Lücke bzw. Fläche um, die weggefallener Seiten entfallen.
+   */
+  remap(cardId: string, sideMap: (Side | null)[]) {
+    const moved = movedSides(sideMap)
+    let changed = false
+    for (const map of [this.pending, this.acked]) {
+      const keep: CardReview[] = []
+      for (const [key, r] of map) {
+        if (r.cardId !== cardId || moved.get(r.side) === r.side) continue
+        this.forget(map, key, r)
+        const side = moved.get(r.side)
+        if (side !== undefined) keep.push({ ...r, side })
+        changed = true
+      }
+      for (const r of keep) upsert(map, r)
+    }
+    for (const [key, e] of [...this.log]) {
+      if (e.cardId !== cardId || moved.get(e.side) === e.side) continue
+      this.log.delete(key)
+      this.sentLog.add(key)
+      const side = moved.get(e.side)
+      if (side !== undefined) this.log.set(logKey({ ...e, side }), { ...e, side })
+      changed = true
+    }
+    if (!changed) return
     this.persist()
     this.emit()
   }
@@ -388,13 +420,18 @@ export async function updateCard(
   id: string,
   input: Partial<CardInput> & { deckId?: string; suspended?: boolean },
 ): Promise<Card> {
-  const { card } = await api<{ card: Card }>(`/api/cards/${id}`, { method: 'PATCH', body: input })
-  // Weggefallene Seiten (aus beidseitig wird einseitig, Lücke gelöscht) verlieren ihren Lernstand – wie auf dem Server
-  const sides = sidesOf(card).length
+  const { card, sideMap } = await api<CardUpdateResult>(`/api/cards/${id}`, { method: 'PATCH', body: input })
+  // Der Lernstand zieht mit seiner Lücke bzw. Fläche um, weggefallene Seiten verlieren ihn – wie auf dem Server
+  reviewQueue.remap(id, sideMap)
+  const moved = movedSides(sideMap)
   patch(qc, (d) => ({
     ...d,
     cards: d.cards.map((c) => (c.id === id ? card : c)),
-    reviews: d.reviews.filter((r) => r.cardId !== id || r.side < sides),
+    reviews: d.reviews.flatMap((r) => {
+      if (r.cardId !== id) return [r]
+      const side = moved.get(r.side)
+      return side === undefined ? [] : [{ ...r, side }]
+    }),
   }))
   return card
 }

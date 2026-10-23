@@ -109,6 +109,31 @@ describe('Warteschlange für Bewertungen', () => {
     expect(stored().pending).toEqual([])
   })
 
+  it('nummeriert ausstehende Bewertungen einer bearbeiteten Karte um', async () => {
+    const q = started()
+    const at = (side: number, t: number) => ({ ...review('a', t), side })
+    // Eine noch nicht gesendete und eine gesendete Bewertung, dazu eine andere Karte
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok()))
+    q.add(at(2, 3000))
+    await q.flush()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    q.add(at(0, 1000))
+    q.add(at(1, 2000))
+    q.add({ ...review('b', 4000), side: 1 })
+    const before = store.get(KEY)!
+    // Fläche 0 wurde gelöscht, eine neue kam ans Ende: 1 → 0, 2 → 1
+    q.remap('a', [1, 2, null])
+    const sides = (list: CardReview[]) => list.map((r) => `${r.cardId}:${r.side}:${r.reviewedAt}`).sort()
+    expect(sides(stored().pending)).toEqual(['a:0:2000', 'b:1:4000'])
+    expect(sides(stored().acked)).toEqual(['a:1:3000'])
+    expect(sides(q.getSnapshot())).toEqual(['a:0:2000', 'a:1:3000', 'b:1:4000'])
+    // Ein anderer Tab schreibt den alten Stand zurück: Die alten Nummern kommen nicht wieder
+    store.set(KEY, before)
+    q.add(review('c', 5000))
+    expect(sides(stored().pending)).toEqual(['a:0:2000', 'b:1:4000', 'c:0:5000'])
+    expect(sides(stored().acked)).toEqual(['a:1:3000'])
+  })
+
   it('holt verworfene Karten nicht aus dem Speicher zurück', () => {
     const q = started()
     q.add(review('a', 1000))
@@ -146,6 +171,16 @@ describe('Bewertungsprotokoll in der Warteschlange', () => {
     const body = JSON.parse(fetchMock.mock.calls[1][1].body as string)
     expect(body.log.map((e: { reviewedAt: number }) => e.reviewedAt)).toEqual([1000, 61_000])
     expect(storedLog()).toEqual([])
+  })
+
+  it('nummeriert auch ausstehende Protokolleinträge um', () => {
+    const q = started()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    q.add(review('a', 1000), entry('a', 1000))
+    q.add({ ...review('a', 2000), side: 1 }, { ...entry('a', 2000), side: 1 })
+    q.remap('a', [null, 0])
+    const log = JSON.parse(store.get(KEY) ?? '{}').log as { side: number; reviewedAt: number }[]
+    expect(log.map((e) => [e.side, e.reviewedAt])).toEqual([[1, 1000]])
   })
 
   it('holt gesendete Einträge nicht aus dem Speicher eines anderen Tabs zurück', async () => {

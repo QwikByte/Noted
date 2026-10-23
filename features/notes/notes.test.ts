@@ -18,6 +18,7 @@ import * as version from '@/app/api/notes/[id]/versions/[versionId]/route'
 import * as restoreVersion from '@/app/api/notes/[id]/versions/[versionId]/restore/route'
 import { getDb } from '@/shared/server/db'
 import { MAX_VERSIONS_PER_NOTE, VERSION_MAX_AGE, purgeVersions } from './server/versions'
+import { reindexLinkPaths } from './server/notes'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -145,6 +146,70 @@ describe('Ordner und Notizen', () => {
     expect(r2.data.linksUpdated).toBe(1)
     const renamed = await call(note.GET, '/', { cookie: token, params: { id: src.id } })
     expect(renamed.data.note.content).toBe('Siehe [[Übungen Sommer]]')
+  })
+
+  describe('Links mit Ordnerpfad', () => {
+    let ana: { id: string }
+    let la: { id: string }
+    let plan: { id: string }
+    let all: { id: string }
+    let nearby: { id: string }
+    let renamed: { id: string }
+    const backlinkIds = async (id: string) =>
+      ((await call(backlinks.GET, '/', { cookie: token, params: { id } })).data.backlinks as { id: string }[])
+        .map((b) => b.id)
+        .sort()
+    const content = async (id: string) => (await call(note.GET, '/', { cookie: token, params: { id } })).data.note.content
+
+    beforeAll(async () => {
+      const uni = await newFolder('Uni 66')
+      const anaFolder = await newFolder('Analysis', uni.id)
+      const laFolder = await newFolder('Lineare Algebra', uni.id)
+      ana = await newNote('Übung 1', 'Folgen', anaFolder.id)
+      la = await newNote('Übung 1', 'Matrizen', laFolder.id)
+      plan = await newNote('Lernplan', 'Zuerst [[Analysis/Übung 1]], dann [[Uni 66/analysis/Übung 1#A2|Teil 2]].')
+      all = await newNote('Alle Übungen', 'Siehe [[Übung 1]] und [[Umbenannter Ordner/Übung 1]]')
+      nearby = await newNote('Mitschrift', 'Heute [[Übung 1]] besprochen', anaFolder.id)
+      // Zuletzt bearbeitet wurde die Notiz aus Lineare Algebra
+      await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: la.id }, body: { content: 'Matrizen 2' } })
+    })
+
+    it('„Verlinkt in“ zählt Links mit Ordner nur für die Notiz in diesem Ordner', async () => {
+      expect(await backlinkIds(ana.id)).toEqual([plan.id, all.id, nearby.id].sort())
+      // Ohne Ordner und mit einem Ordner, den es nicht gibt, für beide – außer aus einer Notiz im Ordner der einen
+      expect(await backlinkIds(la.id)).toEqual([all.id])
+    })
+
+    it('Umbenennen passt Links mit passendem Ordner an und meldet mehrdeutige ohne Ordner', async () => {
+      const r = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: ana.id }, body: { title: 'Folgen' } })
+      expect(r.status).toBe(200)
+      expect(r.data).toMatchObject({ linksUpdated: 3, linksSkipped: 2 })
+      expect(await content(plan.id)).toBe('Zuerst [[Analysis/Folgen]], dann [[Uni 66/analysis/Folgen#A2|Teil 2]].')
+      expect(await content(nearby.id)).toBe('Heute [[Folgen]] besprochen')
+      expect(await content(all.id)).toBe('Siehe [[Übung 1]] und [[Umbenannter Ordner/Übung 1]]')
+      renamed = ana
+      expect(await backlinkIds(renamed.id)).toEqual([plan.id, nearby.id].sort())
+
+      // Jetzt eindeutig: Auch die Links ohne passenden Ordner folgen
+      const r2 = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: la.id }, body: { title: 'Matrizen' } })
+      expect(r2.data).toMatchObject({ linksUpdated: 2, linksSkipped: 0 })
+      expect(await content(all.id)).toBe('Siehe [[Matrizen]] und [[Umbenannter Ordner/Matrizen]]')
+    })
+
+    it('liest nach dem Update vorhandene Links mit Ordner einmal neu ein', () => {
+      const db = getDb()
+      // Stand direkt nach der Migration: je Ziel eine Zeile ohne Ordnerteil, Merker gesetzt
+      db.prepare('DELETE FROM note_links WHERE note_id = ?').run(plan.id)
+      db.prepare("INSERT INTO note_links (note_id, target) VALUES (?, 'folgen')").run(plan.id)
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('reindex_link_paths', '1')").run()
+      expect(reindexLinkPaths()).toBeGreaterThan(0)
+      expect(db.prepare('SELECT target, path FROM note_links WHERE note_id = ? ORDER BY path').all(plan.id)).toEqual([
+        { target: 'folgen', path: 'analysis' },
+        { target: 'folgen', path: 'uni 66/analysis' },
+      ])
+      // Nur einmal
+      expect(reindexLinkPaths()).toBe(0)
+    })
   })
 
   it('lehnt ungültige oder doppelte Titel beim Umbenennen ab', async () => {

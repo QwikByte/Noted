@@ -62,7 +62,8 @@ export function createManifest(
         front,
         back,
         options,
-        occlusion,
+        // Die Kennungen der Flächen gelten nur innerhalb des Kontos – der Import vergibt neue
+        occlusion: occlusion && { ...occlusion, masks: occlusion.masks.map(({ x, y, w, h, label }) => ({ x, y, w, h, label })) },
         position,
         suspended,
       })),

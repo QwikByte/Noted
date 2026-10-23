@@ -459,6 +459,53 @@ test('Links ins Leere: ungültige Zeichen fragen nach, ein Ordnerpfad legt im Or
   await expect(page.locator('.markdown-body a.wikilink', { hasText: 'Wellen Linkziele' })).not.toHaveClass(/unresolved/)
 })
 
+test('Gleichnamige Notizen: Links mit Ordner öffnen die Notiz dort, ohne Ordner zuerst die im eigenen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = async (name: string) => {
+    const f = (await (await page.request.post('/api/folders', { headers, data: { name } })).json()).folder
+    cleanup.unshift(`/api/folders/${f.id}`)
+    return f as { id: string }
+  }
+  const create = async (title: string, content: string, folderId: string | null) => {
+    const note = (await (await page.request.post('/api/notes', { headers, data: { title, content, folderId } })).json()).note
+    cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+    return note as { id: string }
+  }
+  const ana = await folder('Analysis Pfadlink')
+  const la = await folder('LA Pfadlink')
+  const inAna = await create('Übung Pfadlink', 'Folgen', ana.id)
+  const plan = await create('Lernplan Pfadlink', '[[Analysis Pfadlink/Übung Pfadlink]] und [[Übung Pfadlink]]', null)
+  const nearby = await create('Mitschrift Pfadlink', '[[Übung Pfadlink]]', ana.id)
+  // Zuletzt bearbeitet wird die Übung aus Lineare Algebra
+  const inLa = await create('Übung Pfadlink', 'Matrizen', la.id)
+  const links = page.locator('.markdown-body a.wikilink')
+
+  // Mit Ordner: die Übung aus Analysis, auch wenn die andere zuletzt bearbeitet wurde; ohne Ordner wie bisher
+  await page.goto(`/?n=${plan.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(links.nth(0)).toHaveAttribute('data-note-id', inAna.id)
+  await expect(links.nth(1)).toHaveAttribute('data-note-id', inLa.id)
+  await links.nth(0).click()
+  await expect(page).toHaveURL(new RegExp(`n=${inAna.id}`))
+  await expect(page.locator('.markdown-body')).toContainText('Folgen')
+
+  // Ohne Ordner aus einer Notiz im Ordner Analysis: die Übung daneben
+  await page.goto(`/?n=${nearby.id}`)
+  await expect(links.first()).toHaveAttribute('data-note-id', inAna.id)
+
+  // Umbenennen: Der Link mit Ordner und der aus dem Ordner folgen, der mehrdeutige bleibt – mit Hinweis
+  await page.goto(`/?n=${inAna.id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await page.getByTestId('note-title').fill('Folgen Pfadlink')
+  await page.getByTestId('note-title').press('Enter')
+  await expect(page.getByText('2 Links auf „Folgen Pfadlink“ aktualisiert.')).toBeVisible()
+  await expect(page.getByText('1 Link ohne Ordner blieb unverändert – es gibt noch eine Notiz mit dem alten Titel.')).toBeVisible()
+  const content = async (id: string) => (await (await page.request.get(`/api/notes/${id}`)).json()).note.content
+  expect(await content(plan.id)).toBe('[[Analysis Pfadlink/Folgen Pfadlink]] und [[Übung Pfadlink]]')
+  expect(await content(nearby.id)).toBe('[[Folgen Pfadlink]]')
+})
+
 test('Editor: Links per Strg-Klick öffnen, Vorschau beim Überfahren, Kontextmenü', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

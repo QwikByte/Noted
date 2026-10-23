@@ -6,6 +6,7 @@ import {
   findHeadings,
   findWikiLinks,
   headingKey,
+  linkFolders,
   makeExcerpt,
   splitFrontmatter,
   stripCode,
@@ -61,9 +62,19 @@ describe('Wikilinks', () => {
 
   it('liefert normalisierte Notiz-Links ohne Dateien', () => {
     expect(extractLinks('[[Note A]] [[ordner/Note B.md]] ![[bild.png]] `[[code]]` [[note a|x]]')).toEqual([
-      'note a',
-      'note b',
+      { key: 'note a', path: '' },
+      { key: 'note b', path: 'ordner' },
     ])
+  })
+
+  it('unterscheidet Links mit Ordnerpfad', () => {
+    expect(extractLinks('[[Übung 1]] [[Analysis/Übung 1]] [[ Uni / Analysis /Übung 1#A]] [[/Übung 1]]')).toEqual([
+      { key: 'übung 1', path: '' },
+      { key: 'übung 1', path: 'analysis' },
+      { key: 'übung 1', path: 'uni/analysis' },
+    ])
+    expect(linkFolders('Uni/Analysis/Übung 1')).toEqual(['uni', 'analysis'])
+    expect(linkFolders('Übung 1')).toEqual([])
   })
 })
 

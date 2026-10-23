@@ -539,12 +539,13 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     [notes, tags, attachments, note.id, inVault],
   )
 
+  // Bei gleichnamigen Notizen geht die im Ordner dieser Notiz vor
   const resolveNote = useCallback(
     (target: string) => {
-      const n = app.resolveTitle(target, { vault: inVault })
+      const n = app.resolveTitle(target, { vault: inVault, fromFolderId: note.folderId })
       return n ? { id: n.id, title: n.title } : null
     },
-    [app, inVault],
+    [app, inVault, note.folderId],
   )
 
   // Sprung zu einer Überschrift ([[Notiz#Abschnitt]], Abfrage, Glossar): im Editor zur Zeile, sonst zum gerenderten
@@ -763,11 +764,11 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       mode === 'read' &&
       !inVault &&
       (backlinks.length > 0 ||
-        extractLinks(text).some((key) => {
-          const target = app.resolveTitle(key)
+        extractLinks(text).some(({ key, path }) => {
+          const target = app.resolveTitle(path ? `${path}/${key}` : key, { fromFolderId: note.folderId })
           return !!target && target.id !== note.id
         })),
-    [mode, backlinks, text, app, note.id, inVault],
+    [mode, backlinks, text, app, note.id, note.folderId, inVault],
   )
 
   const { data: flashcards } = useFlashcards()

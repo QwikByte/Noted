@@ -10,6 +10,8 @@ import {
   deckCounts,
   isCorrectSelection,
   isProblemCard,
+  movedSides,
+  remapSides,
   reviewKey,
   sidesOf,
   stateMap,
@@ -330,6 +332,43 @@ describe('Lernsitzung', () => {
     expect(byDeck.get('d2')?.map((c) => c.id)).toEqual(Array.from({ length: 50 }, (_, i) => `c${i * 1000}`))
     expect(byDeck.get('d1')?.slice(0, 2).map((c) => c.id)).toEqual(['c1', 'c2'])
     expect(byDeck.has('d3')).toBe(false)
+  })
+})
+
+describe('Lernstand beim Bearbeiten', () => {
+  const cloze = (front: string) => ({ type: 'cloze' as const, front })
+
+  it('ordnet Lücken über ihren Text zu', () => {
+    const before = cloze('==A== und ==B== und ==C==')
+    expect(remapSides(before, before)).toEqual([0, 1, 2])
+    // Vorne eingefügt, in der Mitte gelöscht, umgestellt
+    expect(remapSides(before, cloze('==X== ==A== ==B== ==C=='))).toEqual([null, 0, 1, 2])
+    expect(remapSides(before, cloze('==A== und B und ==C=='))).toEqual([0, 2])
+    expect(remapSides(before, cloze('==C== ==A== ==B=='))).toEqual([2, 0, 1])
+    expect(remapSides(cloze('==A== ==B== ==C== ==D=='), cloze('==B== ==A== ==D== ==C=='))).toEqual([1, 0, 3, 2])
+    // Leerzeichen am Rand der Lücke zählen nicht
+    expect(remapSides(before, cloze('== A == und ==B== und ==C=='))).toEqual([0, 1, 2])
+  })
+
+  it('behält den Stand umformulierter Lücken, wenn die Zuordnung eindeutig ist', () => {
+    const before = cloze('==sin== ist ==cos== und ==tan==')
+    expect(remapSides(before, cloze('==Sinus== ist ==cos== und ==Tangens=='))).toEqual([0, 1, 2])
+    // Zwei Lücken werden zu einer: nicht eindeutig, also neu
+    expect(remapSides(before, cloze('==sin und cos== und ==tan=='))).toEqual([null, 2])
+    // Gleicher Text mehrfach: in Reihenfolge
+    expect(remapSides(cloze('==x== + ==x== = ==2x=='), cloze('==x== = ==2x=='))).toEqual([0, 2])
+  })
+
+  it('bleibt bei anderen Kartenarten und beim Wechsel der Art bei der Position', () => {
+    const basic = { type: 'basic' as const, front: 'Frage' }
+    const reversed = { type: 'reversed' as const, front: 'Frage' }
+    expect(remapSides(reversed, basic)).toEqual([0])
+    expect(remapSides(basic, reversed)).toEqual([0, null])
+    expect(remapSides(cloze('==A== ==B=='), reversed)).toEqual([0, 1])
+    expect([...movedSides([null, 0, 2])]).toEqual([
+      [0, 1],
+      [2, 2],
+    ])
   })
 })
 

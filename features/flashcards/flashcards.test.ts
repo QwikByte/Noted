@@ -223,16 +223,17 @@ describe('Bildverdeckung', () => {
     expect(r.status).toBe(201)
     const [c] = r.data.cards as Card[]
     expect(c).toMatchObject({ type: 'occlusion', front: 'Herz', options: [] })
-    // Beschriftung bereinigt, Fläche ins Bild eingepasst
+    // Beschriftung bereinigt, Fläche ins Bild eingepasst, jede mit eigener Kennung
     expect(c.occlusion).toEqual({
       image: 'herz.png',
       masks: [
-        { x: 0.1, y: 0.1, w: 0.2, h: 0.1, label: 'Aorta' },
-        { x: 0.5, y: 0.5, w: 0.2, h: 0.1, label: '' },
-        { x: 0.7, y: 0.7, w: 0.3, h: 0.3, label: '' },
+        { id: expect.any(String), x: 0.1, y: 0.1, w: 0.2, h: 0.1, label: 'Aorta' },
+        { id: expect.any(String), x: 0.5, y: 0.5, w: 0.2, h: 0.1, label: '' },
+        { id: expect.any(String), x: 0.7, y: 0.7, w: 0.3, h: 0.3, label: '' },
       ],
       hideAll: true,
     })
+    expect(new Set(c.occlusion!.masks.map((m) => m.id)).size).toBe(3)
     expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: { ...occlusion, masks: [] } }])).status).toBe(400)
     expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: { ...occlusion, image: 'skript.pdf' } }])).status).toBe(400)
     expect((await addCards(d.id, [{ type: 'occlusion', front: 'Herz' }])).status).toBe(400)
@@ -259,6 +260,104 @@ describe('Bildverdeckung', () => {
     expect(edited.status).toBe(200)
     expect(edited.data.card.occlusion.masks).toHaveLength(2)
     expect((await data()).reviews.filter((x) => x.cardId === c.id).map((x) => x.side)).toEqual([0])
+  })
+})
+
+describe('Lernstand beim Bearbeiten von Lücken und Flächen', () => {
+  const at = Date.UTC(2026, 8, 1, 8)
+  const minute = 60_000
+  const patchCard = (id: string, body: object) => call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id }, body })
+  /** Kartenseite → wievielte Minute nach `at` sie zuletzt bewertet wurde */
+  async function progress(cardId: string) {
+    const list = (await data()).reviews.filter((r) => r.cardId === cardId)
+    return Object.fromEntries(list.map((r) => [r.side, (r.reviewedAt - at) / minute]))
+  }
+  async function review(cardId: string, sides: number[]) {
+    const body = {
+      reviews: sides.map((side) => ({ cardId, side, ...schedule(null, 3, at + side * minute) })),
+      log: sides.map((side) => ({
+        cardId,
+        side,
+        rating: 3,
+        phase: 'new',
+        intervalBefore: 0,
+        intervalAfter: 1,
+        durationMs: 1000,
+        reviewedAt: at + side * minute,
+      })),
+    }
+    expect((await call(reviews.POST, '/api/reviews', { cookie: token, body })).data.saved).toBe(sides.length)
+  }
+
+  it('Bildverdeckung: Der Lernstand folgt der Fläche, nicht ihrer Position', async () => {
+    const d = await newDeck('Flächen umsortieren')
+    const masks = ['Aorta', 'Vene', 'Kammer'].map((label, i) => ({ x: 0.1 + i * 0.3, y: 0.1, w: 0.2, h: 0.1, label }))
+    const [c] = (await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion: { image: 'herz.png', masks, hideAll: false } }]))
+      .data.cards as Card[]
+    const ids = c.occlusion!.masks.map((m) => m.id)
+    expect(new Set(ids).size).toBe(3)
+    await review(c.id, [0, 1, 2])
+
+    // Die erste Fläche fällt weg: Die anderen behalten ihren eigenen Lernstand
+    const [, vene, kammer] = c.occlusion!.masks
+    const removed = await patchCard(c.id, { occlusion: { ...c.occlusion, masks: [vene, kammer] } })
+    expect(removed.status).toBe(200)
+    expect(removed.data.sideMap).toEqual([1, 2])
+    expect(await progress(c.id)).toEqual({ 0: 1, 1: 2 })
+
+    // Umstellen, Verschieben und Beschriften ändern nichts; eine neue Fläche vorne ist neu
+    const moved = { ...kammer, x: 0.5, y: 0.6, label: 'Linke Kammer' }
+    const reordered = await patchCard(c.id, {
+      occlusion: { ...c.occlusion, masks: [{ x: 0.3, y: 0.3, w: 0.1, h: 0.1, label: 'Neu' }, moved, vene] },
+    })
+    expect(reordered.data.sideMap).toEqual([null, 1, 0])
+    expect(await progress(c.id)).toEqual({ 1: 2, 2: 1 })
+    expect((reordered.data.card as Card).occlusion!.masks.map((m) => m.id).slice(1)).toEqual([kammer.id, vene.id])
+
+    // Auch das Protokoll zieht mit – die weggefallene Fläche zählt für keine Seite mehr
+    const csv = new TextDecoder().decode(await (await call(statsExport.GET, '/', { cookie: token })).res.arrayBuffer())
+    const line = (n: number) => csv.split('\r\n').find((l) => l.startsWith(new Date(at + n * minute).toISOString()))
+    expect(line(0)).toContain(';Flächen umsortieren;(gelöscht);')
+    expect(line(1)).toContain(';Herz;Fläche 3;')
+    expect(line(2)).toContain(';Herz;Fläche 2;')
+  })
+
+  it('Bildverdeckung aus einem älteren Stand der App (ohne Kennungen): wie bisher über die Position', async () => {
+    const d = await newDeck('Flächen ohne Kennung')
+    const masks = [0.1, 0.4, 0.7].map((x) => ({ x, y: 0.1, w: 0.2, h: 0.1, label: '' }))
+    const occlusion = { image: 'herz.png', masks, hideAll: false }
+    const [c] = (await addCards(d.id, [{ type: 'occlusion', front: 'Herz', occlusion }])).data.cards as Card[]
+    await review(c.id, [0, 1, 2])
+    const edited = await patchCard(c.id, { occlusion: { ...occlusion, masks: masks.slice(0, 2) } })
+    expect(edited.data.sideMap).toEqual([0, 1])
+    expect((edited.data.card as Card).occlusion!.masks.map((m) => m.id)).toEqual(c.occlusion!.masks.slice(0, 2).map((m) => m.id))
+    expect(await progress(c.id)).toEqual({ 0: 0, 1: 1 })
+  })
+
+  it('Lückentext: Der Lernstand folgt dem Text der Lücke', async () => {
+    const d = await newDeck('Lücken umsortieren')
+    const [c] = (await addCards(d.id, [{ type: 'cloze', front: 'Die Ableitung von ==sin== ist ==cos==.' }])).data.cards as Card[]
+    await review(c.id, [0, 1])
+
+    // Vorne kommt eine Lücke dazu: Sie ist neu, die anderen behalten ihren Stand
+    const added = await patchCard(c.id, { front: 'Die ==Ableitung== von ==sin== ist ==cos==.' })
+    expect(added.data.sideMap).toEqual([null, 0, 1])
+    expect(await progress(c.id)).toEqual({ 1: 0, 2: 1 })
+
+    // Eine umformulierte Lücke behält ihren Stand
+    const edited = await patchCard(c.id, { front: 'Die ==Ableitung== von ==sin(x)== ist ==cos==.' })
+    expect(edited.data.sideMap).toEqual([0, 1, 2])
+    expect(await progress(c.id)).toEqual({ 1: 0, 2: 1 })
+
+    // Wird eine Lücke in der Mitte gelöscht, verliert nur sie ihren Stand
+    const removed = await patchCard(c.id, { front: 'Die ==Ableitung== von sin(x) ist ==cos==.' })
+    expect(removed.data.sideMap).toEqual([0, 2])
+    expect(await progress(c.id)).toEqual({ 1: 1 })
+
+    // Wechsel der Kartenart: wie bisher nach Position
+    const basic = await patchCard(c.id, { type: 'reversed', front: 'Ableitung von sin', back: 'cos' })
+    expect(basic.data.sideMap).toEqual([0, 1])
+    expect(await progress(c.id)).toEqual({ 1: 1 })
   })
 })
 
@@ -455,12 +554,13 @@ describe('Stapel als Datei', () => {
     return call(deckImport.POST, '/', { cookie, form })
   }
 
+  // Die Kennungen der Flächen gelten nur im eigenen Konto – der Import vergibt neue
   const comparable = (c: Card) => ({
     type: c.type,
     front: c.front,
     back: c.back,
     options: c.options,
-    occlusion: c.occlusion,
+    occlusion: c.occlusion && { ...c.occlusion, masks: c.occlusion.masks.map(({ x, y, w, h, label }) => ({ x, y, w, h, label })) },
     suspended: c.suspended,
   })
 
@@ -490,6 +590,8 @@ describe('Stapel als Datei', () => {
     expect(r.res.headers.get('content-disposition')).toContain('Kardiologie.noted-deck.zip')
     exported = new Uint8Array(await r.res.arrayBuffer())
     expect(Object.keys(unzipSync(exported)).sort()).toEqual(['deck.json', 'media/Herz Skizze.png'])
+    const manifest = JSON.parse(strFromU8(unzipSync(exported)['deck.json']))
+    expect(manifest.cards[4].occlusion.masks).toEqual([{ x: 0.1, y: 0.2, w: 0.3, h: 0.1, label: 'Aorta' }])
 
     // Zweites Konto, in dem es schon eine andere Datei mit demselben Namen gibt
     await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'stapelgast', password: 'Stapel-Kennwort-1' } })

@@ -240,14 +240,28 @@ export function linkKey(target: string): string {
   return base.replace(/\.md$/i, '').trim().toLowerCase()
 }
 
+/** Ordnerteil eines Linkziels, klein geschrieben: „Uni/Analysis/Übung 1“ → ['uni', 'analysis'] */
+export function linkFolders(target: string): string[] {
+  return target
+    .split('/')
+    .slice(0, -1)
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+/** Link auf eine Notiz: `key` wie linkKey, `path` der Ordnerteil wie linkFolders („uni/analysis“, ohne Ordner '') */
+export type NoteLink = { key: string; path: string }
+
 /** Alle verlinkten Notizen (ohne Dateien/Anhänge). */
-export function extractLinks(content: string): string[] {
-  const keys = new Set<string>()
+export function extractLinks(content: string): NoteLink[] {
+  const links = new Map<string, NoteLink>()
   for (const link of findWikiLinks(content)) {
     if (!link.target || isFileTarget(link.target)) continue
-    keys.add(linkKey(link.target))
+    const key = linkKey(link.target)
+    const path = linkFolders(link.target).join('/')
+    links.set(`${path}/${key}`, { key, path })
   }
-  return [...keys].sort()
+  return [...links.values()].sort((a, b) => (a.key === b.key ? (a.path < b.path ? -1 : 1) : a.key < b.key ? -1 : 1))
 }
 
 const LINE_PREFIX_RE = /^\s{0,3}(#{1,6}\s+|>\s*(\[![^\]]*\][+-]?\s*)?|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/gm
