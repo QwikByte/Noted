@@ -1,7 +1,7 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
 import { clozeCount } from './cloze'
-import { examDue, nextExam } from './exam'
+import { daysUntil, examDue, nextExam } from './exam'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
 /** Abgefragte Seite: 0 = Vorderseite, 1 = Rückseite (beidseitig), bei Lückentexten die Nummer der Lücke */
@@ -103,12 +103,21 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   let dueTomorrow = 0
   const candidates: StudyItem[] = []
 
+  // Geschwister zurückstellen (wie „bury siblings“ bei Anki): Seiten derselben Karte verraten sich sonst gegenseitig –
+  // bei Lücke 2 steht Lücke 1 schon ausgefüllt im Satz. Nicht am Tag vor der Klausur, da muss alles drankommen.
+  const bury = !exam || daysUntil(exam, now) > 1
+
   for (const card of [...cards].sort(byPosition)) {
     const counted = !card.suspended && (!inScope || inScope(card))
-    for (const side of sidesOf(card)) {
-      const state = states.get(reviewKey(card.id, side))
-      if (state && state.introducedAt >= today) introducedToday++
-      if (!counted) continue
+    const sides = sidesOf(card).map((side) => ({ side, state: states.get(reviewKey(card.id, side)) }))
+    for (const { state } of sides) if (state && state.introducedAt >= today) introducedToday++
+    if (!counted) continue
+    // Heute schon eine Seite gelernt: keine weitere Wiederholung und keine neue Seite dieser Karte mehr
+    const studiedToday = bury && sides.some(({ state }) => state && state.reviewedAt >= today)
+    const dueReviews: { item: StudyItem; due: number }[] = []
+    const newSides: StudyItem[] = []
+    let planned = false
+    for (const { side, state } of sides) {
       total++
       if (!state) {
         newTotal++
@@ -118,16 +127,25 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
           const previous = states.get(reviewKey(card.id, side - 1))
           if (!previous || previous.introducedAt >= today) continue
         }
-        candidates.push({ card, side, kind: 'new' })
+        newSides.push({ card, side, kind: 'new' })
         continue
       }
       if (state.reviewedAt >= today) reviewedToday++
       const due = exam ? examDue(state, reviewKey(card.id, side), exam, now) : state.due
       if (due <= eod) {
-        if (state.phase === 'review') review.push({ card, side, kind: 'review' })
-        else learning.push({ card, side, kind: 'learning' })
+        if (state.phase === 'review') dueReviews.push({ item: { card, side, kind: 'review' }, due })
+        else {
+          // Lernschritte laufen heute weiter, auch bei Geschwistern
+          learning.push({ card, side, kind: 'learning' })
+          planned = true
+        }
       } else if (due <= eot) dueTomorrow++
     }
+    // Je Karte höchstens eine Wiederholung pro Tag – die am längsten überfällige; die übrigen kommen morgen
+    const kept = !bury ? dueReviews : studiedToday ? [] : [...dueReviews].sort((a, b) => a.due - b.due).slice(0, 1)
+    review.push(...kept.map((r) => r.item))
+    dueTomorrow += dueReviews.length - kept.length
+    if (!bury || !(studiedToday || planned || kept.length > 0)) candidates.push(...newSides)
   }
   const newToday = Math.max(0, Math.min(candidates.length, deck.newPerDay - introducedToday))
   fresh.push(...candidates.slice(0, newToday))
