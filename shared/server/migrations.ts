@@ -377,4 +377,21 @@ export const migrations: string[] = [
   );
   CREATE INDEX focus_sessions_user ON focus_sessions(user_id, started_at);
   `,
+
+  /* 2: Wikilinks mit Ordnerpfad */ `
+  -- [[Analysis/Übung 1]] meint die „Übung 1“ im Ordner Analysis: path = Ordnerteil des Links, klein geschrieben
+  -- ('' ohne Ordner). Den Primärschlüssel kann SQLite nicht ändern, daher eine neue Tabelle. Die Pfade vorhandener
+  -- Links trägt reindexLinkPaths() beim nächsten Start nach, solange der Merker in settings steht.
+  CREATE TABLE note_links_new (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    path TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (note_id, target, path)
+  );
+  INSERT INTO note_links_new (note_id, target) SELECT note_id, target FROM note_links;
+  DROP TABLE note_links;
+  ALTER TABLE note_links_new RENAME TO note_links;
+  CREATE INDEX note_links_target ON note_links(target);
+  INSERT OR REPLACE INTO settings (key, value) VALUES ('reindex_link_paths', '1');
+  `,
 ]

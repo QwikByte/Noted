@@ -3,6 +3,7 @@ import { ADMIN_PASSWORD, call, loginAs, setupTestEnv } from '@/tests/helpers'
 import * as graph from '@/app/api/graph/route'
 import * as notes from '@/app/api/notes/route'
 import * as note from '@/app/api/notes/[id]/route'
+import * as folders from '@/app/api/folders/route'
 import * as restore from '@/app/api/notes/[id]/restore/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
@@ -21,6 +22,12 @@ async function newNote(title: string, content = '') {
   const r = await call(notes.POST, '/api/notes', { cookie: token, body: { title, content, folderId: null } })
   expect(r.status).toBe(201)
   return r.data.note as { id: string; title: string }
+}
+
+async function newFolder(name: string, parentId: string | null = null) {
+  const r = await call(folders.POST, '/api/folders', { cookie: token, body: { name, parentId } })
+  expect(r.status).toBe(201)
+  return r.data.folder as { id: string }
 }
 
 async function load(cookie = token): Promise<GraphData> {
@@ -44,6 +51,22 @@ describe('Graph der Wikilinks', () => {
     expect(byId.get(a.id)).toMatchObject({ folderId: null, tags: ['mathe/ana'], links: 2 })
     expect(byId.get(b.id)!.links).toBe(2)
     expect(byId.get(c.id)!.links).toBe(0)
+  })
+
+  it('ein Link mit Ordnerpfad ist eine Kante nur zur Notiz in diesem Ordner', async () => {
+    const ana = await newFolder('Analysis')
+    const la = await newFolder('Lineare Algebra')
+    const inAna = (await call(notes.POST, '/', { cookie: token, body: { title: 'Blatt 1', content: '', folderId: ana.id } })).data.note
+    const inLa = (await call(notes.POST, '/', { cookie: token, body: { title: 'Blatt 1', content: '', folderId: la.id } })).data.note
+    const plan = await newNote('Plan', '[[Analysis/Blatt 1]]')
+    const both = await newNote('Beide', '[[Blatt 1]]')
+    const nearby = (await call(notes.POST, '/', { cookie: token, body: { title: 'Daneben', content: '[[Blatt 1]]', folderId: la.id } }))
+      .data.note
+    const g = await load()
+    const targets = (source: string) => g.edges.filter((e) => e.source === source).map((e) => e.target).sort()
+    expect(targets(plan.id)).toEqual([inAna.id])
+    expect(targets(both.id)).toEqual([inAna.id, inLa.id].sort())
+    expect(targets(nearby.id)).toEqual([inLa.id])
   })
 
   it('folgt Umbenennungen und lässt Notizen im Papierkorb weg', async () => {

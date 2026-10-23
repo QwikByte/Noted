@@ -4,7 +4,7 @@ export async function register() {
   const { getDb } = await import('@/shared/server/db')
   const { bootstrapAdmin } = await import('@/features/auth/server/bootstrap')
   const { purgeExpiredSessions } = await import('@/features/auth/server/session')
-  const { purgeTrash } = await import('@/features/notes/server/notes')
+  const { purgeTrash, reindexLinkPaths } = await import('@/features/notes/server/notes')
   const { purgeVersions } = await import('@/features/notes/server/versions')
   const { purgeExpiredShares } = await import('@/features/sharing/server/shares')
   bootstrapAdmin(getDb())
@@ -20,6 +20,12 @@ export async function register() {
   }
   cleanup()
   setInterval(cleanup, 6 * 60 * 60 * 1000).unref()
+  // Links mit Ordnerpfad ([[Analysis/Übung 1]]) einmalig nach dem Update neu einlesen
+  try {
+    reindexLinkPaths()
+  } catch (err) {
+    console.error('[noted] Neu einlesen der Links fehlgeschlagen', err)
+  }
   // Anhänge, die noch nie gelesen wurden (z. B. wegen eines Neustarts mitten im Lesen), nach und nach lesen
   try {
     const { indexMissing } = await import('@/features/attachments/server/index')

@@ -11,6 +11,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - Notizen in Markdown, formatiertem und einfachem Text liegen als Blatt Papier auf dem Schreibtisch – auch im dunklen Design als helles Blatt, das sich wie ein ausgedrucktes Skript liest.
 - Lesemodus mit:
   - `[[Wikilinks]]` mit Alias und Abschnitt (`[[Notiz#Abschnitt]]` springt zur Überschrift) sowie `![[Einbettungen]]`
+  - Titel sind nur je Ordner eindeutig: `[[Analysis/Übung 1]]` (auch `[[Uni/Analysis/Übung 1]]`) meint die „Übung 1“ im Ordner Analysis. Ohne Ordner gewinnt bei gleichnamigen Notizen die im eigenen Ordner, sonst die zuletzt bearbeitete. Passt der Ordner im Link zu keiner Notiz (z. B. nach dem Umbenennen des Ordners), zählt nur der Titel.
   - `#Tags`, auch verschachtelt (`#uni/mathe`)
   - YAML-Properties (Frontmatter)
   - Callouts (`> [!note]`, `> [!warning]-` einklappbar …)
@@ -25,7 +26,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Formatiert einfügen:** Aus Webseiten, Moodle oder Word Kopiertes kommt als Markdown an – Überschriften, Listen, Fettdruck, Links, Tabellen und Bilder bleiben erhalten. Eine eingefügte Adresse über markiertem Text wird zu `[Text](Adresse)`. `Strg/⌘ + Umschalt + V` fügt nur den Text ein, in Code, Formeln und Properties bleibt es immer beim Text. Abschaltbar unter **Einstellungen → Darstellung**.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
 - **Drucken** (**⋮ → Drucken …** oder `Strg/⌘ + P`): eine Druckansicht mit der Notiz auf hellem Blatt – auch im dunklen Design –, im Druckdialog auch „Als PDF speichern“. Formeln, Diagramme, Callouts (eingeklappte aufgeklappt), Code, Tabellen, Bilder und Fußnoten kommen mit, `%%Kommentare%%` nicht; externe Links bekommen ihre Adresse dahinter. Wählbar: Titel, Properties und **Kompakt** (kleinere Schrift, zwei Spalten – für Spickzettel). Gedruckt wird der aktuelle Stand, auch offline. Mindmaps erscheinen als Gliederung, Canvas als Text der Karten.
-- Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst.
+- Benennst du eine Notiz um, werden Wikilinks in anderen Notizen automatisch angepasst. Gibt es noch eine Notiz mit dem alten Titel, bleiben Links, die auch diese meinen können (ohne Ordner und nicht aus demselben Ordner), stehen – ein Hinweis nennt ihre Zahl.
 - Ein Klick auf einen Link zu einer Notiz, die es noch nicht gibt, legt sie an – `[[Physik/Wellen]]` im Ordner „Physik“, falls es ihn gibt. Enthält das Linkziel Zeichen, die in Titeln nicht erlaubt sind (z. B. `?`), öffnet sich stattdessen „Neue Notiz“ mit einem bereinigten Titel.
 - **Verlauf** (**⋮ → Verlauf …**): Ältere Stände einer Notiz ansehen und wiederherstellen. Gesichert wird beim Weiterschreiben höchstens alle 10 Minuten sowie vor jedem Formatwechsel, Überschreiben nach einem Konflikt und Wiederherstellen; aufbewahrt werden bis zu 50 Stände je Notiz für 90 Tage.
 - Ordner (beliebig verschachtelt), Tags, Volltextsuche (Umlaute egal, Präfixsuche, `#tag`-Filter; findet auch Text in PDFs und Textdateien, siehe **Dateien**), Rückverweise („Verlinkt in“), Papierkorb (30 Tage), Schnellwechsler (`Strg/⌘ + K`).

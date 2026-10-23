@@ -54,6 +54,8 @@ import { sync } from '@/features/notes/client/sync'
 import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
+import { resolveLinkTarget } from '@/features/notes/link-resolve'
+import { folderPath } from '@/features/notes/tree'
 import { validateName } from '@/shared/lib/names'
 import { useVaultInfo, useVaultState, vault } from '@/features/vault/client/vault'
 import {
@@ -140,6 +142,10 @@ export default function NotesApp() {
         qc.invalidateQueries({ queryKey: keys.notes })
         qc.invalidateQueries({ queryKey: ['note'] })
       }
+      if (info.linksSkipped > 0) {
+        const links = info.linksSkipped === 1 ? 'Link ohne Ordner blieb' : 'Links ohne Ordner blieben'
+        toast.show(`${info.linksSkipped} ${links} unverändert – es gibt noch eine Notiz mit dem alten Titel.`)
+      }
     })
     return () => {
       off()
@@ -147,24 +153,38 @@ export default function NotesApp() {
     }
   }, [qc, toast])
 
-  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor)
+  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor). Je Titel
+  // alle Notizen, die zuletzt bearbeitete zuerst – Titel sind nur je Ordner eindeutig
   const titleIndex = useMemo(() => {
-    const plain = new Map<string, NoteSummary>()
-    const inVault = new Map<string, NoteSummary>()
-    // Neueste zuerst, damit bei Namensgleichheit die zuletzt bearbeitete gewinnt
-    for (const n of [...notes].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    const plain = new Map<string, NoteSummary[]>()
+    const inVault = new Map<string, NoteSummary[]>()
+    for (const n of [...notes].sort((a, b) => b.updatedAt - a.updatedAt)) {
       const index = n.vault ? inVault : plain
-      index.set(linkKey(n.title), n)
+      const key = linkKey(n.title)
+      const list = index.get(key)
+      if (list) list.push(n)
+      else index.set(key, [n])
     }
     return { plain, inVault }
   }, [notes])
 
+  const folderNames = useMemo(
+    () => new Map(folders.map((f) => [f.id, folderPath(folders, f.id).map((x) => x.name)])),
+    [folders],
+  )
+  const foldersOf = useCallback(
+    ({ folderId }: { folderId: string | null }) => (folderId ? (folderNames.get(folderId) ?? []) : []),
+    [folderNames],
+  )
+
   const resolveTitle = useCallback<AppActions['resolveTitle']>(
     (target, opts) => {
       const key = linkKey(target)
-      return (opts?.vault ? titleIndex.inVault.get(key) : undefined) ?? titleIndex.plain.get(key) ?? null
+      const pick = (list: NoteSummary[] | undefined) =>
+        list ? resolveLinkTarget(target, list, foldersOf, opts?.fromFolderId) : null
+      return (opts?.vault ? pick(titleIndex.inVault.get(key)) : null) ?? pick(titleIndex.plain.get(key))
     },
-    [titleIndex],
+    [titleIndex, foldersOf],
   )
 
   const navigate = useCallback(

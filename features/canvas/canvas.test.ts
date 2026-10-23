@@ -67,7 +67,7 @@ describe('JSON Canvas', () => {
     const text = canvasText(json)
     expect(text.endsWith('siehe')).toBe(true)
     expect(extractTags(text)).toEqual(['physik'])
-    expect(extractLinks(text)).toEqual(['entropie'])
+    expect(extractLinks(text)).toEqual([{ key: 'entropie', path: '' }])
     expect(canvasText('{kaputt')).toBe('')
   })
 

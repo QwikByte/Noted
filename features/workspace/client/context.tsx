@@ -45,8 +45,11 @@ export type AppActions = {
   pinNotes: (notes: Pick<NoteSummary, 'id'>[], pinned: boolean) => Promise<boolean>
   renameNote: (note: NoteSummary) => void
   closeSidebar: () => void
-  /** Notiz per Titel (Wikilink-Ziel) auflösen – Tresor-Notizen nur mit `vault` (Links aus dem Tresor) */
-  resolveTitle: (target: string, opts?: { vault?: boolean }) => NoteSummary | null
+  /**
+   * Notiz per Wikilink-Ziel auflösen, auch mit Ordner ([[Analysis/Übung 1]]) – Tresor-Notizen nur mit `vault` (Links
+   * aus dem Tresor). `fromFolderId`: Ordner der verlinkenden Notiz, deren gleichnamige Notizen vorgehen.
+   */
+  resolveTitle: (target: string, opts?: { vault?: boolean; fromFolderId?: string | null }) => NoteSummary | null
   openCardEditor: (init?: CardEditorInit) => void
   /** Dialog „Karteikarten aus Notiz erstellen“ – `preselect`: Zeilen der Überschriften, deren Abschnitte vorausgewählt sind */
   openCardsFromNote: (note: CardsFromNoteInit) => void

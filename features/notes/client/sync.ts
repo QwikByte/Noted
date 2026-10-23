@@ -41,7 +41,7 @@ export type NoteSyncStatus = {
   serverNote?: Note
 }
 
-type SavedListener = (note: Note, info: { linksUpdated: number; created: boolean }) => void
+type SavedListener = (note: Note, info: { linksUpdated: number; linksSkipped: number; created: boolean }) => void
 
 const SAVE_DELAY = 900
 const RETRY_INTERVAL = 20_000
@@ -267,6 +267,7 @@ export class SyncStore {
     try {
       let note: Note
       let linksUpdated = 0
+      let linksSkipped = 0
       if (draft.isNew) {
         const res = await api<{ note: Note }>('/api/notes', {
           method: 'POST',
@@ -282,7 +283,7 @@ export class SyncStore {
         })
         note = res.note
       } else {
-        const res = await api<{ note: Note; linksUpdated: number }>(`/api/notes/${id}`, {
+        const res = await api<{ note: Note; linksUpdated: number; linksSkipped?: number }>(`/api/notes/${id}`, {
           method: 'PUT',
           body: {
             title: draft.title,
@@ -298,6 +299,7 @@ export class SyncStore {
         })
         note = res.note
         linksUpdated = res.linksUpdated
+        linksSkipped = res.linksSkipped ?? 0
       }
       this.setKnownVersion(id, note.version)
       const current = this.drafts.get(id)
@@ -314,7 +316,7 @@ export class SyncStore {
         this.schedule(id, SAVE_DELAY)
       }
       this.persist()
-      for (const fn of this.savedListeners) fn(note, { linksUpdated, created: draft.isNew })
+      for (const fn of this.savedListeners) fn(note, { linksUpdated, linksSkipped, created: draft.isNew })
     } catch (err) {
       if (err instanceof NetworkError) {
         this.setStatus(id, { state: 'offline' })
@@ -360,7 +362,7 @@ export class SyncStore {
     this.setStatus(id, SAVED)
     this.persist()
     this.emit()
-    if (serverNote) for (const fn of this.savedListeners) fn(serverNote, { linksUpdated: 0, created: false })
+    if (serverNote) for (const fn of this.savedListeners) fn(serverNote, { linksUpdated: 0, linksSkipped: 0, created: false })
     if (mode === 'copy') {
       if (draft.content !== undefined) {
         await this.create({
