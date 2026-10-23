@@ -168,8 +168,8 @@ test('Navigation: Notizen und Ansichten sind echte Links – Strg-Klick öffnet 
 
   // Strg/⌘-Klick: neuer Tab, die Ansicht hier bleibt
   const [tab] = await Promise.all([context.waitForEvent('page'), noteLink.click({ modifiers: ['ControlOrMeta'] })])
-  await tab.waitForLoadState()
-  expect(new URL(tab.url()).searchParams.get('n')).toBe(id)
+  // Der neue Tab kann zunächst als about:blank gemeldet werden – auf die Adresse warten statt sie sofort zu lesen
+  await expect(tab).toHaveURL(new RegExp(`[?&]n=${id}(&|$)`))
   await expect(page).toHaveURL(/\/$/)
   await tab.close()
 
