@@ -458,3 +458,40 @@ test('Links ins Leere: ungültige Zeichen fragen nach, ein Ordnerpfad legt im Or
   await page.goto(`/?n=${note.id}`)
   await expect(page.locator('.markdown-body a.wikilink', { hasText: 'Wellen Linkziele' })).not.toHaveClass(/unresolved/)
 })
+
+test('Editor: Links per Strg-Klick öffnen, Vorschau beim Überfahren, Kontextmenü', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const create = async (title: string, content: string) => {
+    const note = (await (await page.request.post('/api/notes', { headers, data: { title, content } })).json()).note
+    cleanup.unshift(`/api/notes/${note.id}?permanent=1`)
+    return note as { id: string }
+  }
+  const target = await create('Analysis Linkziel', '## Grenzwerte\n\nEine Folge konvergiert, wenn …\n')
+  const source = await create('Linkquelle', 'Siehe [[Analysis Linkziel#Grenzwerte]] und #klausurlink sowie `[[Analysis Linkziel]]`\n')
+  await page.goto(`/?n=${source.id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  const link = page.locator('.cm-content .cm-md-wikilink', { hasText: 'Analysis Linkziel#Grenzwerte' })
+  await expect(link).toBeVisible()
+
+  // Vorschau beim Überfahren: Titel und Auszug
+  await link.hover()
+  const preview = page.locator('.cm-tooltip-hover .cm-link-preview')
+  await expect(preview).toContainText('Analysis Linkziel')
+  await expect(preview).toContainText('› Grenzwerte')
+  await expect(preview).toContainText('Eine Folge konvergiert')
+
+  // Ein normaler Klick setzt nur den Cursor
+  await link.click()
+  await expect(page).toHaveURL(new RegExp(source.id))
+
+  // Rechtsklick auf den Tag
+  await page.locator('.cm-content .cm-md-tag', { hasText: '#klausurlink' }).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Tag „#klausurlink“ anzeigen' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Strg-Klick öffnet die Notiz
+  await link.click({ modifiers: ['Control'] })
+  await expect(page).toHaveURL(new RegExp(target.id))
+  await expect(page.getByTestId('note-title')).toHaveValue('Analysis Linkziel')
+})

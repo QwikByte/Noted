@@ -29,6 +29,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { tags as t } from '@lezer/highlight'
 import { wrapSelection } from './commands'
 import { slashCompletion, slashExtensions } from './slash'
+import { linkExtensions, type EditorLinkActions } from './links'
 
 const highlightStyle = HighlightStyle.define([
   { tag: t.heading1, class: 'cm-md-h1' },
@@ -206,6 +207,8 @@ export function createExtensions(opts: {
   plain?: boolean
   /** Menü mit Befehlen nach „/“ (nur Markdown) */
   slashCommands?: boolean
+  /** Links per Strg/⌘-Klick öffnen und beim Überfahren zeigen (nur Markdown) */
+  links?: () => EditorLinkActions
 }): Extension[] {
   const common: Extension[] = [
     history(),
@@ -241,6 +244,7 @@ export function createExtensions(opts: {
     closeBrackets(),
     tooltips({ tooltipSpace: visibleRect }),
     followVisualViewport,
+    ...(opts.links ? linkExtensions(opts.links) : []),
     ...(opts.slashCommands ? slashExtensions() : []),
     autocompletion({
       override: [completions(opts.data, opts.slashCommands ? { onFiles: opts.onPasteFiles } : null)],

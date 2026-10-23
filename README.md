@@ -19,6 +19,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
   - Aufgaben (`- [ ]`, in der Vorschau abhakbar)
   - `==Markierungen==`, Fußnoten, Code-Hervorhebung, `%%Kommentare%%`
 - Autovervollständigung für `[[Notizen]]`, `#Tags` und Callout-Typen.
+- **Links im Editor:** `Strg + Klick` (Mac: `⌘ + Klick`) öffnet `[[Links]]` (auch an der Überschrift), `#Tags`, PDFs auf der Seite und Adressen, ohne in den Lesemodus zu wechseln – eine fehlende Notiz wird angelegt. Beim Überfahren zeigt eine kleine Vorschau Titel, Ordner und Anfang der Notiz. Dieselben Aktionen gibt es per Rechtsklick auf den Link. In Code, Formeln und Properties sind `[[…]]` keine Links.
 - **Gliederung** (Knopf links im Kopf der Notiz): listet die Überschriften eingerückt auf; ein Klick springt im Editor und im Lesemodus dorthin, der Abschnitt, in dem du gerade liest, ist hervorgehoben. Auf breiten Bildschirmen steht sie links neben dem Blatt – ein- und ausblendbar, auf dem Gerät gemerkt –, auf schmalen Bildschirmen, im Modus „Geteilt“ und mit PDF daneben klappt sie über der Notiz auf. Mit der Tastatur: `↑`/`↓`/`Pos1`/`Ende` wandern durch die Einträge, `Enter` springt und setzt den Fokus ans Ziel, `Esc` schließt die aufgeklappte Liste. Für Markdown und formatierten Text.
 - **Befehle mit `/`:** Ein `/` am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü: Überschriften, Listen, Aufgaben, Zitat, Callout, Tabelle, Formeln, Code, Mermaid-Diagramm, Trennlinie, Wikilink, Karteikarte, Datum von heute sowie Bild oder Datei. Weitertippen filtert (`/tab`, `/h2`, `/formel`), `Enter`, Klick oder Antippen fügt ein, `Esc` schließt. In Code, Formeln, Properties und Tabellenzeilen bleibt das `/` einfach ein Zeichen. Abschaltbar unter **Einstellungen → Darstellung**.
 - **Kopieren-Knopf**: Er kopiert das Markdown der Notiz. Außerdem: ohne Properties kopieren, als `[[Wikilink]]` kopieren oder als `.md` herunterladen.
@@ -360,7 +361,7 @@ Titel dürfen keine Zeichen enthalten, die in Dateinamen oder Wikilinks Probleme
 | `Strg/⌘ + Shift + H` | ==Markieren== – im PDF: ausgewählten Text markieren |
 | `Strg/⌘ + P` | Drucken (Notiz, Glossar, Stapel) – sonst Schnellwechsler |
 | `/` (am Zeilenanfang oder nach einem Leerzeichen) | Im Editor: Menü zum Einfügen von Überschriften, Listen, Tabellen, Formeln … |
-| `Strg/⌘ + Klick` | In Notizlisten: Notiz auswählen bzw. abwählen |
+| `Strg/⌘ + Klick` | Im Editor: Link, Tag oder Adresse öffnen · in Notizlisten: Notiz auswählen bzw. abwählen |
 | `Umschalt + Klick` | In Notizlisten: Bereich bis hierher auswählen (mit `Strg/⌘` dazu) |
 | `Strg/⌘ + A` | In Notizlisten: alle Notizen auswählen |
 | `Esc` | In Notizlisten: Auswahl aufheben |
