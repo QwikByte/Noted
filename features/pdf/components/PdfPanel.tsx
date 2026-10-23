@@ -98,6 +98,7 @@ function pointedAt(viewer: PDFViewer | null, annotations: PdfAnnotation[], e: Mo
 export default function PdfPanel({
   file,
   page,
+  find: findTerms,
   nonce,
   full,
   onToggleFull,
@@ -106,6 +107,8 @@ export default function PdfPanel({
 }: {
   file: string
   page?: number
+  /** Wörter, die beim Öffnen gesucht und hervorgehoben werden (z. B. aus der Volltextsuche) */
+  find?: string[]
   nonce: number
   full: boolean
   onToggleFull: () => void
@@ -128,6 +131,10 @@ export default function PdfPanel({
   const viewerRef = useRef<PDFViewer | null>(null)
   const busRef = useRef<EventBus | null>(null)
   const pendingPage = useRef<number | null>(null)
+  // Läuft, sobald das Dokument geladen und die Seite angesprungen ist (z. B. die Suche aus der Volltextsuche)
+  const afterInit = useRef<(() => void) | null>(null)
+  // Aus der Volltextsuche übernommene Wörter – jedes wird einzeln hervorgehoben, solange das Suchfeld sie zeigt
+  const searchTerms = useRef<string[] | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
   const findButtonRef = useRef<HTMLButtonElement>(null)
@@ -210,6 +217,8 @@ export default function PdfPanel({
           const target = pendingPage.current
           pendingPage.current = null
           if (target && target > 1) viewer.currentPageNumber = Math.min(target, viewer.pagesCount)
+          afterInit.current?.()
+          afterInit.current = null
         })
         eventBus.on('pagechanging', (e: { pageNumber: number }) => {
           setCurrent(e.pageNumber)
@@ -383,10 +392,12 @@ export default function PdfPanel({
   }, [])
 
   const find = useCallback((type: '' | 'again', previous = false) => {
+    const terms = searchTerms.current
+    const value = findRef.current?.value ?? terms?.join(' ') ?? ''
     busRef.current?.dispatch('find', {
       source: null,
       type,
-      query: findRef.current?.value ?? '',
+      query: terms && value === terms.join(' ') ? terms : value,
       caseSensitive: false,
       entireWord: false,
       highlightAll: true,
@@ -395,7 +406,25 @@ export default function PdfPanel({
     })
   }, [])
 
+  // Mit Suchwörtern geöffnet (Treffer der Volltextsuche): Suchleiste mit den Wörtern, Treffer hervorgehoben – ab der Seite
+  const [shownFind, setShownFind] = useState<{ terms?: string[]; nonce: number }>({ nonce: -1 })
+  if (shownFind.nonce !== nonce || shownFind.terms !== findTerms) {
+    setShownFind({ terms: findTerms, nonce })
+    if (findTerms?.length) {
+      setFindOpen(true)
+      setQuery(findTerms.join(' '))
+    }
+  }
+  useEffect(() => {
+    if (!findTerms?.length) return
+    searchTerms.current = findTerms
+    // Nach dem Sprung auf die Seite suchen – pdf.js sucht ab der aktuellen Seite
+    if (viewerRef.current?.pagesCount) find('')
+    else afterInit.current = () => find('')
+  }, [findTerms, nonce, find])
+
   const closeFind = () => {
+    searchTerms.current = null
     setFindOpen(false)
     setQuery('')
     setMatches(null)

@@ -50,8 +50,8 @@ export type AppActions = {
   openCardEditor: (init?: CardEditorInit) => void
   /** Dialog „Karteikarten aus Notiz erstellen“ – `preselect`: Zeilen der Überschriften, deren Abschnitte vorausgewählt sind */
   openCardsFromNote: (note: CardsFromNoteInit) => void
-  /** PDF im eingebauten Viewer öffnen (neben der aktuellen Ansicht) */
-  openPdf: (file: string, page?: number) => void
+  /** PDF im eingebauten Viewer öffnen (neben der aktuellen Ansicht) – `find`: Wörter, die dort gesucht und hervorgehoben werden */
+  openPdf: (file: string, page?: number, opts?: { find?: string[] }) => void
 }
 
 export const AppContext = createContext<AppActions | null>(null)

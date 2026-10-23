@@ -879,6 +879,11 @@ test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite'
   const panel = page.getByTestId('pdf-panel')
   await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
   await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('3')
+  // Der Suchbegriff kommt mit: Suchleiste offen, Treffer auf der Seite hervorgehoben
+  await expect(panel.getByPlaceholder('Im PDF suchen …')).toHaveValue('lichtwellen')
+  await expect(panel.locator('.page[data-page-number="3"] .textLayer .highlight').first()).toBeVisible()
+  await expect(panel.getByRole('status')).toHaveText('1 / 1')
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('3')
 
   // Im Bereich „Dateien“ steht, dass die Datei durchsuchbar ist
   await page.goto('/?v=files&in=unlinked')
