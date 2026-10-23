@@ -65,7 +65,7 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Seite verlinken** fügt `[[Skript.pdf#page=12]]` an der Cursorposition ein. Ein Klick auf so einen Link springt im Viewer auf die Seite.
 - Ausgewählten Text **als Zitat einfügen** (mit Seitenlink in die Notiz) oder direkt als **Karteikarte** übernehmen. Die Auswahl darf über eine Seitengrenze gehen; der Seitenlink zeigt dann auf die erste Seite, markiert wird auf jeder Seite.
 - **Anmerkungen:** Ausgewählten Text **markieren** oder **kommentieren** – wie mit einem Textmarker, in sechs Farben. Ein Klick auf eine Markierung öffnet Kommentar, Farbe, **Als Zitat einfügen** und Löschen. Die Seitenleiste **Anmerkungen** (Textmarker-Knopf oben) listet alle Markierungen des PDFs nach Seite; ein Klick springt zur Stelle, **Alle als Zitate einfügen** übernimmt sie mit Seitenlinks in die Notiz. Markierungen liegen auf dem Server (auf jedem Gerät an derselben Textstelle, auch nach dem Zoomen) und entstehen auch offline – sie werden gesendet, sobald wieder Verbindung besteht. Gescannte PDFs ohne Textebene lassen sich nicht markieren.
-- Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs.
+- Läuft mit [pdf.js](https://mozilla.github.io/pdf.js/) im Browser, auch offline für schon geöffnete PDFs – auch nach einem Update der App: Noted lädt den Viewer dann im Hintergrund vorab, sobald es PDFs gibt. Ein PDF, das auf dem Gerät noch nie geöffnet wurde, geht offline nicht; Noted sagt das, statt eine technische Meldung zu zeigen.
 
 **Karteikarten**
 - Eigener Bereich **Karteikarten** mit Stapeln (z. B. pro Fach). Kartenarten: Grundkarte (Frage → Antwort), beidseitig (wird in beide Richtungen abgefragt), **Lückentext**, **Multiple Choice** mit einer oder mehreren richtigen Antworten und optionaler Erklärung sowie **Bildverdeckung**. Karten können Markdown, LaTeX-Formeln, Bilder und Links auf Notizen oder PDF-Seiten enthalten. Bilder und andere Dateien kommen per Einfügen (`Strg/⌘ + V`, z. B. ein Screenshot einer Folie) oder Hineinziehen direkt in Vorder- und Rückseite; sie landen unter **Dateien** und werden an der Cursorposition eingebettet.
@@ -139,7 +139,7 @@ Notizen im Tresor werden in deinem Browser verschlüsselt, bevor sie den Server 
 **Unterwegs & offline (PWA)**
 - Lässt sich auf Handy und Desktop installieren (im Browser „Zum Startbildschirm hinzufügen“ bzw. „App installieren“).
 - Jede Änderung wird zuerst lokal auf dem Gerät gesichert und dann synchronisiert. Ohne Netz schreibst du einfach weiter, die Änderungen werden später automatisch nachgesendet. Sind beim Abmelden noch Notizen, der Schmierzettel oder PDF-Anmerkungen nicht gesendet, fragt Noted vorher nach.
-- Die App startet auch offline. Zuletzt geladene Notizen sind lesbar – auch die im Tresor, nach dem Entsperren (auf dem Gerät liegen sie nur verschlüsselt).
+- Die App startet auch offline. Zuletzt geladene Notizen sind lesbar – auch die im Tresor, nach dem Entsperren (auf dem Gerät liegen sie nur verschlüsselt). PDFs gehen offline, wenn sie auf dem Gerät einmal geöffnet wurden.
 - Bearbeitest du dieselbe Notiz auf zwei Geräten, erkennt Noted den Konflikt. Du wählst „Meine Version“, „Andere Version“ oder „Beide behalten“, es geht nichts verloren.
 
 **Benutzer & Sicherheit**

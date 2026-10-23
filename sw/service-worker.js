@@ -5,13 +5,18 @@
  * - Schreibende Anfragen gehen immer direkt ans Netz; offline übernimmt die lokale Sicherung im Browser.
  * - Updates: scripts/build-info.mjs setzt beim Build die Build-ID ein, dadurch erkennt der Browser jede neue
  *   Version. Ein neuer Service Worker wartet, bis die App „Neu laden“ auslöst (Nachricht „skip-waiting“).
+ * - Die Dateien von pdf.js (Worker, Schriften, Decoder) liegen in einem eigenen Cache je pdf.js-Version: Er bleibt bei
+ *   App-Updates erhalten, damit der PDF-Viewer offline weiter funktioniert.
  *
  * Quelle: sw/service-worker.js – public/sw.js wird daraus erzeugt.
  */
 const VERSION = '__NOTED_BUILD_ID__'
+const PDFJS_VERSION = '__NOTED_PDFJS_VERSION__'
 const SHELL_CACHE = 'noted-shell'
 const STATIC_CACHE = 'noted-static'
 const DATA_CACHE = 'noted-data'
+const PDFJS_PREFIX = 'noted-pdfjs-'
+const PDFJS_CACHE = PDFJS_PREFIX + PDFJS_VERSION
 
 const DATA_ROUTES = [
   /^\/api\/notes$/,
@@ -42,8 +47,12 @@ async function pruneStatic() {
   for (const request of await cache.keys()) {
     const url = new URL(request.url)
     const dpl = url.searchParams.get('dpl')
-    // Icons, Manifest und pdf.js werden bei Bedarf neu geladen, damit auch sie aktuell bleiben
+    // Icons und Manifest werden bei Bedarf neu geladen, damit auch sie aktuell bleiben
     if ((dpl && dpl !== VERSION) || !url.pathname.startsWith('/_next/')) await cache.delete(request)
+  }
+  // pdf.js nur, wenn sich seine Version geändert hat
+  for (const name of await caches.keys()) {
+    if (name.startsWith(PDFJS_PREFIX) && name !== PDFJS_CACHE) await caches.delete(name)
   }
 }
 
@@ -107,8 +116,8 @@ async function networkFirst(request, cacheName, cacheKey) {
   }
 }
 
-async function cacheFirst(request) {
-  const cache = await caches.open(STATIC_CACHE)
+async function cacheFirst(request, cacheName = STATIC_CACHE) {
+  const cache = await caches.open(cacheName)
   const cached = await cache.match(request)
   if (cached) return cached
   const response = await fetch(request)
@@ -134,9 +143,12 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Anhänge (Bilder usw.) – keine Teilbereiche (Range) cachen
+  // Anhänge (Bilder usw.) – keine Teilbereiche (Range) cachen. Offline und nicht im Cache: 503 mit Kennzeichen, damit
+  // die App sagen kann, dass die Datei erst einmal mit Verbindung geöffnet werden muss
   if (FILE_ROUTES.some((r) => r.test(url.pathname)) && !request.headers.has('range')) {
-    event.respondWith(networkFirst(request, DATA_CACHE).catch(() => new Response('', { status: 503 })))
+    event.respondWith(
+      networkFirst(request, DATA_CACHE).catch(() => new Response('', { status: 503, headers: { 'x-noted-offline': '1' } })),
+    )
     return
   }
 
@@ -156,8 +168,14 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Icons, Manifest und die Dateien des PDF-Viewers (pdf.js)
-  if (url.pathname.startsWith('/icons/') || url.pathname.startsWith('/pdfjs/') || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.svg') {
+  // Die Dateien des PDF-Viewers (pdf.js)
+  if (url.pathname.startsWith('/pdfjs/')) {
+    event.respondWith(cacheFirst(request, PDFJS_CACHE))
+    return
+  }
+
+  // Icons und Manifest
+  if (url.pathname.startsWith('/icons/') || url.pathname === '/manifest.webmanifest' || url.pathname === '/icon.svg') {
     event.respondWith(cacheFirst(request))
   }
 })

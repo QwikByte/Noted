@@ -56,6 +56,9 @@ import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { resolveLinkTarget } from '@/features/notes/link-resolve'
 import { folderPath } from '@/features/notes/tree'
+import { LazyPdfPanel } from '@/features/pdf/components/LazyPdfPanel'
+import { prewarmPdfViewer } from '@/features/pdf/client/prewarm'
+import { BUILD } from '@/features/updates/build'
 import { validateName } from '@/shared/lib/names'
 import { useVaultInfo, useVaultState, vault } from '@/features/vault/client/vault'
 import {
@@ -70,9 +73,7 @@ import { requestVault } from '@/features/vault/client/vault-ui'
 import { VaultDialogs } from '@/features/vault/components/VaultDialogs'
 import type { Folder, Note, NoteSummary } from '@/features/notes/types'
 
-// pdf.js wird erst geladen, wenn ein PDF geöffnet wird
-const PdfPanel = dynamic(() => import('@/features/pdf/components/PdfPanel'), { ssr: false })
-// React Flow für den Graphen ebenfalls erst bei Bedarf
+// React Flow für den Graphen erst bei Bedarf (der PDF-Viewer lädt sich selbst nach, siehe LazyPdfPanel)
 const GraphView = dynamic(() => import('@/features/graph/components/GraphView'), { ssr: false })
 
 function readPdfPref(raw: string): { file: string } | null {
@@ -222,7 +223,7 @@ export default function NotesApp() {
   )
 
   // Editoren für formatierten Text, Mindmap und Canvas sowie die Formatumwandlung im Hintergrund laden – so cacht
-  // sie der Service Worker und sie funktionieren auch offline
+  // sie der Service Worker und sie funktionieren auch offline. Den PDF-Viewer nach einem Update, wenn es PDFs gibt
   useEffect(() => {
     const preload = () => {
       void import('@/features/notes/components/RichTextEditor').catch(() => {})
@@ -230,6 +231,7 @@ export default function NotesApp() {
       void import('@/features/canvas/components/CanvasEditor').catch(() => {})
       void import('@/features/graph/components/GraphView').catch(() => {})
       void import('@/features/notes/client/convert').catch(() => {})
+      void prewarmPdfViewer(BUILD.buildId)
     }
     // Offline erst, wenn wieder Netz da ist – sonst schlagen die Anfragen nur fehl und es bleibt nichts im Cache
     const timer = setTimeout(() => {
@@ -479,7 +481,7 @@ export default function NotesApp() {
               main={main}
               side={
                 pdf ? (
-                  <PdfPanel
+                  <LazyPdfPanel
                     file={pdf.file}
                     page={pdfJump.page}
                     find={pdfJump.find}

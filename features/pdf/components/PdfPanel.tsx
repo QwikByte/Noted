@@ -44,7 +44,7 @@ import { attachmentsKey, useAttachments } from '@/features/attachments/client/qu
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { errorMessage } from '@/shared/client/api'
 import { usePref } from '@/shared/client/prefs'
-import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, renderPdfPage } from '../client/pdfjs'
+import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, pdfErrorMessage, renderPdfPage } from '../client/pdfjs'
 import { pdfAnnotations, useAnnotations } from '../client/annotations'
 import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
 import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
@@ -99,16 +99,7 @@ function pointedAt(viewer: PDFViewer | null, annotations: PdfAnnotation[], e: Mo
   return { page, annotation: view ? annotationAtPoint(view, onPage, e.clientX, e.clientY) : null }
 }
 
-export default function PdfPanel({
-  file,
-  page,
-  find: findTerms,
-  nonce,
-  full,
-  onToggleFull,
-  onClose,
-  onOpen,
-}: {
+export type PdfPanelProps = {
   file: string
   page?: number
   /** Wörter, die beim Öffnen gesucht und hervorgehoben werden (z. B. aus der Volltextsuche) */
@@ -118,7 +109,9 @@ export default function PdfPanel({
   onToggleFull: () => void
   onClose: () => void
   onOpen: (file: string, page?: number) => void
-}) {
+}
+
+export default function PdfPanel({ file, page, find: findTerms, nonce, full, onToggleFull, onClose, onOpen }: PdfPanelProps) {
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
@@ -254,7 +247,7 @@ export default function PdfPanel({
         setStatus({ state: 'ready' })
       } catch (err) {
         if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) return
-        setStatus({ state: 'error', message: errorMessage(err) })
+        setStatus({ state: 'error', message: pdfErrorMessage(err) })
       }
     })()
     return () => {

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Läuft vor jedem Produktions-Build (npm „prebuild“):
 // - schreibt die Versionsinfos nach .build-info.json (liest next.config.ts)
-// - erzeugt public/sw.js aus sw/service-worker.js mit der Build-ID, damit Browser neue Versionen erkennen
+// - erzeugt public/sw.js aus sw/service-worker.js mit der Build-ID, damit Browser neue Versionen erkennen, und der
+//   Version von pdf.js, damit der Service Worker dessen Dateien nur bei einem Wechsel neu lädt
 //
 // Version: APP_VERSION (setzt scripts/auto-update.sh als Docker-Build-Argument), sonst ein Git-Tag genau
 // auf dem aktuellen Commit, sonst „dev“.
@@ -34,9 +35,14 @@ const info = {
 }
 fs.writeFileSync(path.join(root, '.build-info.json'), JSON.stringify(info, null, 2) + '\n')
 
-const placeholder = "'__NOTED_BUILD_ID__'"
-const template = fs.readFileSync(path.join(root, 'sw/service-worker.js'), 'utf8')
-if (!template.includes(placeholder)) throw new Error(`Platzhalter ${placeholder} fehlt in sw/service-worker.js`)
-fs.writeFileSync(path.join(root, 'public/sw.js'), template.replace(placeholder, JSON.stringify(info.buildId)))
+// pdf.js-Version aus derselben Quelle wie scripts/vendor-pdfjs.mjs, das die Dateien nach public/pdfjs kopiert
+const pdfjs = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/pdfjs-dist/package.json'), 'utf8'))
+const placeholders = { "'__NOTED_BUILD_ID__'": info.buildId, "'__NOTED_PDFJS_VERSION__'": clean(pdfjs.version, 40) }
+let sw = fs.readFileSync(path.join(root, 'sw/service-worker.js'), 'utf8')
+for (const [placeholder, value] of Object.entries(placeholders)) {
+  if (!sw.includes(placeholder)) throw new Error(`Platzhalter ${placeholder} fehlt in sw/service-worker.js`)
+  sw = sw.replace(placeholder, JSON.stringify(value))
+}
+fs.writeFileSync(path.join(root, 'public/sw.js'), sw)
 
 console.log(`Noted ${info.version}${info.commit ? ` (${info.commit})` : ''} – Build ${info.buildId}`)

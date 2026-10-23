@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { apiHeaders, makePdf } from './helpers'
 
 // Offline-Betrieb: Änderungen ohne Netz werden lokal gesichert, die App startet offline
 // aus dem Cache des Service Workers und synchronisiert automatisch, sobald wieder Netz da ist.
@@ -148,4 +149,88 @@ test('Strg+Z holt den Stand eines anderen Geräts nicht zurück', async ({ page 
   await expect(page.getByTestId('save-status')).toContainText('Gespeichert', { timeout: 10_000 })
   const server = await page.evaluate(async (id) => (await (await fetch(`/api/notes/${id}`)).json()).note.content, note.id)
   expect(server).toBe('Absatz eins\n\nVom Handy')
+})
+
+test('PDF-Viewer nach einem App-Update: offline geht ein früher geöffnetes PDF, ein neues meldet sich verständlich', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/login')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
+  const headers = await apiHeaders(page)
+  const cleanup: string[] = []
+  for (const [name, text] of [
+    ['Skript Zugfahrt.pdf', 'Thermodynamik'],
+    ['Neu Zugfahrt.pdf', 'Noch nie geöffnet'],
+  ]) {
+    const up = await page.request.post('/api/attachments', {
+      headers,
+      multipart: { file: { name, mimeType: 'application/pdf', buffer: makePdf([[text]]) } },
+    })
+    expect(up.status()).toBe(201)
+    cleanup.push(`/api/attachments/${(await up.json()).attachment.id}`)
+  }
+  const res = await page.request.post('/api/notes', {
+    headers,
+    data: { title: 'Zugfahrt', content: '![[Skript Zugfahrt.pdf]]\n\n![[Neu Zugfahrt.pdf]]\n' },
+  })
+  const noteId = (await res.json()).note.id as string
+  cleanup.unshift(`/api/notes/${noteId}?permanent=1`)
+
+  // Mit Service Worker einmal online öffnen
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true))
+  await page.goto(`/?n=${noteId}`)
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  const pdfs = page.locator('.markdown-body a.embed-pdf')
+  const panel = page.getByTestId('pdf-panel')
+  await pdfs.first().click()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await panel.getByRole('button', { name: 'PDF schließen' }).click()
+
+  // Stand nach einem Update: Der neue Service Worker hat die Dateien der alten Version entfernt, und die der neuen
+  // hat der Browser noch nie geladen (andere Adressen, also auch nicht in seinem eigenen Cache)
+  await page.evaluate(async () => {
+    const cache = await caches.open('noted-static')
+    for (const request of await cache.keys()) await cache.delete(request)
+    localStorage.removeItem('noted:pdfWarm')
+  })
+  await (await context.newCDPSession(page)).send('Network.clearBrowserCache')
+  await page.reload()
+  await expect(page.locator('.markdown-body')).toBeVisible()
+  // Im Leerlauf lädt die App den PDF-Viewer vorab
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('noted:pdfWarm')), { timeout: 20_000 }).toBeTruthy()
+
+  // Im Zug ohne Netz: Das früher geöffnete Skript geht
+  await context.setOffline(true)
+  await pdfs.first().click()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  // Ein PDF, das noch nie geöffnet wurde: verständliche Meldung, die App bleibt bedienbar
+  await pdfs.nth(1).click()
+  await expect(panel).toContainText('Dieses PDF ist offline noch nicht verfügbar. Öffne es einmal mit Verbindung')
+  await panel.getByRole('button', { name: 'Schließen', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  await expect(page.locator('.markdown-body')).toContainText('Neu Zugfahrt.pdf')
+
+  // Schlimmster Fall – der Viewer konnte nicht vorab geladen werden: eine Meldung statt eines Absturzes der App
+  await context.setOffline(false)
+  await page.evaluate(async () => {
+    const cache = await caches.open('noted-static')
+    for (const request of await cache.keys()) await cache.delete(request)
+  })
+  await (await context.newCDPSession(page)).send('Network.clearBrowserCache')
+  await page.reload()
+  await expect(page.locator('.markdown-body')).toBeVisible()
+  await context.setOffline(true)
+  await pdfs.first().click()
+  await expect(panel).toContainText('Der PDF-Viewer ist offline noch nicht bereit. Öffne ihn einmal mit Verbindung.')
+  await panel.getByRole('button', { name: 'Schließen', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  await expect(page.locator('.markdown-body')).toContainText('Skript Zugfahrt.pdf')
+
+  await context.setOffline(false)
+  for (const url of cleanup) await page.request.delete(url, { headers })
 })
