@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, Dumbbell, FileText, Loader2, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, Dumbbell, FileText, Loader2, Pause, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from '@/shared/client/now'
@@ -11,7 +12,7 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { reviewQueue, useFlashcards, type Flashcards } from '../client/flashcards'
+import { reviewQueue, updateCard, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
 import { LEECH_LAPSES, SM2, formatInterval, previewIntervals, RATINGS, schedule, type Plan, type Rating } from '../srs'
@@ -129,6 +130,7 @@ function StudySession({
   live: Flashcards
 }) {
   const app = useApp()
+  const qc = useQueryClient()
   const toast = useToast()
   const openContextMenu = useContextMenu()
   const { notes } = useNotes()
@@ -253,6 +255,21 @@ function StudySession({
     [current, state, session, advance, live.states, toast, shownAt, plan],
   )
 
+  /** Karte aussetzen: Die Sitzung geht sofort mit der nächsten weiter, auch ihre anderen Seiten kommen nicht mehr dran */
+  const suspendCard = () => {
+    if (!current) return
+    const id = current.card.id
+    session.skipCard(id)
+    advance(session)
+    // Fokus vom Knopf nehmen – sonst setzte die Leertaste (Aufdecken) gleich die nächste Karte aus
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    const resume = () => void updateCard(qc, id, { suspended: false }).catch((err) => toast.error(errorMessage(err)))
+    updateCard(qc, id, { suspended: true }).then(
+      () => toast.show('Karte ausgesetzt – im Stapel unter „Ausgesetzt“.', { action: { label: 'Rückgängig', onClick: resume } }),
+      (err) => toast.error(`Die Karte konnte nicht ausgesetzt werden: ${errorMessage(err)}`),
+    )
+  }
+
   const practiceAnswer = useCallback(
     (ok: boolean) => {
       if (!current || !(session instanceof PracticeSession)) return
@@ -375,15 +392,26 @@ function StudySession({
             </span>
           ) : null}
           {card ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => app.openCardEditor({ card })}
-              aria-label="Karte bearbeiten"
-              title="Karte bearbeiten"
-            >
-              <Pencil className="size-4" />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => app.openCardEditor({ card })}
+                aria-label="Karte bearbeiten"
+                title="Karte bearbeiten"
+              >
+                <Pencil className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={suspendCard}
+                aria-label="Karte aussetzen"
+                title="Karte aussetzen – kommt beim Lernen und Üben nicht mehr dran"
+              >
+                <Pause className="size-4" />
+              </Button>
+            </>
           ) : null}
         </div>
         <div className="h-0.5 bg-subtle">
@@ -416,6 +444,9 @@ function StudySession({
                     <>
                       <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
                         Karte bearbeiten …
+                      </MenuItem>
+                      <MenuItem icon={<Pause />} onSelect={suspendCard}>
+                        Karte aussetzen
                       </MenuItem>
                       {revealed && note ? (
                         <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: note.id })}>

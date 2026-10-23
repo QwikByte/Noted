@@ -158,6 +158,37 @@ describe('Lernsitzung', () => {
     expect(fresh.remaining()).toEqual({ new: 3, learning: 0, review: 0 })
   })
 
+  it('nimmt eine ausgesetzte Karte mit allen Seiten aus der Sitzung – auch aus der Lernphase', () => {
+    const cards = [card('c1', { type: 'reversed' }), card('c2'), card('c3')]
+    const reviews: CardReview[] = [
+      { cardId: 'c1', side: 0, ...run([4], NOW - 5 * DAY) },
+      { cardId: 'c1', side: 1, ...run([4], NOW - 6 * DAY) },
+    ]
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, stateMap(reviews), NOW)
+    expect(session.remaining()).toEqual({ new: 2, learning: 0, review: 2 })
+    // c2 vergessen: kommt in der Lernphase wieder
+    session.answered({ card: cards[1], side: 0, kind: 'new' }, schedule(null, 1, NOW), NOW)
+    session.skipCard('c1')
+    session.skipCard('c2')
+    const rest: string[] = []
+    for (let item = session.next(NOW); item; item = session.next(NOW)) rest.push(item.card.id)
+    expect(rest).toEqual(['c3'])
+  })
+
+  it('Übungsmodus: ausgesetzte Karten kommen nicht mehr dran und zählen nicht mit', () => {
+    const cards = [card('c1', { type: 'reversed' }), card('c2')]
+    const session = new PracticeSession(allItems(cards), () => 0.5)
+    expect(session.total).toBe(3)
+    const first = session.next()!
+    session.answered(first, false)
+    session.skipCard(first.card.id)
+    const rest: string[] = []
+    for (let item = session.next(); item; item = session.next()) rest.push(item.card.id)
+    expect(rest.every((id) => id !== first.card.id)).toBe(true)
+    expect(session.total).toBe(first.card.id === 'c1' ? 1 : 2)
+    expect(session.missed(allItems(cards))).toEqual([])
+  })
+
   it('wiederholt Karten in der Lernphase innerhalb der Sitzung', () => {
     const cards = [card('c1'), card('c2')]
     const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)

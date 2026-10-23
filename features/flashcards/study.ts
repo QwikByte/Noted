@@ -220,6 +220,12 @@ export class LearnSession {
     else this.learning.splice(idx, 0, entry)
   }
 
+  /** Karte ausgesetzt: alle ihre Seiten aus der Sitzung nehmen, auch die wieder eingereihten in der Lernphase */
+  skipCard(cardId: string) {
+    this.main = this.main.filter((i) => i.card.id !== cardId)
+    this.learning = this.learning.filter((l) => l.item.card.id !== cardId)
+  }
+
   /** Verbleibende Karten nach Art (ohne die aktuell angezeigte) */
   remaining(): Record<ItemKind, number> {
     const counts = { new: 0, learning: this.learning.length, review: 0 }
@@ -247,15 +253,28 @@ export function shuffle<T>(list: T[], random: () => number = Math.random): T[] {
  */
 export class PracticeSession {
   private queue: StudyItem[]
+  private readonly items: StudyItem[]
+  /** In dieser Übung ausgesetzte Karten */
+  private readonly skipped = new Set<string>()
   /** Ergebnis beim ersten Versuch */
   readonly firstTry = new Map<string, boolean>()
   /** Schon gewusste Karten (fertig für diese Übung) */
   readonly done = new Set<string>()
-  readonly total: number
 
   constructor(items: StudyItem[], random: () => number = Math.random) {
+    this.items = items
     this.queue = shuffle(items, random)
-    this.total = items.length
+  }
+
+  /** Abgefragte Seiten insgesamt – von ausgesetzten Karten nur die schon gewussten */
+  get total() {
+    return this.items.filter((i) => !this.skipped.has(i.card.id) || this.done.has(itemKey(i))).length
+  }
+
+  /** Karte ausgesetzt: ihre übrigen Seiten kommen in dieser Übung nicht mehr dran */
+  skipCard(cardId: string) {
+    this.skipped.add(cardId)
+    this.queue = this.queue.filter((i) => i.card.id !== cardId)
   }
 
   next(): StudyItem | null {
@@ -281,7 +300,7 @@ export class PracticeSession {
 
   /** Beim ersten Versuch falsch beantwortete Karten (für „Fehler wiederholen“) */
   missed(items: StudyItem[]): StudyItem[] {
-    return items.filter((i) => this.firstTry.get(itemKey(i)) === false)
+    return items.filter((i) => !this.skipped.has(i.card.id) && this.firstTry.get(itemKey(i)) === false)
   }
 }
 

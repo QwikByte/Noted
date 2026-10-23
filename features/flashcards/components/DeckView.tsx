@@ -365,41 +365,36 @@ export function DeckView({ id }: { id: string }) {
                 card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.',
               )
             const relearn = () => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.')
+            // Dieselben Einträge im Menü „⋮“ und beim Rechtsklick – Aussetzen und Neu lernen für jede Karte
+            const cardItems = (
+              <>
+                <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
+                  Karte bearbeiten …
+                </MenuItem>
+                {noteTitle ? (
+                  <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: card.noteId! })}>
+                    Zur Notiz
+                  </MenuItem>
+                ) : null}
+                <MenuItem icon={card.suspended ? <Play /> : <Pause />} onSelect={toggleSuspended}>
+                  {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
+                </MenuItem>
+                {learned ? (
+                  <MenuItem icon={<RotateCcw />} onSelect={relearn}>
+                    Neu lernen
+                  </MenuItem>
+                ) : null}
+                <MenuSeparator />
+                <MenuItem icon={<Trash2 />} danger onSelect={() => setToDelete(card)}>
+                  Karte löschen …
+                </MenuItem>
+              </>
+            )
             return (
               <li
                 key={card.id}
                 className="group rounded-xl border border-border bg-elevated p-3 sm:p-4"
-                onContextMenu={(e) =>
-                  openContextMenu(
-                    e,
-                    <>
-                      <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
-                        Karte bearbeiten …
-                      </MenuItem>
-                      {noteTitle ? (
-                        <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: card.noteId! })}>
-                          Zur Notiz
-                        </MenuItem>
-                      ) : null}
-                      {/* Wie die Knöpfe an der Karte: nur bei Problemkarten und ausgesetzten */}
-                      {problem || card.suspended ? (
-                        <MenuItem icon={card.suspended ? <Play /> : <Pause />} onSelect={toggleSuspended}>
-                          {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
-                        </MenuItem>
-                      ) : null}
-                      {(problem || card.suspended) && learned ? (
-                        <MenuItem icon={<RotateCcw />} onSelect={relearn}>
-                          Neu lernen
-                        </MenuItem>
-                      ) : null}
-                      <MenuSeparator />
-                      <MenuItem icon={<Trash2 />} danger onSelect={() => setToDelete(card)}>
-                        Karte löschen …
-                      </MenuItem>
-                    </>,
-                    { text: true, copy: true },
-                  )
-                }
+                onContextMenu={(e) => openContextMenu(e, cardItems, { text: true, copy: true })}
               >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
@@ -457,9 +452,16 @@ export function DeckView({ id }: { id: string }) {
                     <Button variant="ghost" size="icon-sm" onClick={() => app.openCardEditor({ card })} aria-label="Karte bearbeiten" title="Bearbeiten">
                       <Pencil className="size-4" />
                     </Button>
-                    <Button variant="ghost" size="icon-sm" onClick={() => setToDelete(card)} aria-label="Karte löschen" title="Löschen">
-                      <Trash2 className="size-4 text-danger" />
-                    </Button>
+                    {/* Auch ohne Rechtsklick erreichbar, z. B. auf dem Handy */}
+                    <Menu
+                      trigger={(p) => (
+                        <Button variant="ghost" size="icon-sm" aria-label="Weitere Aktionen" title="Weitere Aktionen" {...p}>
+                          <MoreVertical className="size-4" />
+                        </Button>
+                      )}
+                    >
+                      {cardItems}
+                    </Menu>
                   </div>
                 </div>
               </li>

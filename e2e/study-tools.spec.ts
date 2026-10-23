@@ -156,6 +156,47 @@ test('Problemkarten erkennen, aussetzen und neu lernen', async ({ page }) => {
   expect(data.reviews.find((r: { cardId: string }) => r.cardId === hard.id)).toBeUndefined()
 })
 
+test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitzung', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Aussetzen' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    {
+      cards: [
+        { type: 'basic', front: 'Nicht klausurrelevant', back: 'a' },
+        { type: 'basic', front: 'Später überarbeiten', back: 'b' },
+        { type: 'basic', front: 'Bleibt', back: 'c' },
+      ],
+    },
+    'cards',
+  )
+  await page.goto(`/?d=${deck.id}`)
+  const items = page.getByTestId('card-list').locator('> li')
+  const first = items.filter({ hasText: 'Nicht klausurrelevant' })
+  await first.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Aussetzen' }).click()
+  await expect(page.getByText('Karte ausgesetzt')).toBeVisible()
+  await expect(first).toContainText('Ausgesetzt')
+  await expect(page.getByRole('radiogroup', { name: 'Karten filtern' }).getByRole('radio', { name: /Ausgesetzt/ })).toBeVisible()
+
+  // In der Lernsitzung: die angezeigte Karte aussetzen – weiter mit der nächsten
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  await expect(studyCard).toContainText('Später überarbeiten')
+  await page.getByRole('button', { name: 'Karte aussetzen' }).click()
+  await expect(studyCard).toContainText('Bleibt')
+  await expect(page.getByText('im Stapel unter „Ausgesetzt“')).toBeVisible()
+  // Die Leertaste deckt auf (setzt nicht die nächste Karte aus); „Einfach“ – sonst käme die neue Karte gleich wieder
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  const { cards } = await flashcards(page)
+  const suspended = (front: string) => cards.find((c: { front: string }) => c.front === front).suspended
+  expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
+})
+
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {
   await login(page)
   const note = await post(
