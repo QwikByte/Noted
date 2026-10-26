@@ -301,6 +301,86 @@ test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
   }
 })
 
+test('PDF-Viewer: Inhaltsverzeichnis, Miniaturen, Seitenzahlen wie im Skript und „Zurück“ nach internem Link', async ({ page }) => {
+  await login(page)
+  // Sechs Seiten Vorspann (i–vi), danach zählt das Skript ab 1; auf S. 1 verweist ein Link auf S. 7
+  const pdf = makePdf(
+    Array.from({ length: 14 }, (_, i) => [i < 6 ? `Vorspann ${i + 1}` : `Skriptseite ${i - 5}`]),
+    {
+      outline: [
+        { title: 'Vorwort', page: 1 },
+        { title: 'Kapitel 1', page: 7, open: true, items: [{ title: 'Abschnitt 1.1', page: 9 }] },
+        { title: 'Kapitel 2', page: 12, items: [{ title: 'Abschnitt 2.1', page: 13 }] },
+      ],
+      labels: [
+        { from: 1, style: 'r' },
+        { from: 7, style: 'D' },
+      ],
+      links: [{ page: 7, rect: [60, 740, 400, 790], to: 13 }],
+    },
+  )
+  const up = await page.request.post('/api/attachments', {
+    headers: await apiHeaders(page),
+    multipart: { file: { name: 'Skript Navigation.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  cleanup.push(`/api/attachments/${(await up.json()).attachment.id}`)
+  const note = await post(page, '/api/notes', { title: 'Navigation im Skript', content: '![[Skript Navigation.pdf]]\n' }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await panel.getByRole('button', { name: 'Vollbild' }).click()
+
+  // Seitenzahlen wie im Skript: das Label, dahinter die Position in der Datei – eingeben lässt sich beides
+  const pageInput = panel.getByLabel('Seite', { exact: true })
+  const position = panel.getByTestId('pdf-page-count')
+  await expect(pageInput).toHaveValue('i')
+  await expect(position).toHaveText('(1 / 14)')
+  await pageInput.fill('v')
+  await pageInput.press('Enter')
+  await expect(position).toHaveText('(5 / 14)')
+  await expect(pageInput).toHaveValue('v')
+  await pageInput.fill('1')
+  await pageInput.press('Enter')
+  await expect(position).toHaveText('(7 / 14)')
+
+  // Interner Link und zurück an die Stelle davor
+  const link = panel.locator('.page[data-page-number="7"] .annotationLayer a')
+  await expect(link).toHaveCount(1)
+  await link.click()
+  await expect(position).toHaveText('(13 / 14)')
+  const back = panel.getByRole('button', { name: 'Zurück zu S. 1' })
+  await back.click()
+  await expect(position).toHaveText('(7 / 14)')
+  await expect(back).toHaveCount(0)
+
+  // Inhaltsverzeichnis: Baum mit dem aktuellen Kapitel, ein Klick springt hin
+  await panel.getByRole('button', { name: 'Inhalt und Seiten' }).click()
+  const nav = panel.getByTestId('pdf-navigation')
+  const outline = nav.getByTestId('pdf-outline')
+  await expect(outline.getByRole('button', { name: 'Abschnitt 1.1, S. 3' })).toBeVisible()
+  await expect(outline.getByRole('button', { name: 'Abschnitt 2.1, S. 7' })).toHaveCount(0)
+  await expect(outline.locator('[aria-current="location"]')).toHaveText(/^Kapitel 1/)
+  await outline.getByRole('button', { name: 'Kapitel 2, S. 6' }).click()
+  await expect(position).toHaveText('(12 / 14)')
+  await expect(outline.locator('[aria-current="location"]')).toHaveText(/^Kapitel 2/)
+
+  // Miniaturen: die aktuelle Seite hervorgehoben, nur sichtbare gezeichnet, ein Klick springt hin
+  await nav.getByRole('tab', { name: 'Seiten' }).click()
+  const thumbnails = nav.getByTestId('pdf-thumbnails')
+  await expect(thumbnails.locator('[aria-current="page"]')).toHaveAccessibleName('Seite 6')
+  await thumbnails.getByRole('button', { name: 'Seite iii' }).click()
+  await expect(position).toHaveText('(3 / 14)')
+  await expect(thumbnails.locator('[aria-current="page"]')).toHaveAccessibleName('Seite iii')
+  const drawn = () => thumbnails.locator('canvas').evaluateAll((list) => list.filter((c) => (c as HTMLCanvasElement).width > 0).length)
+  await expect.poll(drawn).toBeGreaterThan(0)
+  expect(await drawn()).toBeLessThan(14)
+})
+
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {
   await login(page)
   const note = await post(
