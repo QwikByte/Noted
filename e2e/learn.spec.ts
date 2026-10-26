@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { apiHeaders, makePdf } from './helpers'
+import { apiHeaders, makePdf, trackRequests } from './helpers'
 
 // Karteikarten (aus einer Notiz erstellen, lernen mit Wiederholungsplan, Multiple Choice, offline bewerten)
 // und der eingebaute PDF-Viewer neben der Notiz (Seitenlinks, Suche, Zitat in die Notiz).
@@ -36,6 +36,7 @@ test.afterEach(() => {
 })
 
 test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context }) => {
+  const network = trackRequests(page)
   await login(page)
   const headers = await apiHeaders(page)
   const res = await page.request.post('/api/notes', {
@@ -120,6 +121,8 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await page.getByRole('menuitem', { name: 'Lernstand zurücksetzen …' }).click()
   await dialog.getByRole('button', { name: 'Zurücksetzen' }).click()
   await expect(page.getByText('Lernstand zurückgesetzt.')).toBeVisible()
+  // Erst offline gehen, wenn die App im Hintergrund fertig nachgeladen hat
+  await network.idle()
   await context.setOffline(true)
   await page.getByTestId('deck-learn').click()
   // Erst tippen, wenn die Lernansicht da ist – sonst geht die Leertaste je nach Auslastung ins Leere
