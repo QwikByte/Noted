@@ -438,11 +438,11 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   settings/             Einstellungsseite
   updates/              Version, Update-Erkennung im Browser, Status der automatischen Updates
 shared/                 Feature-unabhängiger Code (importiert nie aus features/)
-  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten, Druckansicht
-  client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit
+  ui/                   Bausteine: Button, Eingabefelder, Menü, Dialog, Meldungen, Seitengerüst, Kasten, Platz für feste Leisten, Druckansicht, Auswahlleiste
+  client/               API-Client, Zwischenablage, lokale Einstellungen, Media-Queries, laufende Uhrzeit, Mehrfachauswahl in Listen
   server/               Datenbank und Migrationen, Konfiguration, HTTP-Hilfen, Verschlüsselung, Rate-Limits, Protokoll, ZIP, Volltextsuche
   markdown/             Markdown: Frontmatter, Tags, Wikilinks, Rendering, Bereinigung
-  lib/                  Namensregeln, Formatierung, HTML-Hilfen
+  lib/                  Namensregeln, Formatierung, HTML-Hilfen, Logik der Mehrfachauswahl
 sw/service-worker.js    Service Worker (Offline, Update-Erkennung) – public/sw.js wird beim Build daraus erzeugt
 instrumentation.ts      Serverstart: Datenbank öffnen und migrieren, ersten Admin anlegen, regelmäßig aufräumen
 proxy.ts                Content-Security-Policy und Login-Umleitung (außer /login und geteilten Notizen unter /s)
