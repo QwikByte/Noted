@@ -12,7 +12,10 @@ import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import * as flashcards from '@/app/api/flashcards/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
+import * as annotationsRoute from '@/app/api/attachments/[id]/annotations/route'
+import { makePdf } from '@/tests/pdf'
 import type { FlashcardData } from '@/features/flashcards/types'
+import type { PdfAnnotation } from '@/features/pdf/types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -269,5 +272,141 @@ describe('Export und Import (ZIP)', () => {
     single.append('files', new File([zip['Karteikarten/Biologie.noted-deck.zip']], 'Biologie.noted-deck.zip'))
     const one = await call(importRoute.POST, '/', { cookie: other, form: single })
     expect(one.data).toMatchObject({ notes: 0, decks: 1, cards: 2, attachments: 0 })
+  })
+})
+
+describe('PDF-Anmerkungen in Export und Import', () => {
+  const T = Date.UTC(2026, 9, 1)
+  type Stored = Omit<PdfAnnotation, 'attachmentId'>
+  const marks: Stored[] = [
+    {
+      id: crypto.randomUUID(),
+      page: 2,
+      rects: [[60.5, 700, 320, 716], [60.5, 682, 210.25, 698]],
+      quote: 'Entropie nimmt zu',
+      comment: 'Prüfungsrelevant',
+      color: 1,
+      createdAt: T + 1_000,
+      updatedAt: T + 5_000,
+    },
+    { id: crypto.randomUUID(), page: 1, rects: [[72, 740, 300, 756]], quote: 'Energie bleibt erhalten', comment: '', color: 4, createdAt: T + 2_000, updatedAt: T + 2_000 },
+  ]
+  const comparable = (list: PdfAnnotation[]) =>
+    list.map(({ page, rects, quote, comment, color, createdAt, updatedAt }) => ({ page, rects, quote, comment, color, createdAt, updatedAt }))
+
+  async function uploadAs(cookie: string, name: string, data: Uint8Array) {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(data)], name))
+    const r = await call(attachments.POST, '/', { cookie, form })
+    expect(r.status).toBe(201)
+    return r.data.attachment as { id: string; filename: string }
+  }
+  const listOf = async (id: string, cookie: string) =>
+    (await call(annotationsRoute.GET, '/', { cookie, params: { id } })).data.annotations as PdfAnnotation[]
+  async function importZip(cookie: string, files: Record<string, Uint8Array>) {
+    const form = new FormData()
+    form.append('files', new File([zipSync(files)], 'Export.zip'))
+    const r = await call(importRoute.POST, '/', { cookie, form })
+    expect(r.status).toBe(200)
+    return r.data as { attachments: number; annotations: number; skipped: string[] }
+  }
+  const filesOf = async (cookie: string) =>
+    (await call(attachments.GET, '/api/attachments', { cookie })).data.attachments as { id: string; filename: string }[]
+
+  let other = ''
+  let exported: Record<string, Uint8Array> = {}
+  let source = { id: '', filename: '' }
+
+  beforeAll(async () => {
+    source = await uploadAs(token, 'Thermo Anmerkungen.pdf', makePdf([['Energie bleibt erhalten'], ['Entropie nimmt zu']]))
+    const r = await call(annotationsRoute.PUT, '/', { method: 'PUT', cookie: token, params: { id: source.id }, body: { annotations: marks } })
+    expect(r.data).toEqual({ saved: 2 })
+    exported = unzipSync(new Uint8Array(await (await call(exportRoute.GET, '/', { cookie: token })).res.arrayBuffer()))
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'skriptumzug', password: 'Skript-Umzug-Pw-1' } })
+    const first = await loginAs('skriptumzug', 'Skript-Umzug-Pw-1')
+    await call(password.POST, '/', { cookie: first, body: { currentPassword: 'Skript-Umzug-Pw-1', newPassword: 'Skript-Umzug-Pw-2' } })
+    other = await loginAs('skriptumzug', 'Skript-Umzug-Pw-2')
+  })
+
+  it('exportiert die Anmerkungen zusätzlich als JSON mit Positionen und Farben', () => {
+    const file = JSON.parse(strFromU8(exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json']))
+    expect(file).toMatchObject({ format: 'noted-pdf-annotations', version: 1, file: 'Thermo Anmerkungen.pdf' })
+    expect(file.annotations).toHaveLength(2)
+    expect(file.annotations.find((a: Stored) => a.id === marks[0].id)).toEqual(marks[0])
+    // Die lesbare Fassung bleibt
+    expect(exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.md']).toBeDefined()
+  })
+
+  it('übernimmt sie beim Import in ein anderes Konto – mit neuen IDs, ohne Dubletten beim zweiten Mal', async () => {
+    const result = await importZip(other, {
+      'Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json': exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json'],
+      'Anhänge/Thermo Anmerkungen.pdf': exported['Anhänge/Thermo Anmerkungen.pdf'],
+    })
+    expect(result).toMatchObject({ attachments: 1, annotations: 2, skipped: [] })
+    const pdf = (await filesOf(other)).find((f) => f.filename === 'Thermo Anmerkungen.pdf')!
+    const imported = await listOf(pdf.id, other)
+    expect(comparable(imported)).toEqual(comparable(await listOf(source.id, token)))
+    expect(imported.map((a) => a.id)).not.toContain(marks[0].id)
+    expect(imported.map((a) => a.id)).not.toContain(marks[1].id)
+
+    // Noch einmal derselbe Export: das PDF ist schon da, die Anmerkungen bleiben zwei
+    await importZip(other, exported)
+    expect(await listOf(pdf.id, other)).toHaveLength(2)
+    // Die Anmerkungen im ersten Konto bleiben unberührt
+    expect(comparable(await listOf(source.id, token))).toEqual(comparable(marks.map((m) => ({ ...m, attachmentId: source.id }))).reverse())
+  })
+
+  it('ein erneuter Import ins selbe Konto ergibt keine Dubletten – der neuere Stand gewinnt', async () => {
+    const newer = JSON.parse(strFromU8(exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json']))
+    newer.annotations[0].comment = 'Nach dem Umzug ergänzt'
+    newer.annotations[0].updatedAt = T + 9_000
+    const result = await importZip(token, {
+      'Anhänge/Thermo Anmerkungen.pdf': exported['Anhänge/Thermo Anmerkungen.pdf'],
+      'Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json': strToU8(JSON.stringify(newer)),
+    })
+    expect(result.attachments).toBe(0)
+    const list = await listOf(source.id, token)
+    expect(list).toHaveLength(2)
+    expect(list.find((a) => a.id === newer.annotations[0].id)?.comment).toBe('Nach dem Umzug ergänzt')
+  })
+
+  it('hängt die Anmerkungen an das umbenannte PDF, wenn es den Namen schon gibt', async () => {
+    const third = await uploadAs(other, 'Gleichnamig.pdf', makePdf([['Ein ganz anderes Skript mit mehr Text darin']]))
+    const file = JSON.parse(strFromU8(exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json']))
+    file.file = 'Gleichnamig.pdf'
+    const result = await importZip(other, {
+      'Anhänge/Gleichnamig.pdf': exported['Anhänge/Thermo Anmerkungen.pdf'],
+      'Anhänge/Gleichnamig.pdf.anmerkungen.json': strToU8(JSON.stringify(file)),
+    })
+    expect(result).toMatchObject({ attachments: 1, annotations: 2 })
+    const renamed = (await filesOf(other)).find((f) => f.filename === 'Gleichnamig 1.pdf')!
+    expect(await listOf(renamed.id, other)).toHaveLength(2)
+    expect(await listOf(third.id, other)).toEqual([])
+  })
+
+  it('überspringt Anmerkungen ohne PDF und kaputte Dateien – der übrige Import läuft weiter', async () => {
+    const json = exported['Anhänge/Thermo Anmerkungen.pdf.anmerkungen.json']
+    const broken = JSON.parse(strFromU8(json))
+    broken.annotations[0].rects = []
+    const result = await importZip(other, {
+      'Anhänge/Fehlt.pdf.anmerkungen.json': json,
+      'Anhänge/Kaputt.pdf.anmerkungen.json': strToU8('{"format": "noted-pdf-annot'),
+      'Anhänge/Leer.pdf.anmerkungen.json': strToU8(JSON.stringify({ ...broken, file: 'Leer.pdf' })),
+      'Anhänge/Leer.pdf': makePdf([['Leer']]),
+      'Anhänge/Fremd.anmerkungen.json': strToU8('{"format": "etwas anderes"}'),
+      'Notiz nach Anmerkungen.md': strToU8('Weiter'),
+    })
+    expect(result.skipped).toEqual(
+      expect.arrayContaining([
+        'Anhänge/Fehlt.pdf.anmerkungen.json (das PDF dazu fehlt im Archiv)',
+        'Anhänge/Kaputt.pdf.anmerkungen.json (Die Anmerkungen-Datei ist beschädigt.)',
+        'Anhänge/Leer.pdf.anmerkungen.json (Eine Markierung braucht mindestens eine Textzeile.)',
+      ]),
+    )
+    expect(result.annotations).toBe(0)
+    // Eine andere JSON-Datei mit diesem Namen bleibt ein gewöhnlicher Anhang, die Notiz kommt trotzdem an
+    expect((await filesOf(other)).map((f) => f.filename)).toEqual(expect.arrayContaining(['Fremd.anmerkungen.json', 'Leer.pdf']))
+    const titles = (await call(notes.GET, '/api/notes', { cookie: other })).data.notes.map((n: { title: string }) => n.title)
+    expect(titles).toContain('Notiz nach Anmerkungen')
   })
 })

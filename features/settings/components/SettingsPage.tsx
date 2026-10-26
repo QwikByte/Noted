@@ -487,6 +487,7 @@ function DataSection() {
     events: number
     decks: number
     cards: number
+    annotations: number
     skipped: string[]
   } | null>(null)
 
@@ -571,6 +572,7 @@ function DataSection() {
                 {result.decks || result.cards
                   ? `, ${result.decks} Stapel mit ${plural(result.cards, 'Karteikarte', 'Karteikarten')}`
                   : ''}
+                {result.annotations ? `, ${plural(result.annotations, 'Anmerkung', 'Anmerkungen')} in PDFs` : ''}
                 .
                 {result.skipped.length > 0 ? (
                   <details className="mt-2 text-muted">

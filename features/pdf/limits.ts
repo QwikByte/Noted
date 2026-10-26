@@ -9,6 +9,10 @@ export const MAX_COMMENT = 5_000
 export const MAX_RECTS = 50
 /** Anmerkungen je Anfrage (Offline gesammelte werden in Blöcken gesendet) */
 export const MAX_ANNOTATIONS_PER_REQUEST = 500
+/** Anmerkungen je PDF beim Import eines Exports */
+export const MAX_IMPORTED_ANNOTATIONS = 5_000
+/** Größe einer Anmerkungen-Datei im Export („Skript.pdf.anmerkungen.json“) beim Import */
+export const MAX_ANNOTATIONS_FILE_BYTES = 20 * 1024 * 1024
 /** Farbe für neue Markierungen: Gelb wie ein Textmarker */
 export const DEFAULT_ANNOTATION_COLOR = 3
 
