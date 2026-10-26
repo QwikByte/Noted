@@ -65,6 +65,22 @@ async function openNotePrint(page: Page) {
 
 const filler = Array.from({ length: 60 }, (_, i) => `Absatz ${i + 1}: Die innere Energie eines abgeschlossenen Systems bleibt erhalten.`).join('\n\n')
 
+test('Eingebettete Abschnitte werden mitgedruckt – der Druck wartet auf sie', async ({ page }) => {
+  await login(page)
+  await createNote(page, 'Druck Quelle', '# Quelle\n\n## Definition\nDer eingebettete Satz.\n\n## Rest\nNicht im Druck.')
+  const id = await createNote(page, 'Druck Lernzettel', 'Vorher\n\n![[Druck Quelle#Definition]]\n\nNachher')
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+  await page.goto(`/?n=${id}`)
+  await openNotePrint(page)
+  const sheet = page.getByTestId('print-sheet')
+  await expect(page.getByTestId('print-view').getByRole('button', { name: 'Drucken', exact: true })).toBeEnabled({ timeout: 15_000 })
+  // Sobald gedruckt werden kann, ist der Abschnitt da
+  const text = (await sheet.textContent()) ?? ''
+  expect(text).toContain('Der eingebettete Satz.')
+  expect(text).not.toContain('Nicht im Druck.')
+  expect(text.indexOf('Vorher')).toBeLessThan(text.indexOf('Der eingebettete Satz.'))
+})
+
 test('Notiz im dunklen Design drucken: nur das helle Blatt, über mehrere Seiten', async ({ page }) => {
   await login(page)
   const content = [

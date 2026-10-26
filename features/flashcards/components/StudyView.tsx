@@ -1,6 +1,19 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, Dumbbell, FileText, Loader2, Pause, Pencil, RotateCcw, X, XCircle } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Dumbbell,
+  FileText,
+  Loader2,
+  Pause,
+  Pencil,
+  RotateCcw,
+  Undo2,
+  X,
+  XCircle,
+} from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
@@ -32,7 +45,7 @@ import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
 import { clozeAnswer, clozeCount, clozeQuestion, clozeText } from '../cloze'
 import { reviewLogEntry } from '../stats'
 import { OcclusionImage } from './Occlusion'
-import type { Card, Deck } from '../types'
+import type { Card, Deck, SrsState } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
 type Scope = { title: string; decks: Deck[]; cards: Card[]; pool: Card[]; back: View }
@@ -101,6 +114,9 @@ function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
   return (card) => ids.has(card.id)
 }
 
+/** Bewertung in dieser Sitzung (für „Rückgängig“): die Karte, wie sie dran war, und der Stand davor und danach */
+type Rated = { item: StudyItem; previous: SrsState | null; next: SrsState }
+
 /** `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt · `typed`/`result`: eingetippte Antwort */
 type Answer = { key: string; selected: Set<number>; checked: boolean; order: number[]; typed: string; result: TypedResult | null }
 
@@ -156,6 +172,8 @@ function StudySession({
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set())
   // Zeitpunkt, zu dem die Karte angezeigt wurde (für die Abstände auf den Bewertungsknöpfen)
   const [shownAt, setShownAt] = useState(() => Date.now())
+  // Bewertungen dieser Sitzung, die jüngste zuletzt – „Rückgängig“ reicht bis zum Anfang der Sitzung
+  const [history, setHistory] = useState<Rated[]>([])
 
   const advance = useCallback((s: LearnSession | PracticeSession) => {
     const next = take(s)
@@ -248,6 +266,7 @@ function StudySession({
         reviewLogEntry(current.card.id, current.side, state, next, rating, shownAt),
       )
       session.answered(current, next, now)
+      setHistory((h) => [...h, { item: current, previous: state, next }])
       setReviewed((n) => n + 1)
       setSeen((prev) => new Set(prev).add(itemKey(current)))
       advance(session)
@@ -255,11 +274,37 @@ function StudySession({
     [current, state, session, advance, live.states, toast, shownAt, plan],
   )
 
+  /** Letzte Bewertung zurücknehmen: Die Karte kommt verdeckt wieder, mit dem Stand von vorher */
+  const undo = useCallback(() => {
+    const last = history[history.length - 1]
+    if (!last || !(session instanceof LearnSession)) return
+    const { item, previous, next } = last
+    reviewQueue.undo({ cardId: item.card.id, side: item.side, reviewedAt: next.reviewedAt, previous })
+    session.undo(item, current)
+    const rest = history.slice(0, -1)
+    setHistory(rest)
+    setReviewed((n) => n - 1)
+    const key = itemKey(item)
+    if (!rest.some((r) => itemKey(r.item) === key)) {
+      setSeen((prev) => {
+        const seen = new Set(prev)
+        seen.delete(key)
+        return seen
+      })
+    }
+    advance(session)
+    // Fokus vom Knopf nehmen – sonst nähme die Leertaste (Aufdecken) gleich die nächste Bewertung zurück
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    toast.show('Bewertung zurückgenommen.')
+  }, [history, session, current, advance, toast])
+
   /** Karte aussetzen: Die Sitzung geht sofort mit der nächsten weiter, auch ihre anderen Seiten kommen nicht mehr dran */
   const suspendCard = () => {
     if (!current) return
     const id = current.card.id
     session.skipCard(id)
+    // Bewertungen der Karte nicht mehr zurücknehmen – sonst käme sie trotz Aussetzen wieder dran
+    setHistory((h) => h.filter((r) => r.item.card.id !== id))
     advance(session)
     // Fokus vom Knopf nehmen – sonst setzte die Leertaste (Aufdecken) gleich die nächste Karte aus
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
@@ -308,16 +353,25 @@ function StudySession({
   // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
   const bottomBar = useReservedSpace<HTMLDivElement>('--bottom-bar-height')
 
-  // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen
+  // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen,
+  // Z oder Strg/⌘+Z = letzte Bewertung zurücknehmen
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const root = rootRef.current
-      if (!current || !root || e.metaKey || e.ctrlKey || e.altKey) return
+      if (!root || e.altKey) return
       // Nur, wenn die Lernansicht sichtbar ist und der Fokus nicht woanders liegt (z. B. im PDF daneben)
       const t = e.target as HTMLElement
       if (!root.offsetParent || (t !== document.body && !root.contains(t))) return
       if (t.closest('input, textarea, select, [contenteditable="true"], dialog[open], [role="menu"]')) return
+      // Auch nach der letzten Karte – vertippt hat man sich womöglich gerade bei ihr
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey && !(e.ctrlKey && e.metaKey)) {
+        if (history.length === 0) return
+        e.preventDefault()
+        undo()
+        return
+      }
+      if (!current || e.metaKey || e.ctrlKey) return
       const primary = e.key === ' ' || e.key === 'Enter'
       // Leertaste/Enter auf einem Knopf lösen diesen Knopf aus (z. B. „Schwer“ per Tab angewählt)
       if (primary && t.closest('button, a')) return
@@ -348,7 +402,7 @@ function StudySession({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [current, isMc, answer, revealed, mode, correct, typedWrong, toggleOption, check, reveal, rate, practiceAnswer])
+  }, [current, isMc, answer, revealed, mode, correct, typedWrong, toggleOption, check, reveal, rate, practiceAnswer, history, undo])
 
   const close = () => app.go(back, { replace: true })
   const remaining: Record<ItemKind, number> | null = session instanceof LearnSession ? session.remaining() : null
@@ -390,6 +444,19 @@ function StudySession({
             <span className="text-sm text-muted tabular-nums" title="Gewusst / Karten">
               {session.done.size} / {session.total}
             </span>
+          ) : null}
+          {mode === 'learn' ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={undo}
+              disabled={history.length === 0}
+              aria-label="Letzte Bewertung rückgängig"
+              aria-keyshortcuts="Z Control+Z Meta+Z"
+              title="Letzte Bewertung rückgängig (Z)"
+            >
+              <Undo2 className="size-4" />
+            </Button>
           ) : null}
           {card ? (
             <>

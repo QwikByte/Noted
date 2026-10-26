@@ -1,11 +1,13 @@
 'use client'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
 import type { ResolvedNote } from '@/shared/markdown/syntax'
 import { isDarkMode } from '@/shared/client/prefs'
 import { Properties } from './Properties'
 import { cn } from '@/shared/ui/cn'
+import { EmbedContext, MAX_EMBED_DEPTH, MAX_EMBEDS } from '../client/embeds'
 
 let mermaidCounter = 0
 
@@ -35,6 +37,19 @@ async function renderMermaid(root: HTMLElement) {
   }
 }
 
+/** Stelle, an der eine eingebettete Notiz gezeichnet wird – ersetzt ihre Link-Karte im gerenderten HTML */
+type EmbedHost = {
+  key: string
+  el: HTMLElement
+  anchor: HTMLAnchorElement
+  noteId: string
+  heading: string | null
+  title: string
+  href: string
+}
+
+let embedGeneration = 0
+
 /** Was Links in gerendertem Markdown auslösen (auch in Mindmap und Canvas) */
 export type PreviewLinks = {
   resolveNote: (target: string) => ResolvedNote | null
@@ -58,6 +73,7 @@ export function Preview({
   fileUrl,
   plainNoteLinks,
   print,
+  embeds,
   onRendered,
   className,
 }: PreviewLinks & {
@@ -69,15 +85,70 @@ export function Preview({
   plainNoteLinks?: boolean
   /** Für die Druckansicht (siehe RenderEnv.print) */
   print?: boolean
-  /** Diagramme sind gerendert – auch ohne Diagramme und wenn Mermaid offline nicht geladen werden kann */
+  /** Eingebettete Notizen zeigen (Lesemodus, Druck) – sofern ein EmbedContext sagt, wie */
+  embeds?: boolean
+  /**
+   * Diagramme und eingebettete Notizen sind gerendert – auch ohne sie und wenn Mermaid oder eine Notiz offline nicht
+   * geladen werden kann
+   */
   onRendered?: () => void
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const { chain, Embed } = useContext(EmbedContext)
+  // Innerhalb einer Einbettung: Überschriften ohne Anker und Quellzeile, sonst hielte sie die Gliederung für eigene
+  const embedded = chain.length > 1
   const rendered = useMemo(() => {
-    const r = renderMarkdown(content, { resolveNote, fileUrl, plainNoteLinks, print })
+    const r = renderMarkdown(content, { resolveNote, fileUrl, plainNoteLinks, print, embedded })
     return { ...r, html: sanitize(r.html) }
-  }, [content, resolveNote, fileUrl, plainNoteLinks, print])
+  }, [content, resolveNote, fileUrl, plainNoteLinks, print, embedded])
+
+  // Eingebettete Notizen: Ihre Link-Karten (data-embed) werden durch den Inhalt ersetzt – höchstens MAX_EMBEDS, nicht
+  // tiefer als MAX_EMBED_DEPTH und keine Notiz, die schon weiter oben in der Kette steht
+  const canEmbed = !!embeds && !!Embed && !plainNoteLinks && chain.length > 0 && chain.length <= MAX_EMBED_DEPTH
+  const chainKey = chain.join('/')
+  const [hosts, setHosts] = useState<EmbedHost[]>([])
+  const embedsSettled = useRef<{ waiting: Set<string>; resolve: () => void; ready: Promise<void> } | null>(null)
+  useLayoutEffect(() => {
+    const root = ref.current
+    const found: EmbedHost[] = []
+    if (root && canEmbed) {
+      const generation = ++embedGeneration
+      const above = chainKey.split('/')
+      for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a.embed-note[data-embed]')) {
+        const noteId = anchor.dataset.noteId
+        if (found.length >= MAX_EMBEDS) break
+        if (!noteId || above.includes(noteId)) continue
+        const el = document.createElement('div')
+        el.className = 'note-embed'
+        anchor.replaceWith(el)
+        found.push({
+          key: `${generation}:${found.length}`,
+          el,
+          anchor,
+          noteId,
+          heading: anchor.dataset.heading ?? null,
+          title: anchor.dataset.target ?? '',
+          href: anchor.getAttribute('href') ?? `/?n=${noteId}`,
+        })
+      }
+    }
+    let resolve = () => {}
+    const ready = new Promise<void>((r) => (resolve = r))
+    embedsSettled.current = { waiting: new Set(found.map((h) => h.key)), resolve, ready }
+    if (found.length === 0) resolve()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Die Stellen gibt es erst im DOM (dangerouslySetInnerHTML)
+    setHosts((prev) => (prev.length === 0 && found.length === 0 ? prev : found))
+    // Wieder die Link-Karten – z. B. wenn der Effekt im Strict Mode doppelt läuft. Ein neues HTML hat sie ohnehin.
+    return () => {
+      for (const h of found) h.el.replaceWith(h.anchor)
+    }
+  }, [rendered.html, canEmbed, chainKey])
+
+  const embedSettled = useCallback((key: string) => {
+    const settled = embedsSettled.current
+    if (settled?.waiting.delete(key) && settled.waiting.size === 0) settled.resolve()
+  }, [])
 
   const latestOnRendered = useRef(onRendered)
   useEffect(() => {
@@ -90,8 +161,10 @@ export function Preview({
     const root = ref.current
     if (!root) return
     let valid = true
+    // Die Einbettungen dieses Inhalts sind schon erfasst (Layout-Effekt oben)
+    const embedsReady = embedsSettled.current?.ready ?? Promise.resolve()
     queue.current = queue.current.then(() => renderMermaid(root)).catch(() => {})
-    void queue.current.then(() => {
+    void Promise.all([queue.current, embedsReady]).then(() => {
       if (valid) latestOnRendered.current?.()
     })
     return () => {
@@ -101,6 +174,9 @@ export function Preview({
 
   function onClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement
+    // Klicks in eingebetteten Notizen behandeln diese selbst – eine Aufgabe dort ist keine dieser Notiz
+    const host = target.closest('.note-embed')
+    if (host && ref.current?.contains(host)) return
     if (target instanceof HTMLInputElement && target.classList.contains('task-checkbox')) {
       if (!onToggleTask) {
         e.preventDefault()
@@ -138,6 +214,21 @@ export function Preview({
         <Properties data={rendered.properties} error={rendered.propertiesError} onOpenTag={onOpenTag} />
       ) : null}
       <div ref={ref} dangerouslySetInnerHTML={{ __html: rendered.html }} />
+      {Embed
+        ? hosts.map((h) =>
+            createPortal(
+              <Embed
+                noteId={h.noteId}
+                heading={h.heading}
+                title={h.title}
+                href={h.href}
+                onSettled={() => embedSettled(h.key)}
+              />,
+              h.el,
+              h.key,
+            ),
+          )
+        : null}
     </div>
   )
 }

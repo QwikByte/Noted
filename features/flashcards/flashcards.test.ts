@@ -19,7 +19,7 @@ import * as deckImport from '@/app/api/decks/import/route'
 import * as attachments from '@/app/api/attachments/route'
 import * as files from '@/app/api/files/[...name]/route'
 import { MAX_CARD_TEXT } from './limits'
-import { schedule } from './srs'
+import { DAY, schedule } from './srs'
 import type { Card, CardReview, Deck, DeckImportResult, FlashcardData, ReviewLogEntry, StudyStats } from './types'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
@@ -198,7 +198,7 @@ describe('Lückentext-Karten', () => {
     // Eine dritte Lücke gibt es nicht
     expect((await save(2)).data.saved).toBe(0)
     // Ungültige Seite: verworfen, ohne die Anfrage abzulehnen
-    expect((await save(50)).data).toEqual({ saved: 0, logged: 0, rejected: 1 })
+    expect((await save(50)).data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 1 })
 
     // Eine Lücke fällt weg: ihr Lernstand auch
     const edited = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { front: 'Nur noch ==sin==' } })
@@ -387,7 +387,7 @@ describe('Lernstand', () => {
     // Ein ungültiger Eintrag wird einzeln verworfen – die übrigen derselben Anfrage kommen an
     const third = { cardId: c.id, side: 0 as const, ...schedule(second, 3, t + 1_200_000) }
     const mixed = await save([{ ...first, ease: 99, reviewedAt: t + 1_800_000 }, third])
-    expect(mixed.data).toEqual({ saved: 1, logged: 0, rejected: 1 })
+    expect(mixed.data).toEqual({ saved: 1, logged: 0, undone: 0, rejected: 1 })
     expect((await data()).reviews.find((r) => r.cardId === c.id)).toMatchObject({ reviewedAt: t + 1_200_000 })
 
     const reset = await call(progress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: d.id } })
@@ -466,11 +466,11 @@ describe('Bewertungsprotokoll und Statistik', () => {
     const log = [entry(t, 3, 'new'), entry(t + 600_000, 1, 'review'), entry(t + 1_200_000, 3, 'review')]
     const send = (body: object) => call(reviews.POST, '/api/reviews', { cookie: token, body })
     const first = await send({ reviews: [{ cardId: c.id, side: 0, ...schedule(null, 3, t + 1_200_000) }], log })
-    expect(first.data).toEqual({ saved: 1, logged: 3, rejected: 0 })
+    expect(first.data).toEqual({ saved: 1, logged: 3, undone: 0, rejected: 0 })
     // Erneut gesendet (z. B. Antwort ging verloren) und Einträge fremder Karten: nichts doppelt
     const again = await send({ reviews: [], log: [...log, { ...log[0], cardId: crypto.randomUUID() }] })
-    expect(again.data).toEqual({ saved: 0, logged: 0, rejected: 0 })
-    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).data).toEqual({ saved: 0, logged: 0, rejected: 1 })
+    expect(again.data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 0 })
+    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 1 })
     // Ältere Geräte senden noch kein Protokoll
     expect((await send({ reviews: [] })).status).toBe(200)
 
@@ -495,6 +495,114 @@ describe('Bewertungsprotokoll und Statistik', () => {
     await send({ reviews: [], log: [{ ...log[0], cardId: formula.id }] })
     const again2 = new TextDecoder().decode(await (await call(statsExport.GET, '/', { cookie: token })).res.arrayBuffer())
     expect(again2).toContain(";'=SUMME(A1);")
+  })
+})
+
+describe('Bewertung zurücknehmen', () => {
+  const entry = (cardId: string, at: number, rating: ReviewLogEntry['rating']): ReviewLogEntry => ({
+    cardId,
+    side: 0,
+    rating,
+    phase: 'review',
+    intervalBefore: 1,
+    intervalAfter: 0,
+    durationMs: 2000,
+    reviewedAt: at,
+  })
+  const send = (body: object, cookie = token) => call(reviews.POST, '/api/reviews', { cookie, body: { reviews: [], ...body } })
+  const total = async () => (await call(stats.GET, '/', { cookie: token, query: { tz: 'UTC' } })).data.total as number
+  const stateOf = async (cardId: string) => (await data()).reviews.find((r) => r.cardId === cardId)
+
+  it('stellt den Stand davor wieder her, eine neue Karte ist wieder neu – das Protokoll vergisst die Bewertung', async () => {
+    const d = await newDeck('Vertippt')
+    const [known, fresh] = (
+      await addCards(d.id, [
+        { type: 'basic', front: 'Gelernt', back: 'x' },
+        { type: 'basic', front: 'Neu', back: 'y' },
+      ])
+    ).data.cards as Card[]
+    const t = Date.now() - 3 * DAY
+    const previous = schedule(null, 4, t)
+    await send({ reviews: [{ cardId: known.id, side: 0, ...previous }], log: [entry(known.id, t, 4)] })
+    // Heute versehentlich „Nochmal“ bzw. die neue Karte bewertet
+    const wrong = schedule(previous, 1, t + 3 * DAY)
+    const first = schedule(null, 3, t + 3 * DAY + 1000)
+    await send({
+      reviews: [
+        { cardId: known.id, side: 0, ...wrong },
+        { cardId: fresh.id, side: 0, ...first },
+      ],
+      log: [entry(known.id, wrong.reviewedAt, 1), entry(fresh.id, first.reviewedAt, 3)],
+    })
+    expect(await stateOf(known.id)).toMatchObject({ lapses: 1, reviewedAt: wrong.reviewedAt })
+    const before = await total()
+
+    const undo = [
+      { cardId: known.id, side: 0, reviewedAt: wrong.reviewedAt, previous },
+      { cardId: fresh.id, side: 0, reviewedAt: first.reviewedAt, previous: null },
+    ]
+    expect((await send({ undo })).data).toEqual({ saved: 0, logged: 0, undone: 2, rejected: 0 })
+    expect(await stateOf(known.id)).toMatchObject({
+      phase: previous.phase,
+      lapses: 0,
+      interval: previous.interval,
+      due: previous.due,
+      reviewedAt: t,
+      introducedAt: t,
+    })
+    expect(await stateOf(fresh.id)).toBeUndefined()
+    expect(await total()).toBe(before - 2)
+    // Erneut gesendet (z. B. Antwort ging verloren): nichts mehr zu tun
+    expect((await send({ undo })).data.undone).toBe(0)
+  })
+
+  it('nimmt zurück und übernimmt die neue Bewertung derselben Anfrage', async () => {
+    const d = await newDeck('Nochmal bewertet')
+    const [c] = (await addCards(d.id, [{ type: 'basic', front: 'A', back: 'B' }])).data.cards as Card[]
+    const t = Date.now()
+    const wrong = schedule(null, 1, t)
+    await send({ reviews: [{ cardId: c.id, side: 0, ...wrong }], log: [entry(c.id, t, 1)] })
+    const before = await total()
+    const right = schedule(null, 4, t + 5000)
+    const r = await send({
+      undo: [{ cardId: c.id, side: 0, reviewedAt: t, previous: null }],
+      reviews: [{ cardId: c.id, side: 0, ...right }],
+      log: [entry(c.id, t + 5000, 4)],
+    })
+    expect(r.data).toEqual({ saved: 1, logged: 1, undone: 1, rejected: 0 })
+    expect(await stateOf(c.id)).toMatchObject({ phase: 'review', lapses: 0, reviewedAt: t + 5000, introducedAt: t + 5000 })
+    expect(await total()).toBe(before)
+  })
+
+  it('ändert nichts, wenn inzwischen neuer gelernt wurde, die Karte fremd oder die Rücknahme ungültig ist', async () => {
+    const d = await newDeck('Zwei Geräte')
+    const [c] = (await addCards(d.id, [{ type: 'basic', front: 'A', back: 'B' }])).data.cards as Card[]
+    const t = Date.now()
+    const first = schedule(null, 1, t)
+    const later = schedule(first, 3, t + 60_000)
+    await send({ reviews: [{ cardId: c.id, side: 0, ...first }], log: [entry(c.id, t, 1)] })
+    // Ein anderes Gerät hat danach weitergelernt
+    await send({ reviews: [{ cardId: c.id, side: 0, ...later }], log: [entry(c.id, t + 60_000, 3)] })
+    const before = await total()
+    const stale = { cardId: c.id, side: 0, reviewedAt: t, previous: null }
+    expect((await send({ undo: [stale] })).data.undone).toBe(0)
+    expect(await stateOf(c.id)).toMatchObject({ reviewedAt: t + 60_000 })
+    expect(await total()).toBe(before)
+
+    // Ein fremdes Konto nimmt nichts zurück
+    const created = await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'lena', password: 'Kennwort-Gast-4711' } })
+    expect(created.status).toBe(201)
+    const lena = await loginAs('lena', 'Kennwort-Gast-4711')
+    await call(password.POST, '/', { cookie: lena, body: { currentPassword: 'Kennwort-Gast-4711', newPassword: 'Kennwort-Gast-4712' } })
+    const foreign = { cardId: c.id, side: 0, reviewedAt: t + 60_000, previous: first }
+    expect((await send({ undo: [foreign] }, lena)).data).toMatchObject({ undone: 0, rejected: 0 })
+    expect(await stateOf(c.id)).toMatchObject({ reviewedAt: t + 60_000 })
+    expect(await total()).toBe(before)
+
+    // Der Stand davor muss älter sein als die zurückgenommene Bewertung
+    const invalid = { ...foreign, previous: later }
+    expect((await send({ undo: [invalid] })).data).toMatchObject({ undone: 0, rejected: 1 })
+    expect(await stateOf(c.id)).toMatchObject({ reviewedAt: t + 60_000 })
   })
 })
 

@@ -43,6 +43,7 @@ import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { NotePrint } from './NotePrint'
+import { NoteEmbeds } from './NoteEmbed'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
@@ -301,13 +302,16 @@ function VaultNote({
   )
 }
 
-/** Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz */
+/**
+ * Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz und nicht in
+ * eingebetteten Notizen
+ */
 function headingElement(root: HTMLElement | null, heading: string): HTMLElement | null {
   const key = headingKey(heading)
   const all = root?.querySelectorAll<HTMLElement>(
     ':is(.markdown-body, .ProseMirror) :is(h1, h2, h3, h4, h5, h6)',
   )
-  return [...(all ?? [])].find((h) => headingKey(h.textContent ?? '') === key) ?? null
+  return [...(all ?? [])].find((h) => !h.closest('.note-embed') && headingKey(h.textContent ?? '') === key) ?? null
 }
 
 function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Note | null; heading?: string }) {
@@ -998,7 +1002,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     ) : format === 'text' ? (
       <PlainTextView text={content} />
     ) : (
-      <Preview content={content} {...previewLinks} onToggleTask={toggleTask} />
+      <NoteEmbeds noteId={note.id} links={previewLinks}>
+        <Preview content={content} {...previewLinks} onToggleTask={toggleTask} embeds />
+      </NoteEmbeds>
     )
 
   return (
@@ -1272,7 +1278,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
       {printOpen ? (
-        <NotePrint title={title} format={format} content={content} links={previewLinks} onClose={() => setPrintOpen(false)} />
+        <NotePrint
+          noteId={note.id}
+          title={title}
+          format={format}
+          content={content}
+          links={previewLinks}
+          onClose={() => setPrintOpen(false)}
+        />
       ) : null}
       {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
       <HistoryDialog
