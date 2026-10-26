@@ -4,12 +4,20 @@
 import { redo, selectAll, undo } from '@codemirror/commands'
 import type { EditorView } from '@codemirror/view'
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ArrowDownToLine,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ArrowUpToLine,
   Bold,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   ClipboardPaste,
+  Columns3,
   Copy,
   ExternalLink,
   FileText,
@@ -21,16 +29,28 @@ import {
   Link2,
   PenLine,
   Redo2,
+  Rows3,
   Scissors,
+  Table2,
   TextSelect,
   Undo2,
 } from 'lucide-react'
 import { viewToUrl } from '@/features/workspace/client/nav'
-import { MenuItem, MenuSeparator } from '@/shared/ui/menu'
+import { MenuItem, MenuLabel, MenuSeparator } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { copyText, readText } from '@/shared/client/clipboard'
 import { insertLink, wrapSelection } from '../client/editor/commands'
 import { foldAllSections, foldSection, sectionAt, unfoldAllSections } from '../client/editor/folding'
+import { applyTable, tableAt } from '../client/editor/table'
+import {
+  deleteColumn,
+  deleteRow,
+  insertColumn,
+  insertRow,
+  setAlignment,
+  type Cell,
+  type Table,
+} from '../markdown-table'
 import { attachmentFromUrl } from '../rich-html'
 import type { PreviewLinks } from './Preview'
 import type { EditorLink } from '../editor-links'
@@ -106,7 +126,13 @@ export function MarkdownEditorMenu({
     view.focus()
   }
   const hasSelection = !view.state.selection.main.empty
-  const section = markdown ? sectionAt(view.state, pos ?? view.state.selection.main.head) : null
+  const at = pos ?? view.state.selection.main.head
+  const section = markdown ? sectionAt(view.state, at) : null
+  const table = markdown ? tableAt(view.state, at) : null
+  const tableAction = (op: (t: Table, c: Cell) => { table: Table; cell: Cell }) => () => {
+    if (table) applyTable(view, table.table, op(table.table, table.cell))
+    view.focus()
+  }
   return (
     <>
       {linkItems ? (
@@ -142,6 +168,44 @@ export function MarkdownEditorMenu({
           </MenuItem>
           <MenuItem icon={<Link2 />} onSelect={run(insertLink)}>
             Wikilink [[ ]]
+          </MenuItem>
+        </>
+      ) : null}
+      {table ? (
+        <>
+          <MenuSeparator />
+          <MenuLabel>Tabelle</MenuLabel>
+          <MenuItem icon={<ArrowUpToLine />} onSelect={tableAction((t, c) => insertRow(t, c, false))}>
+            Zeile darüber einfügen
+          </MenuItem>
+          <MenuItem icon={<ArrowDownToLine />} onSelect={tableAction((t, c) => insertRow(t, c, true))}>
+            Zeile darunter einfügen
+          </MenuItem>
+          <MenuItem icon={<ArrowLeftToLine />} onSelect={tableAction((t, c) => insertColumn(t, c, false))}>
+            Spalte links einfügen
+          </MenuItem>
+          <MenuItem icon={<ArrowRightToLine />} onSelect={tableAction((t, c) => insertColumn(t, c, true))}>
+            Spalte rechts einfügen
+          </MenuItem>
+          {table.cell.row > 0 ? (
+            <MenuItem icon={<Rows3 />} onSelect={tableAction(deleteRow)} danger>
+              Zeile löschen
+            </MenuItem>
+          ) : null}
+          <MenuItem icon={<Columns3 />} onSelect={tableAction(deleteColumn)} danger>
+            Spalte löschen
+          </MenuItem>
+          <MenuItem icon={<AlignLeft />} onSelect={tableAction((t, c) => setAlignment(t, c, 'left'))}>
+            Spalte links ausrichten
+          </MenuItem>
+          <MenuItem icon={<AlignCenter />} onSelect={tableAction((t, c) => setAlignment(t, c, 'center'))}>
+            Spalte zentrieren
+          </MenuItem>
+          <MenuItem icon={<AlignRight />} onSelect={tableAction((t, c) => setAlignment(t, c, 'right'))}>
+            Spalte rechts ausrichten
+          </MenuItem>
+          <MenuItem icon={<Table2 />} onSelect={tableAction((t, c) => ({ table: t, cell: c }))}>
+            Tabelle ausrichten
           </MenuItem>
         </>
       ) : null}

@@ -33,6 +33,7 @@ import { linkExtensions, type EditorLinkActions } from './links'
 import { formattedPaste, pasteFormatted } from './paste'
 import { sectionFolding } from './folding'
 import { searchHits } from './search-hits'
+import { nextCell, previousCell } from './table'
 
 const highlightStyle = HighlightStyle.define([
   { tag: t.heading1, class: 'cm-md-h1' },
@@ -282,6 +283,8 @@ export function createExtensions(opts: {
       ...completionKeymap,
       ...searchKeymap,
       ...historyKeymap,
+      // In Tabellen springt Tab zur nächsten Zelle – Einrücken zerstörte dort die Tabelle
+      { key: 'Tab', run: nextCell, shift: previousCell },
       indentWithTab,
       ...defaultKeymap,
     ]),
