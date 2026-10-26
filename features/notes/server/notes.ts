@@ -328,6 +328,11 @@ function unindexNote(db: Database.Database, noteId: string) {
   db.prepare('DELETE FROM notes_fts_map WHERE note_id = ?').run(noteId)
 }
 
+/** Karten aus einer endgültig gelöschten Notiz bleiben im Stapel, verweisen aber nicht mehr auf sie */
+function unlinkCards(db: Database.Database, userId: number, noteId: string) {
+  db.prepare('UPDATE cards SET note_id = NULL WHERE note_id = ? AND user_id = ?').run(noteId, userId)
+}
+
 function getNoteRow(userId: number, id: string, opts: { includeDeleted?: boolean } = {}): NoteRow {
   const row = getDb()
     .prepare(`SELECT * FROM notes WHERE id = ? AND user_id = ? ${opts.includeDeleted ? '' : 'AND deleted_at IS NULL'}`)
@@ -718,6 +723,7 @@ export function deleteNotePermanently(userId: number, id: string) {
   getNoteRow(userId, id, { includeDeleted: true })
   db.transaction(() => {
     unindexNote(db, id)
+    unlinkCards(db, userId, id)
     db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?').run(id, userId)
   })()
 }
@@ -772,7 +778,10 @@ export function emptyTrash(userId: number): number {
     const ids = db.prepare('SELECT id FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL').all(userId) as {
       id: string
     }[]
-    for (const { id } of ids) unindexNote(db, id)
+    for (const { id } of ids) {
+      unindexNote(db, id)
+      unlinkCards(db, userId, id)
+    }
     return db.prepare('DELETE FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL').run(userId).changes
   })()
 }
@@ -783,11 +792,14 @@ export function purgeTrash(userId?: number) {
   const db = getDb()
   db.transaction(() => {
     const rows = db
-      .prepare(`SELECT id FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ? ${userId ? 'AND user_id = ?' : ''}`)
-      .all(...(userId ? [cutoff, userId] : [cutoff])) as { id: string }[]
+      .prepare(
+        `SELECT id, user_id AS owner FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ? ${userId ? 'AND user_id = ?' : ''}`,
+      )
+      .all(...(userId ? [cutoff, userId] : [cutoff])) as { id: string; owner: number }[]
     const del = db.prepare('DELETE FROM notes WHERE id = ?')
-    for (const { id } of rows) {
+    for (const { id, owner } of rows) {
       unindexNote(db, id)
+      unlinkCards(db, owner, id)
       del.run(id)
     }
   })()

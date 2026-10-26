@@ -31,6 +31,7 @@ import {
   Pin,
   PinOff,
   Printer,
+  RefreshCw,
   Share2,
   TableOfContents,
   Trash2,
@@ -93,6 +94,7 @@ import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canva
 import { buildExportIndex } from '@/features/transfer/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { canQuiz } from '@/features/flashcards/note-quiz'
+import { noteCards, syncCards } from '@/features/flashcards/note-sync'
 import { validateName } from '@/shared/lib/names'
 import {
   clearPendingHeading,
@@ -860,6 +862,12 @@ function NoteEditor({
     () => mode === 'read' && !inVault && parseCardsFromNote(text).some((c) => EXPLICIT_SOURCES.includes(c.source)),
     [mode, text, inVault],
   )
+  // … und auf Karten, die nicht mehr zur Notiz passen (geändert oder dort nicht mehr vorhanden)
+  const outdatedCards = useMemo(() => {
+    if (mode !== 'read' || inVault || linkedCards === 0 || !flashcards) return 0
+    const result = syncCards(parseCardsFromNote(text), noteCards(flashcards.cards, note.id))
+    return result.changed.length + result.orphaned.length
+  }, [mode, inVault, linkedCards, flashcards, text, note.id])
 
   const path = folderPath(folders, folderId)
   const summaryForActions = summary ?? { ...note, title }
@@ -1362,6 +1370,7 @@ function NoteEditor({
                     {linkedCards > 0 || cardsInNote ? (
                       <NoteCards
                         count={linkedCards}
+                        outdated={outdatedCards}
                         onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
                         onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                       />
@@ -1557,7 +1566,17 @@ function TitleInput({
 }
 
 /** Lesemodus: Karteikarten aus dieser Notiz */
-function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
+function NoteCards({
+  count,
+  outdated,
+  onLearn,
+  onCreate,
+}: {
+  count: number
+  outdated: number
+  onLearn: (mode: 'learn' | 'practice') => void
+  onCreate: () => void
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
       <Layers className="size-4 text-muted" />
@@ -1574,9 +1593,15 @@ function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode
           </Button>
         </>
       ) : null}
-      <Button size="sm" variant="ghost" onClick={onCreate}>
-        <Layers className="size-4" /> Karten erstellen
-      </Button>
+      {outdated > 0 ? (
+        <Button size="sm" variant="ghost" onClick={onCreate} className="text-warning!">
+          <RefreshCw className="size-4" /> {outdated} {outdated === 1 ? 'Karte' : 'Karten'} veraltet – abgleichen
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={onCreate}>
+          <Layers className="size-4" /> Karten erstellen
+        </Button>
+      )}
     </div>
   )
 }

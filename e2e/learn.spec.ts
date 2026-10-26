@@ -140,6 +140,61 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await expect.poll(pendingReviews).toBe(0)
 })
 
+test('Notiz und Karten abgleichen: neue Antwort übernehmen, Lernstand bleibt, verwaiste Karte lösen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const post = async (url: string, data: unknown) => (await page.request.post(url, { headers, data })).json()
+  const content = 'Was ist ein Körper?::Menge mit + und ·\nWas ist ein Modul?::Vektorraum über einem Ring\n'
+  const note = (await post('/api/notes', { title: 'Abgleich Algebra', content })).note as { id: string }
+  const deck = (await post('/api/decks', { name: 'Abgleich Algebra' })).deck as { id: string }
+  const [field, module] = (
+    await post(`/api/decks/${deck.id}/cards`, {
+      cards: [
+        { type: 'basic', front: 'Was ist ein Körper?', back: 'Menge mit + und ·', noteId: note.id },
+        { type: 'basic', front: 'Was ist ein Modul?', back: 'Vektorraum über einem Ring', noteId: note.id },
+      ],
+    })
+  ).cards as { id: string }[]
+  // Lernstand der ersten Karte: in 10 Tagen wieder dran
+  const now = Date.now()
+  const state = { phase: 'review', step: 0, interval: 10, ease: 2.5, reps: 3, lapses: 0, reviewedAt: now, introducedAt: now }
+  await post('/api/reviews', { reviews: [{ cardId: field.id, side: 0, ...state, due: now + 10 * 86_400_000 }] })
+  // In der Notiz: Antwort präzisiert, Modul gestrichen
+  const precise = 'Kommutativer Ring, in dem jedes Element außer 0 invertierbar ist'
+  await page.request.put(`/api/notes/${note.id}`, { headers, data: { content: `Was ist ein Körper?::${precise}\n` } })
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.getByRole('button', { name: '2 Karten veraltet – abgleichen' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Karteikarten aus Notiz' })
+  const changed = dialog.getByTestId('cards-changed')
+  await expect(changed.getByTestId('card-before')).toContainText('Menge mit + und ·')
+  await expect(changed.getByTestId('card-after')).toContainText(precise)
+  await expect(changed).toContainText('Antwort geändert')
+  await expect(changed.getByRole('checkbox', { name: '„Was ist ein Körper?“ aktualisieren' })).toBeChecked()
+  const orphaned = dialog.getByTestId('cards-orphaned')
+  await expect(orphaned).toContainText('Was ist ein Modul?')
+  // Nichts ist für verwaiste Karten vorausgewählt
+  const action = orphaned.getByLabel('„Was ist ein Modul?“: was tun?')
+  await expect(action).toHaveValue('keep')
+  await action.selectOption('unlink')
+  await shot(page, '33-cards-sync')
+  await dialog.getByTestId('create-from-note').click()
+  await expect(page.getByText('Karten abgeglichen: 1 aktualisiert, 1 von der Notiz gelöst.')).toBeVisible()
+  await expect(page.getByText('1 Karteikarte aus dieser Notiz')).toBeVisible()
+  await expect(page.getByRole('button', { name: /veraltet – abgleichen/ })).toHaveCount(0)
+
+  // Auf dem Server: neue Antwort, Lernstand unverändert, Modul ohne Notiz
+  const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const cards = data.cards as { id: string; back: string; noteId: string | null }[]
+  expect(cards.find((c) => c.id === field.id)).toMatchObject({ back: precise, noteId: note.id })
+  expect(cards.find((c) => c.id === module.id)).toMatchObject({ noteId: null })
+  expect(data.reviews.find((r: { cardId: string }) => r.cardId === field.id)).toMatchObject({ interval: 10, reps: 3 })
+
+  await page.request.delete(`/api/decks/${deck.id}`, { headers })
+  await page.request.delete(`/api/notes/${note.id}?permanent=1`, { headers })
+})
+
 test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

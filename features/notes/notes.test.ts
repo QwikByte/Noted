@@ -16,9 +16,11 @@ import * as password from '@/app/api/account/password/route'
 import * as versions from '@/app/api/notes/[id]/versions/route'
 import * as version from '@/app/api/notes/[id]/versions/[versionId]/route'
 import * as restoreVersion from '@/app/api/notes/[id]/versions/[versionId]/restore/route'
+import * as decks from '@/app/api/decks/route'
+import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import { getDb } from '@/shared/server/db'
 import { MAX_VERSIONS_PER_NOTE, VERSION_MAX_AGE, purgeVersions } from './server/versions'
-import { reindexLinkPaths } from './server/notes'
+import { purgeTrash, reindexLinkPaths } from './server/notes'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -364,6 +366,40 @@ describe('Papierkorb', () => {
     const r = await call(trash.DELETE, '/', { method: 'DELETE', cookie: token })
     expect(r.data.deleted).toBeGreaterThanOrEqual(1)
     expect((await call(trash.GET, '/', { cookie: token })).data.notes).toEqual([])
+  })
+
+  it('Karten aus endgültig gelöschten Notizen bleiben, verweisen aber nicht mehr auf sie', async () => {
+    const deck = (await call(decks.POST, '/', { cookie: token, body: { name: 'Aus gelöschten Notizen' } })).data.deck
+    const [single, emptied, purged, kept] = await Promise.all(
+      ['Einzeln gelöscht', 'Papierkorb geleert', 'Abgelaufen', 'Bleibt im Papierkorb'].map((t) => newNote(t)),
+    )
+    const cards = (
+      await call(deckCards.POST, '/', {
+        cookie: token,
+        params: { id: deck.id },
+        body: { cards: [single, emptied, purged, kept].map((n) => ({ type: 'basic', front: n.title, back: 'x', noteId: n.id })) },
+      })
+    ).data.cards as { id: string; noteId: string | null }[]
+    const noteOf = (cardId: string) =>
+      (getDb().prepare('SELECT note_id AS noteId FROM cards WHERE id = ?').get(cardId) as { noteId: string | null }).noteId
+
+    for (const n of [single, emptied, purged, kept]) {
+      await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: n.id } })
+    }
+    // Im Papierkorb bleibt die Verknüpfung – die Notiz lässt sich wiederherstellen
+    expect(noteOf(cards[0].id)).toBe(single.id)
+
+    await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: single.id }, query: { permanent: '1' } })
+    expect(noteOf(cards[0].id)).toBeNull()
+
+    getDb().prepare('UPDATE notes SET deleted_at = ? WHERE id = ?').run(Date.now() - 400 * 86_400_000, purged.id)
+    purgeTrash()
+    expect(noteOf(cards[2].id)).toBeNull()
+    expect(noteOf(cards[1].id)).toBe(emptied.id)
+
+    await call(trash.DELETE, '/', { method: 'DELETE', cookie: token })
+    expect([cards[1].id, cards[3].id].map(noteOf)).toEqual([null, null])
+    expect(getDb().prepare('SELECT COUNT(*) AS n FROM cards WHERE deck_id = ?').get(deck.id)).toEqual({ n: 4 })
   })
 })
 
