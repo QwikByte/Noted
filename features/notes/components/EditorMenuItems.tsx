@@ -5,6 +5,10 @@ import { redo, selectAll, undo } from '@codemirror/commands'
 import type { EditorView } from '@codemirror/view'
 import {
   Bold,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ClipboardPaste,
   Copy,
   ExternalLink,
@@ -26,6 +30,7 @@ import { MenuItem, MenuSeparator } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { copyText, readText } from '@/shared/client/clipboard'
 import { insertLink, wrapSelection } from '../client/editor/commands'
+import { foldAllSections, foldSection, sectionAt, unfoldAllSections } from '../client/editor/folding'
 import { attachmentFromUrl } from '../rich-html'
 import type { PreviewLinks } from './Preview'
 import type { EditorLink } from '../editor-links'
@@ -84,11 +89,14 @@ export function EditMenuItems({ target }: { target: EditTarget }) {
 export function MarkdownEditorMenu({
   view,
   markdown,
+  pos,
   linkItems,
   onCreateCard,
 }: {
   view: EditorView
   markdown: boolean
+  /** Stelle des Rechtsklicks – für den Abschnitt, der dort ein- oder aufgeklappt wird (Standard: Cursor) */
+  pos?: number
   /** Rechtsklick auf einen Link: was er kann (EditorLinkMenuItems) */
   linkItems?: React.ReactNode
   onCreateCard: () => void
@@ -98,6 +106,7 @@ export function MarkdownEditorMenu({
     view.focus()
   }
   const hasSelection = !view.state.selection.main.empty
+  const section = markdown ? sectionAt(view.state, pos ?? view.state.selection.main.head) : null
   return (
     <>
       {linkItems ? (
@@ -133,6 +142,23 @@ export function MarkdownEditorMenu({
           </MenuItem>
           <MenuItem icon={<Link2 />} onSelect={run(insertLink)}>
             Wikilink [[ ]]
+          </MenuItem>
+        </>
+      ) : null}
+      {section ? (
+        <>
+          <MenuSeparator />
+          <MenuItem
+            icon={section.folded ? <ChevronRight /> : <ChevronDown />}
+            onSelect={run((v) => foldSection(v, !section.folded, section.line.from))}
+          >
+            {section.folded ? 'Abschnitt aufklappen' : 'Abschnitt einklappen'}
+          </MenuItem>
+          <MenuItem icon={<ChevronsDownUp />} onSelect={run(foldAllSections)}>
+            Alle Abschnitte einklappen
+          </MenuItem>
+          <MenuItem icon={<ChevronsUpDown />} onSelect={run(unfoldAllSections)}>
+            Alle aufklappen
           </MenuItem>
         </>
       ) : null}

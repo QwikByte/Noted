@@ -442,6 +442,58 @@ test('Gliederung: Überschriften auflisten, hinspringen und den aktuellen Abschn
   await context.close()
 })
 
+test('Abschnitte einklappen: Knopf vor der Überschrift, Kontextmenü, Tastatur und Gliederung', async ({ page }) => {
+  await login(page)
+  const content = '# Kapitel 1\nText eins\n\n# Kapitel 2\nText zwei\n\n## Unterkapitel 2.1\nText zwei-eins\n\n# Kapitel 3\nText drei\n'
+  const note = await post(page, '/api/notes', { title: 'Einklappen', content }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${note.id}`)
+  const editor = page.locator('.note-paper .cm-content')
+  const line = (text: string) => page.locator('.cm-line', { hasText: text })
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Knopf vor „Kapitel 2“: blendet bis zur nächsten Überschrift gleicher Ebene aus, Kapitel 3 bleibt
+  await line('# Kapitel 2').hover()
+  await line('# Kapitel 2').getByRole('button', { name: 'Abschnitt einklappen' }).click()
+  await expect(editor).not.toContainText('Text zwei')
+  await expect(line('Text drei')).toBeVisible()
+  await expect(line('# Kapitel 2').getByRole('button', { name: 'Abschnitt aufklappen' })).toHaveAttribute('aria-expanded', 'false')
+  await shot(page, '58-folding')
+  // „…“ klappt wieder auf
+  await page.locator('.cm-foldPlaceholder').click()
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Kontextmenü: alle einklappen, dann springt die Gliederung in einen eingeklappten Abschnitt und klappt ihn auf
+  await line('Text eins').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Alle Abschnitte einklappen' }).click()
+  await expect(editor).not.toContainText('Text eins')
+  await expect(editor).not.toContainText('Text drei')
+  await page.getByRole('button', { name: 'Gliederung', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Gliederung' }).getByRole('button', { name: 'Unterkapitel 2.1' }).click()
+  await expect(line('## Unterkapitel 2.1')).toBeVisible()
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Tastatur: Strg+Alt+] klappt alles auf, Strg+Umschalt+[ den Abschnitt am Cursor ein
+  await line('Text zwei-eins').click()
+  await page.keyboard.press('Control+Alt+BracketRight')
+  await expect(line('Text drei')).toBeVisible()
+  await expect(line('Text eins')).toBeVisible()
+  await line('Text drei').click()
+  await page.keyboard.press('Control+Shift+BracketLeft')
+  await expect(editor).not.toContainText('Text drei')
+
+  // Einklappen ändert den Inhalt nicht
+  const saved = (await (await page.request.get(`/api/notes/${note.id}`)).json()).note
+  expect(saved.content).toBe(content)
+
+  // Tippen in der Zeile einer eingeklappten Überschrift klappt sie auf
+  await line('# Kapitel 3').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('!')
+  await expect(line('Text drei')).toBeVisible()
+})
+
 test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen', async ({ page }) => {
   await login(page)
   const folder = await post(page, '/api/folders', { name: 'Glossar-Test', parentId: null }, 'folder')

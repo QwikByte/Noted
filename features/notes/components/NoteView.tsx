@@ -851,7 +851,13 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <EditorLinkMenuItems link={link} noteId={linked?.id ?? null} vault={!!linked && isVaultNote(linked.id)} onOpen={() => editorLinks.open(link)} />
     ) : null
     const items = view ? (
-      <MarkdownEditorMenu view={view} markdown={format !== 'text'} linkItems={linkItems} onCreateCard={createCard} />
+      <MarkdownEditorMenu
+        view={view}
+        markdown={format !== 'text'}
+        pos={pos ?? undefined}
+        linkItems={linkItems}
+        onCreateCard={createCard}
+      />
     ) : null
     openContextMenu(e, items, { text: true })
   }

@@ -31,6 +31,7 @@ import { wrapSelection } from './commands'
 import { slashCompletion, slashExtensions } from './slash'
 import { linkExtensions, type EditorLinkActions } from './links'
 import { formattedPaste, pasteFormatted } from './paste'
+import { sectionFolding } from './folding'
 
 const highlightStyle = HighlightStyle.define([
   { tag: t.heading1, class: 'cm-md-h1' },
@@ -258,6 +259,7 @@ export function createExtensions(opts: {
     }),
     syntaxHighlighting(highlightStyle),
     extendedSyntaxHighlight,
+    sectionFolding(),
     closeBrackets(),
     tooltips({ tooltipSpace: visibleRect }),
     followVisualViewport,
