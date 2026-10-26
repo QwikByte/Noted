@@ -8,24 +8,40 @@ import { Properties } from './Properties'
 import { cn } from '@/shared/ui/cn'
 
 let mermaidCounter = 0
+/**
+ * Gerenderte Diagramme je Thema und Quelltext: Die Vorschau ersetzt beim Tippen ihr ganzes HTML – unveränderte
+ * Diagramme kommen dann aus dem Speicher, statt neu gerendert zu werden
+ */
+const mermaidCache = new Map<string, string>()
+const MERMAID_CACHE_SIZE = 50
+
+const mermaidSource = (block: HTMLElement) => block.querySelector('.mermaid-source')?.textContent ?? ''
 
 async function renderMermaid(root: HTMLElement) {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>('.mermaid-block:not([data-rendered])'))
   if (blocks.length === 0) return
-  const { default: mermaid } = await import('mermaid')
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    // Auf dem Blatt einer Notiz ist es auch im Dark Mode hell
-    theme: isDarkMode() && !root.closest('.note-paper') ? 'dark' : 'neutral',
-    fontFamily: 'inherit',
+  // Auf dem Blatt einer Notiz ist es auch im Dark Mode hell
+  const theme = isDarkMode() && !root.closest('.note-paper') ? 'dark' : 'neutral'
+  const missing = blocks.filter((block) => {
+    const svg = mermaidCache.get(`${theme}\u0000${mermaidSource(block)}`)
+    if (svg === undefined) return true
+    block.setAttribute('data-rendered', '1')
+    block.innerHTML = svg
+    return false
   })
-  for (const block of blocks) {
+  if (missing.length === 0) return
+  const { default: mermaid } = await import('mermaid')
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme, fontFamily: 'inherit' })
+  for (const block of missing) {
     block.setAttribute('data-rendered', '1')
     try {
-      const source = block.querySelector('.mermaid-source')?.textContent ?? ''
+      const source = mermaidSource(block)
       const { svg } = await mermaid.render(`mermaid-${++mermaidCounter}`, source)
       block.innerHTML = svg
+      mermaidCache.set(`${theme}\u0000${source}`, svg)
+      // Das älteste zuerst vergessen
+      const oldest = mermaidCache.keys().next().value
+      if (mermaidCache.size > MERMAID_CACHE_SIZE && oldest !== undefined) mermaidCache.delete(oldest)
     } catch (err) {
       const msg = document.createElement('div')
       msg.className = 'mermaid-error'

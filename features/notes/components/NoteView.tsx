@@ -157,6 +157,23 @@ function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   return wide
 }
 
+/** Ab dieser Länge rendert die Vorschau im Modus „Geteilt“ erst nach einer Tipppause neu */
+const LONG_PREVIEW = 20_000
+const PREVIEW_PAUSE = 400
+
+/** `value` erst, wenn es sich `delay` ms nicht geändert hat – bei 0 sofort */
+function useSettledValue<T>(value: T, delay: number): T {
+  const [settled, setSettled] = useState({ value, delay })
+  // Andere Verzögerung (z. B. Wechsel in den Modus „Geteilt“): den aktuellen Wert gleich übernehmen, nicht den alten
+  if (settled.delay !== delay) setSettled({ value, delay })
+  useEffect(() => {
+    if (delay === 0) return
+    const timer = setTimeout(() => setSettled((s) => (s.value === value ? s : { value, delay })), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return delay === 0 ? value : settled.value
+}
+
 function useMemoryOnly(): boolean {
   return useSyncExternalStore(
     sync.subscribe,
@@ -1088,13 +1105,17 @@ function NoteEditor({
         vault={inVault}
       />
     ) : null
+  // Im Modus „Geteilt“ folgt die Vorschau verzögert – das Tippen wartet nicht auf Markdown, Formeln und Bereinigung.
+  // Lange Notizen erst nach einer Tipppause: Ihr Rendern lässt sich nicht unterbrechen
+  const previewPause = effectiveMode === 'split' && content.length > LONG_PREVIEW ? PREVIEW_PAUSE : 0
+  const previewContent = useDeferredValue(useSettledValue(content, previewPause))
   const readView =
     format === 'richtext' ? (
       <RichTextView html={content} lang={lang} onOpenPdf={app.openPdf} />
     ) : format === 'text' ? (
       <PlainTextView text={content} lang={lang} />
     ) : (
-      <Preview content={content} {...previewLinks} lang={lang} onToggleTask={toggleTask} />
+      <Preview content={previewContent} {...previewLinks} lang={lang} onToggleTask={toggleTask} />
     )
 
   return (

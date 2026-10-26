@@ -60,23 +60,23 @@ function NoteList({ order = [], children }: { order?: readonly string[]; childre
 
 function NoteCard({
   note,
+  summary = 'excerpt' in note ? note : undefined,
   folders,
   snippet,
   find,
 }: {
   note: NoteSummary | SearchResult
+  /** Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste (vom Elternteil, nicht je Karte) */
+  summary?: NoteSummary
   folders: Folder[]
   snippet?: string
   /** Suchwörter: Die Notiz öffnet an der ersten Fundstelle */
   find?: string
 }) {
-  const { notes } = useNotes()
   const openContextMenu = useContextMenu()
   const selection = useNoteSelectionContext()
   const listOrder = useContext(ListOrderContext)
   const dragged = useDraggedIds().includes(note.id)
-  // Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste
-  const summary = notes.find((n) => n.id === note.id)
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
   const selecting = !!selection?.active
@@ -548,6 +548,7 @@ export function SearchView({ initialQuery, folder }: { initialQuery: string; fol
   const [query, setQuery] = useState(initialQuery)
   const [debounced, setDebounced] = useState(initialQuery)
   const { notes } = useNotes()
+  const notesById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes])
   const { data: folders = [] } = useFolders()
   const { data: vaultInfo } = useVaultInfo()
   // Im Tresor wird nicht gesucht – seine Ordner stehen nicht zur Wahl
@@ -688,7 +689,14 @@ export function SearchView({ initialQuery, folder }: { initialQuery: string; fol
                 <NoteSelectionBar selection={selection} />
                 <NoteList order={order}>
                   {results.map((r) => (
-                    <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} find={find} />
+                    <NoteCard
+                      key={r.id}
+                      note={r}
+                      summary={notesById.get(r.id)}
+                      folders={folders}
+                      snippet={snippetHtml(r.snippet)}
+                      find={find}
+                    />
                   ))}
                 </NoteList>
               </NoteSelectionContext.Provider>

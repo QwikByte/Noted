@@ -55,6 +55,22 @@ test('Offline weiterschreiben und automatisch synchronisieren', async ({ page, c
     return (await r.json()).note.content as string
   }, id)
   expect(server).toBe('Online geschrieben.\nOffline ergänzt.')
+
+  // Direkt nach dem Tippen den Tab schließen: Beim Tippen wird der lokale Speicher gebündelt geschrieben, beim
+  // Verlassen der Seite (pagehide) aber sofort – ein zweiter Tab findet den Entwurf. Das Ereignis von Hand: Ein echtes
+  // Schließen oder Neuladen ließe den letzten Sendeversuch trotz „offline“ zum Server durch
+  await context.setOffline(true)
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.insertText('\nKurz vor dem Aussteigen.')
+  const stored = await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    return Object.entries(localStorage).find(([key]) => key.startsWith('noted:drafts:'))?.[1] ?? ''
+  })
+  expect(stored).toContain('Kurz vor dem Aussteigen.')
+  const next = await context.newPage()
+  await next.goto(url)
+  await expect(next.locator('.cm-content')).toContainText('Kurz vor dem Aussteigen.')
 })
 
 test('Konflikt zwischen zwei Geräten wird erkannt', async ({ browser }) => {

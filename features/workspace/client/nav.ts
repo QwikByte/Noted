@@ -1,5 +1,5 @@
 'use client'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { STUDY_FILTERS, type StudyFilter } from '@/features/flashcards/study'
 
@@ -112,8 +112,10 @@ export function viewToUrl(view: View): string {
 
 /** Navigation innerhalb der App ohne Server-Anfrage (funktioniert auch offline). */
 export function useNav() {
-  const params = useSearchParams()
-  const view = viewFromParams(new URLSearchParams(params.toString()))
+  const search = useSearchParams().toString()
+  // Dieselbe Adresse, dasselbe Objekt – sonst änderte sich bei jedem Rendern alles, was von der Ansicht abhängt (bis zu
+  // den Links in der Vorschau)
+  const view = useMemo(() => viewFromParams(new URLSearchParams(search)), [search])
   const go = useCallback((next: View, opts: { replace?: boolean } = {}) => {
     const url = viewToUrl(next)
     if (opts.replace) window.history.replaceState(null, '', url)

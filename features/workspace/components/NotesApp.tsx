@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
@@ -56,6 +56,7 @@ import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { resolveLinkTarget } from '@/features/notes/link-resolve'
+import { createTitleIndexer, newestFirst } from '@/features/notes/title-index'
 import { folderPath } from '@/features/notes/tree'
 import { LazyPdfPanel } from '@/features/pdf/components/LazyPdfPanel'
 import { prewarmPdfViewer } from '@/features/pdf/client/prewarm'
@@ -73,6 +74,8 @@ import {
 import { requestVault } from '@/features/vault/client/vault-ui'
 import { VaultDialogs } from '@/features/vault/components/VaultDialogs'
 import type { Folder, Note, NoteSummary } from '@/features/notes/types'
+
+const titleIndexOf = createTitleIndexer<NoteSummary>()
 
 // React Flow für den Graphen erst bei Bedarf (der PDF-Viewer lädt sich selbst nach, siehe LazyPdfPanel)
 const GraphView = dynamic(() => import('@/features/graph/components/GraphView'), { ssr: false })
@@ -156,19 +159,12 @@ export default function NotesApp() {
     }
   }, [qc, toast])
 
-  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor). Je Titel
-  // alle Notizen, die zuletzt bearbeitete zuerst – Titel sind nur je Ordner eindeutig
-  const titleIndex = useMemo(() => {
-    const plain = new Map<string, NoteSummary[]>()
-    const inVault = new Map<string, NoteSummary[]>()
-    for (const n of [...notes].sort((a, b) => b.updatedAt - a.updatedAt)) {
-      const index = n.vault ? inVault : plain
-      const key = linkKey(n.title)
-      const list = index.get(key)
-      if (list) list.push(n)
-      else index.set(key, [n])
-    }
-    return { plain, inVault }
+  // Je Titel alle Notizen – Titel sind nur je Ordner eindeutig. Bleibt beim Tippen derselbe (siehe title-index.ts)
+  const titleIndex = useMemo(() => titleIndexOf(notes), [notes])
+  // Für Gleichstände die aktuelle Bearbeitungszeit, ohne dass sich resolveTitle bei jeder Taste ändert
+  const latestNotes = useRef(notes)
+  useEffect(() => {
+    latestNotes.current = notes
   }, [notes])
 
   const folderNames = useMemo(
@@ -183,8 +179,11 @@ export default function NotesApp() {
   const resolveTitle = useCallback<AppActions['resolveTitle']>(
     (target, opts) => {
       const key = linkKey(target)
+      let updated: Map<string, number> | null = null
+      const updatedAt = (id: string) =>
+        (updated ??= new Map(latestNotes.current.map((n) => [n.id, n.updatedAt]))).get(id) ?? 0
       const pick = (list: NoteSummary[] | undefined) =>
-        list ? resolveLinkTarget(target, list, foldersOf, opts?.fromFolderId) : null
+        list ? resolveLinkTarget(target, newestFirst(list, updatedAt), foldersOf, opts?.fromFolderId) : null
       return (opts?.vault ? pick(titleIndex.inVault.get(key)) : null) ?? pick(titleIndex.plain.get(key))
     },
     [titleIndex, foldersOf],
