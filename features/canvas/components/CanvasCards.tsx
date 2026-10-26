@@ -16,9 +16,8 @@ import {
 import { ExternalLink, File as FileIcon, FileText, Link2, Loader2 } from 'lucide-react'
 import { MIN_NODE_SIZE, type CanvasNode, type CanvasSide } from '../canvas'
 import { Preview, type PreviewLinks } from '@/features/notes/components/Preview'
-import { PlainTextView, RichTextView } from '@/features/notes/components/ReadView'
+import { NoteContent } from '@/features/notes/components/NoteEmbed'
 import { useNote } from '@/features/notes/client/queries'
-import { mindmapToMarkdown } from '@/features/mindmap/mindmap'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 import type { Attachment } from '@/features/attachments/types'
 import { cn } from '@/shared/ui/cn'
@@ -152,7 +151,6 @@ function LineInput({ id, initial, placeholder, className }: { id: string; initia
 function NoteBody({ id, title }: { id: string; title: string }) {
   const ctx = useContext(CanvasContext)!
   const { data: note, isLoading } = useNote(id)
-  const open = ctx.links.onOpenPdf ?? (() => {})
   return (
     <div className="canvas-note">
       <button type="button" className="canvas-note-title nodrag" onClick={() => ctx.links.onOpenNote(id)} title="Notiz öffnen">
@@ -166,21 +164,8 @@ function NoteBody({ id, title }: { id: string; title: string }) {
           ) : (
             <p className="p-3 text-sm text-muted">Nicht verfügbar</p>
           )
-        ) : note.vault ? (
-          // Inhalt einer Tresor-Notiz nur in der Notiz selbst (entschlüsselt)
-          <p className="p-3 text-sm text-muted">Im Tresor – zum Lesen öffnen</p>
-        ) : note.format === 'richtext' ? (
-          <RichTextView html={note.content} onOpenPdf={open} />
-        ) : note.format === 'text' ? (
-          <PlainTextView text={note.content} />
-        ) : note.format === 'canvas' ? (
-          <p className="p-3 text-sm text-muted">{note.excerpt || 'Canvas'}</p>
         ) : (
-          <Preview
-            content={note.format === 'mindmap' ? mindmapToMarkdown(note.content) : note.content}
-            {...ctx.links}
-            className="card-markdown"
-          />
+          <NoteContent note={note} links={ctx.links} className="card-markdown" />
         )}
       </Scroll>
     </div>

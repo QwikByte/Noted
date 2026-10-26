@@ -381,6 +381,91 @@ test('PDF-Viewer: Inhaltsverzeichnis, Miniaturen, Seitenzahlen wie im Skript und
   expect(await drawn()).toBeLessThan(14)
 })
 
+test('Notizen und Abschnitte einbetten: Inhalt im Lesemodus, Aufgaben bleiben in ihrer Notiz', async ({ page }) => {
+  await login(page)
+  const source = await post(
+    page,
+    '/api/notes',
+    {
+      title: 'Vorlesung 3 (Einbettung)',
+      content: [
+        '---',
+        'quelle: Skript Analysis',
+        '---',
+        '# Vorlesung 3',
+        'Einleitung zur Vorlesung',
+        '',
+        '## Grenzwert',
+        'Eine Folge konvergiert gegen a, wenn …',
+        '',
+        '### Beispiel',
+        '1/n → 0',
+        '',
+        '- [ ] Übung 4 rechnen',
+        '',
+        '## Stetigkeit',
+        'Kommt im Lernzettel nicht vor',
+      ].join('\n'),
+    },
+    'note',
+  )
+  const content = ['## Eigene Gliederung', '', '![[Vorlesung 3 (Einbettung)#Grenzwert]]', '', '- [ ] Eigene Aufgabe', ''].join('\n')
+  const sheet = await post(page, '/api/notes', { title: 'Lernzettel (Einbettung)', content }, 'note')
+  cleanup.push(`/api/notes/${sheet.id}?permanent=1`, `/api/notes/${source.id}?permanent=1`)
+
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+  await page.goto(`/?n=${sheet.id}`)
+  const embed = page.getByTestId('note-embed')
+  await expect(embed).toContainText('Eine Folge konvergiert gegen a')
+  await expect(embed).toContainText('1/n → 0')
+  for (const outside of ['Einleitung zur Vorlesung', 'Kommt im Lernzettel nicht vor', 'Skript Analysis']) {
+    await expect(embed).not.toContainText(outside)
+  }
+  // Eingebettete Überschriften zählen nicht zur Gliederung dieser Notiz
+  await expect(embed.locator('h2, h3')).toHaveCount(2)
+  await expect(page.locator('.markdown-body h2[data-line], .markdown-body h3[data-line]')).toHaveCount(1)
+
+  // Eine Aufgabe in der Einbettung lässt sich nicht abhaken – weder hier noch in der eigenen Notiz
+  const foreign = embed.getByRole('checkbox')
+  await foreign.click()
+  await expect(foreign).not.toBeChecked()
+  await page.waitForTimeout(1500)
+  const stored = async (id: string) => (await (await page.request.get(`/api/notes/${id}`)).json()).note.content as string
+  expect(await stored(sheet.id)).toBe(content)
+  expect(await stored(source.id)).toContain('- [ ] Übung 4 rechnen')
+
+  // Die Herkunft öffnet die eingebettete Notiz am Abschnitt
+  await embed.getByRole('link', { name: 'Vorlesung 3 (Einbettung) › Grenzwert' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${source.id}`))
+  await expect(page.getByRole('heading', { name: 'Kommt im Lernzettel nicht vor' })).toHaveCount(0)
+  await expect(page.locator('.markdown-body').first()).toContainText('Kommt im Lernzettel nicht vor')
+})
+
+test('Einbettungen: Zyklen und mehr als zwei Ebenen bleiben Link-Karten', async ({ page }) => {
+  await login(page)
+  const note = (title: string, content: string) => post(page, '/api/notes', { title, content }, 'note')
+  const a = await note('Zyklus A', 'Text von A\n\n![[Zyklus B]]')
+  const b = await note('Zyklus B', 'Text von B\n\n![[Zyklus A]]')
+  const levels = [await note('Ebene 1', 'Text 1\n\n![[Ebene 2]]'), await note('Ebene 2', 'Text 2\n\n![[Ebene 3]]')]
+  levels.push(await note('Ebene 3', 'Text 3\n\n![[Ebene 4]]'), await note('Ebene 4', 'Text 4'))
+  for (const n of [a, b, ...levels]) cleanup.push(`/api/notes/${n.id}?permanent=1`)
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+
+  // A zeigt B, B zeigt A nur als Link-Karte
+  await page.goto(`/?n=${a.id}`)
+  const embeds = page.getByTestId('note-embed')
+  await expect(embeds).toHaveCount(1)
+  await expect(embeds).toContainText('Text von B')
+  await expect(embeds.locator('a.embed-note')).toContainText('Zyklus A')
+
+  // Zwei Ebenen tief, die dritte bleibt Link-Karte
+  await page.goto(`/?n=${levels[0].id}`)
+  await expect(embeds).toHaveCount(2)
+  await expect(embeds.first()).toContainText('Text 3')
+  await expect(page.locator('.markdown-body').first()).not.toContainText('Text 4')
+  await expect(page.locator('a.embed-note', { hasText: 'Ebene 4' })).toHaveCount(1)
+})
+
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {
   await login(page)
   const note = await post(

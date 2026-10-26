@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { PrintOption, PrintView } from '@/shared/ui/print-view'
 import { usePref } from '@/shared/client/prefs'
 import { Preview, type PreviewLinks } from './Preview'
+import { NoteEmbeds } from './NoteEmbed'
 import { PlainTextView, RichTextView } from './ReadView'
 import { noteMarkdownForPrint } from '../print'
 import type { NoteFormat } from '../types'
@@ -16,12 +17,15 @@ const NOTICES: Partial<Record<NoteFormat, string>> = {
 const ignore = () => {}
 
 export function NotePrint({
+  noteId,
   title,
   format,
   content,
   links,
   onClose,
 }: {
+  /** Die gedruckte Notiz – eingebettete Notizen werden mitgedruckt */
+  noteId: string
   title: string
   format: NoteFormat
   content: string
@@ -35,7 +39,7 @@ export function NotePrint({
     () => noteMarkdownForPrint(format, content, { properties: properties === '1' }),
     [format, content, properties],
   )
-  // Markdown ist fertig, wenn die Diagramme dieses Inhalts gerendert sind
+  // Markdown ist fertig, wenn die Diagramme und eingebetteten Notizen dieses Inhalts gerendert sind
   const [renderedFor, setRenderedFor] = useState<string | null>(null)
   // Bei Mindmaps ist die Wurzel (#) schon die Überschrift
   const withTitle = format !== 'mindmap'
@@ -61,7 +65,9 @@ export function NotePrint({
       }
     >
       {markdown !== null ? (
-        <Preview content={markdown} {...links} print onRendered={() => setRenderedFor(markdown)} />
+        <NoteEmbeds noteId={noteId} links={links} print>
+          <Preview content={markdown} {...links} print embeds onRendered={() => setRenderedFor(markdown)} />
+        </NoteEmbeds>
       ) : format === 'richtext' ? (
         <RichTextView html={content} onOpenPdf={ignore} />
       ) : (
