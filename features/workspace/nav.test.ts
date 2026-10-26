@@ -31,4 +31,11 @@ describe('Adressen der Ansichten', () => {
     expect(viewFromParams(new URLSearchParams('s=all&filter=problem'))).toMatchObject({ mode: 'learn', filter: undefined })
     expect(viewFromParams(new URLSearchParams('s=all&m=practice&filter=unbekannt'))).toMatchObject({ filter: undefined })
   })
+
+  it('nimmt den Suchbegriff des Kartenbrowsers mit – nicht als Notizsuche', () => {
+    expect(viewToUrl({ kind: 'browse' })).toBe('/?v=browse')
+    expect(viewToUrl({ kind: 'browse', q: 'Taylor & Reihe' })).toBe('/?v=browse&cq=Taylor%20%26%20Reihe')
+    expect(roundTrip({ kind: 'browse', q: 'Taylor & Reihe' })).toEqual({ kind: 'browse', q: 'Taylor & Reihe' })
+    expect(roundTrip({ kind: 'browse' })).toEqual({ kind: 'browse', q: undefined })
+  })
 })

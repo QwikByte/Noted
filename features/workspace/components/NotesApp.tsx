@@ -22,6 +22,7 @@ import { NewNoteDialog, MoveDialog, PromptDialog } from '@/features/notes/compon
 import { QuickSwitcher } from '@/features/notes/components/QuickSwitcher'
 import { DragLayer } from '@/features/notes/components/DragLayer'
 import { CardsView } from '@/features/flashcards/components/CardsView'
+import { CardBrowser } from '@/features/flashcards/components/CardBrowser'
 import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
@@ -414,6 +415,9 @@ export default function NotesApp() {
       break
     case 'cards':
       main = <CardsView />
+      break
+    case 'browse':
+      main = <CardBrowser initialQuery={view.q ?? ''} />
       break
     case 'calendar':
       main = <CalendarView />

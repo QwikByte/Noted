@@ -18,6 +18,8 @@ export type View =
   /** Dateien in der Ordnerstruktur der Notizen – folder: Ordner-ID oder UNLINKED (Dateien ohne Notiz) */
   | { kind: 'files'; folder?: string }
   | { kind: 'cards' }
+  /** Alle Karten: Karten aller Stapel durchsuchen – q: Suchbegriff */
+  | { kind: 'browse'; q?: string }
   | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
   /** filter: eigene Übung (nur im Übungsmodus) – Problemkarten, schwerste oder heute vergessene */
@@ -63,6 +65,7 @@ export function viewFromParams(params: URLSearchParams): View {
   if (v === 'trash') return { kind: 'trash' }
   if (v === 'files') return { kind: 'files', folder: params.get('in') || undefined }
   if (v === 'cards') return { kind: 'cards' }
+  if (v === 'browse') return { kind: 'browse', q: params.get('cq') || undefined }
   if (v === 'stats') return { kind: 'stats' }
   if (v === 'calendar') return { kind: 'calendar' }
   if (v === 'glossary') return { kind: 'glossary', folder: params.get('in') || undefined }
@@ -91,6 +94,8 @@ export function viewToUrl(view: View): string {
       return `/?v=files${view.folder ? `&in=${encodeURIComponent(view.folder)}` : ''}`
     case 'cards':
       return '/?v=cards'
+    case 'browse':
+      return `/?v=browse${view.q ? `&cq=${encodeURIComponent(view.q)}` : ''}`
     case 'stats':
       return '/?v=stats'
     case 'calendar':

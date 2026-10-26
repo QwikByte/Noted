@@ -133,7 +133,7 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
         <NavItem
           icon={<Layers />}
           label="Karteikarten"
-          active={view.kind === 'cards' || view.kind === 'deck' || view.kind === 'study' || view.kind === 'stats'}
+          active={view.kind === 'cards' || view.kind === 'browse' || view.kind === 'deck' || view.kind === 'study' || view.kind === 'stats'}
           to={{ kind: 'cards' }}
           count={due}
         />

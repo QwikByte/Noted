@@ -8,6 +8,7 @@ import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import * as progress from '@/app/api/decks/[id]/progress/route'
 import * as card from '@/app/api/cards/[id]/route'
 import * as cardProgress from '@/app/api/cards/[id]/progress/route'
+import * as cardBatch from '@/app/api/cards/batch/route'
 import * as reviews from '@/app/api/reviews/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as stats from '@/app/api/stats/route'
@@ -835,5 +836,65 @@ describe('Heute vergessen', () => {
     const now = Date.parse('2026-10-13T23:00:00Z')
     expect(againToday(userId, 'Europe/Berlin', now).filter((x) => x.cardId === c.id)).toEqual([])
     expect(againToday(userId, 'UTC', now).filter((x) => x.cardId === c.id)).toEqual([{ cardId: c.id, side: 0 }])
+  })
+})
+
+describe('Sammelaktionen im Kartenbrowser', () => {
+  const batch = (body: unknown, cookie: string | null = token) => call(cardBatch.POST, '/api/cards/batch', { cookie, body })
+
+  it('verschiebt mit Lernstand hinten an den Zielstapel, setzt aus, fort, neu und löscht – fremde IDs übersprungen', async () => {
+    const from = await newDeck('Sammel Quelle')
+    const other = await newDeck('Sammel Zweite')
+    const target = await newDeck('Sammel Ziel')
+    const [a, b] = (await addCards(from.id, [{ type: 'basic', front: 'A', back: '1' }, { type: 'basic', front: 'B', back: '2' }])).data.cards as Card[]
+    const [c] = (await addCards(other.id, [{ type: 'basic', front: 'C', back: '3' }])).data.cards as Card[]
+    const [old] = (await addCards(target.id, [{ type: 'basic', front: 'Schon da', back: '0' }])).data.cards as Card[]
+    await call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [{ cardId: a.id, side: 0, ...schedule(null, 4, Date.now()) }] } })
+    const unknown = crypto.randomUUID()
+
+    const moved = await batch({ action: 'move', ids: [c.id, a.id, unknown, a.id], deckId: target.id })
+    expect(moved.status).toBe(200)
+    expect(moved.data.ids).toEqual([c.id, a.id])
+    expect((moved.data.cards as Card[]).map((x) => [x.id, x.deckId, x.position])).toEqual([
+      [c.id, target.id, old.position + 1],
+      [a.id, target.id, old.position + 2],
+    ])
+    let d = await data()
+    expect(d.cards.find((x) => x.id === b.id)?.deckId).toBe(from.id)
+    expect(d.reviews.filter((r) => r.cardId === a.id)).toHaveLength(1)
+
+    expect((await batch({ action: 'suspend', ids: [a.id, b.id] })).data.cards.map((x: Card) => x.suspended)).toEqual([true, true])
+    expect((await batch({ action: 'resume', ids: [b.id] })).data.cards[0].suspended).toBe(false)
+    const reset = await batch({ action: 'reset', ids: [a.id] })
+    expect(reset.data.cards[0].suspended).toBe(false)
+    d = await data()
+    expect(d.reviews.filter((r) => r.cardId === a.id)).toEqual([])
+
+    expect((await batch({ action: 'delete', ids: [b.id, c.id] })).data).toEqual({ ids: [b.id, c.id], cards: [] })
+    d = await data()
+    expect(d.cards.some((x) => x.id === b.id || x.id === c.id)).toBe(false)
+    expect(d.cards.some((x) => x.id === a.id)).toBe(true)
+  })
+
+  it('ändert nur eigene Karten, prüft den Zielstapel und die Eingabe', async () => {
+    const mine = await newDeck('Sammel Eigen')
+    const [x] = (await addCards(mine.id, [{ type: 'basic', front: 'Eigen', back: '1' }])).data.cards as Card[]
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'sammler', password: 'Kennwort-Abc-111' } })
+    const other = await loginAs('sammler', 'Kennwort-Abc-111')
+    await call(password.POST, '/', { cookie: other, body: { currentPassword: 'Kennwort-Abc-111', newPassword: 'Kennwort-Abc-222' } })
+    const theirDeck = (await call(decks.POST, '/api/decks', { cookie: other, body: { name: 'Fremd' } })).data.deck as Deck
+
+    // Fremde Karten: übersprungen; fremder Zielstapel: 404
+    expect((await batch({ action: 'delete', ids: [x.id] }, other)).data.ids).toEqual([])
+    expect((await batch({ action: 'move', ids: [x.id], deckId: theirDeck.id })).status).toBe(404)
+    expect((await data()).cards.find((c) => c.id === x.id)?.deckId).toBe(mine.id)
+
+    expect((await batch({ action: 'move', ids: [x.id] })).status).toBe(400)
+    expect((await batch({ action: 'suspend', ids: [] })).status).toBe(400)
+    expect((await batch({ action: 'suspend', ids: ['abc'] })).status).toBe(400)
+    expect((await batch({ action: 'explode', ids: [x.id] })).status).toBe(400)
+    expect((await batch({ action: 'suspend', ids: Array.from({ length: 5001 }, () => crypto.randomUUID()) })).status).toBe(400)
+    expect((await batch({ action: 'suspend', ids: [x.id] }, null)).status).toBe(401)
+    expect((await call(cardBatch.POST, '/', { cookie: token, csrf: false, body: { action: 'suspend', ids: [x.id] } })).status).toBe(403)
   })
 })

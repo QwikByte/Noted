@@ -1,24 +1,24 @@
-// Mehrfachauswahl in Notizlisten – reine Logik ohne Browser: Umschalten, Bereich vom Anker und Beschneiden, wenn
-// Notizen aus der Liste verschwinden. `order` ist die Reihenfolge, in der die Liste die Notizen anzeigt.
+// Mehrfachauswahl in Listen (Notizen, Karteikarten) – reine Logik ohne Browser: Umschalten, Bereich vom Anker und
+// Beschneiden, wenn Einträge aus der Liste verschwinden. `order` ist die Reihenfolge, in der die Liste sie anzeigt.
 
-export type NoteSelection = {
+export type ListSelection = {
   ids: ReadonlySet<string>
-  /** Zuletzt angeklickte Notiz – von ihr aus wählt Umschalt-Klick einen Bereich */
+  /** Zuletzt angeklickter Eintrag – von ihm aus wählt Umschalt-Klick einen Bereich */
   anchor: string | null
 }
 
-export const EMPTY_SELECTION: NoteSelection = { ids: new Set(), anchor: null }
+export const EMPTY_SELECTION: ListSelection = { ids: new Set(), anchor: null }
 
 /**
- * Klick auf eine Notiz: ohne `range` umschalten, mit `range` den Bereich vom Anker bis hierher wählen (ersetzt die
- * Auswahl, mit `add` kommt er hinzu). Liegt der Anker nicht in `order`, zählt nur die angeklickte Notiz.
+ * Klick auf einen Eintrag: ohne `range` umschalten, mit `range` den Bereich vom Anker bis hierher wählen (ersetzt die
+ * Auswahl, mit `add` kommt er hinzu). Liegt der Anker nicht in `order`, zählt nur der angeklickte Eintrag.
  */
 export function clickSelect(
-  sel: NoteSelection,
+  sel: ListSelection,
   order: readonly string[],
   id: string,
   opts: { range?: boolean; add?: boolean } = {},
-): NoteSelection {
+): ListSelection {
   if (!opts.range) {
     const ids = new Set(sel.ids)
     if (ids.has(id)) ids.delete(id)
@@ -33,12 +33,12 @@ export function clickSelect(
   return { ids: new Set(opts.add ? [...sel.ids, ...range] : range), anchor: sel.anchor }
 }
 
-export function selectAll(order: readonly string[]): NoteSelection {
+export function selectAll(order: readonly string[]): ListSelection {
   return { ids: new Set(order), anchor: null }
 }
 
-/** Notizen entfernen, die nicht mehr in der Liste stehen – ohne Änderung dasselbe Objekt (kein neues Rendern) */
-export function pruneSelection(sel: NoteSelection, order: readonly string[]): NoteSelection {
+/** Einträge entfernen, die nicht mehr in der Liste stehen – ohne Änderung dasselbe Objekt (kein neues Rendern) */
+export function pruneSelection(sel: ListSelection, order: readonly string[]): ListSelection {
   const present = new Set(order)
   const anchorGone = sel.anchor !== null && !present.has(sel.anchor)
   const idsGone = [...sel.ids].some((id) => !present.has(id))

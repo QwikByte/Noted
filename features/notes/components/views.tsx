@@ -31,14 +31,16 @@ import { cn } from '@/shared/ui/cn'
 import { api, NetworkError } from '@/shared/client/api'
 import { keys, useFolders, useNotes } from '../client/queries'
 import { startDrag, useDraggedIds, useDropTarget } from '../client/drag'
-import { NoteSelectionContext, useNoteSelection, useNoteSelectionContext } from '../client/selection'
+import { NoteSelectionContext, useNoteSelectionContext } from '../client/selection'
+import { useListSelection } from '@/shared/client/list-selection'
 import { descendantFolderIds, folderPath, sortByName, sortNotes } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
 import { parseSearch, positiveQuery } from '@/shared/lib/search-query'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
-import { NoteSelectionBar, NoteSelectionMenuItems, SelectButton, SelectionCheckbox } from './SelectionBar'
+import { NoteSelectionBar, NoteSelectionMenuItems } from './SelectionBar'
+import { SelectButton, SelectionCheckbox } from '@/shared/ui/selection-bar'
 import { SortMenu, useNoteOrder } from './SortMenu'
 import { FolderOptions } from './dialogs'
 import { Select } from '@/shared/ui/input'
@@ -187,7 +189,7 @@ export function HomeNotes() {
   // Beide Abschnitte bilden eine Auswahl – eine Notiz in beiden ist über ihre ID in beiden markiert
   const order = [...new Set([...pinnedOrder, ...recentOrder])]
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: 'home', root })
+  const selection = useListSelection({ order, resetKey: 'home', root })
 
   const quick = [
     { id: 'lecture', label: 'Vorlesung', icon: <GraduationCap className="size-4.5" /> },
@@ -288,7 +290,7 @@ export function FolderView({ id }: { id: string }) {
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
   // Nur die Notizen sind auswählbar, nicht die Karten der Unterordner
-  const selection = useNoteSelection({ order, resetKey: `folder:${id}`, root })
+  const selection = useListSelection({ order, resetKey: `folder:${id}`, root })
 
   // Gesperrt sind nur der Wurzelordner des Tresors und dessen Name zu sehen (Unterordner fehlen in der Liste)
   const lockedVault =
@@ -458,7 +460,7 @@ export function TagView({ tag }: { tag: string }) {
   )
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: `tag:${tag}`, root })
+  const selection = useListSelection({ order, resetKey: `tag:${tag}`, root })
   return (
     <Page>
       <div ref={root}>
@@ -608,7 +610,7 @@ export function SearchView({ initialQuery, folder }: { initialQuery: string; fol
   // Auswählbar sind die Notiz-Treffer (auch offline), nicht die Treffer in Dateien
   const order = (offlineResults ?? (debounced ? results : [])).map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: `search:${debounced}`, root })
+  const selection = useListSelection({ order, resetKey: `search:${debounced}`, root })
 
   return (
     <Page>

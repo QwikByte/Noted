@@ -298,6 +298,64 @@ test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzt
   await expect.poll(total, { timeout: 15_000 }).toBe(loggedBefore + 1)
 })
 
+test('Kartenbrowser: in allen Stapeln suchen, mehrere auswählen, verschieben und aussetzen', async ({ page }) => {
+  await login(page)
+  const analysis = await post(page, '/api/decks', { name: 'Browser Analysis' }, 'deck')
+  const physik = await post(page, '/api/decks', { name: 'Browser Physik' }, 'deck')
+  const klausur = await post(page, '/api/decks', { name: 'Browser Klausur' }, 'deck')
+  for (const d of [analysis, physik, klausur]) cleanup.push(`/api/decks/${d.id}`)
+  const add = (deckId: string, fronts: string[]) =>
+    post<Created[]>(page, `/api/decks/${deckId}/cards`, { cards: fronts.map((front) => ({ type: 'basic', front, back: 'x' })) }, 'cards')
+  await add(analysis.id, ['Taylorreihe von sin', 'Taylorreihe von cos', 'Grenzwert einer Folge'])
+  await add(physik.id, ['Taylor in der Mechanik', 'Impulserhaltung'])
+  await add(klausur.id, ['Schon im Klausurstapel'])
+
+  await page.goto('/?v=cards')
+  await page.getByRole('button', { name: 'Karten durchsuchen' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Alle Karten' })).toBeVisible()
+  await page.getByLabel('Karten durchsuchen').fill('taylor')
+  const rows = page.getByTestId('card-row')
+  await expect(rows).toHaveCount(3)
+  await expect(page).toHaveURL(/v=browse&cq=taylor/)
+
+  // Auswählen: Strg-Klick auf die erste, Umschalt-Klick auf die letzte – dazwischen alle
+  await rows.nth(0).locator('.card-markdown').first().click({ modifiers: ['Control'] })
+  await rows.nth(2).locator('.card-markdown').first().click({ modifiers: ['Shift'] })
+  const bar = page.getByRole('toolbar', { name: 'Auswahl' })
+  await expect(bar).toContainText('3 ausgewählt')
+  await shot(page, '99-card-browser')
+  await bar.getByRole('button', { name: 'Verschieben …' }).click()
+  const dialog = page.getByRole('dialog', { name: '3 Karten verschieben' })
+  await dialog.getByLabel('In Stapel').selectOption(klausur.id)
+  await dialog.getByRole('button', { name: 'Verschieben' }).click()
+  await expect(page.getByText('3 Karten verschoben.')).toBeVisible()
+
+  // Hinten an den Zielstapel angehängt
+  const inDeck = async (deckId: string) =>
+    ((await flashcards(page)).cards as { front: string; deckId: string; position: number; suspended: boolean }[])
+      .filter((c) => c.deckId === deckId)
+      .sort((x, y) => x.position - y.position)
+  expect((await inDeck(klausur.id)).map((c) => c.front)).toEqual([
+    'Schon im Klausurstapel',
+    'Taylorreihe von sin',
+    'Taylorreihe von cos',
+    'Taylor in der Mechanik',
+  ])
+
+  // Im Zielstapel zwei davon aussetzen
+  await page.getByLabel('Karten durchsuchen').fill('')
+  await page.getByLabel('Stapel').selectOption(klausur.id)
+  await expect(rows).toHaveCount(4)
+  await page.getByRole('button', { name: 'Auswählen' }).click()
+  await rows.filter({ hasText: 'Taylorreihe von sin' }).locator('.card-markdown').first().click()
+  await rows.filter({ hasText: 'Taylor in der Mechanik' }).getByRole('checkbox').click()
+  await expect(bar).toContainText('2 ausgewählt')
+  await bar.getByRole('button', { name: 'Aussetzen' }).click()
+  await expect(page.getByText('2 Karten ausgesetzt.')).toBeVisible()
+  expect((await inDeck(klausur.id)).filter((c) => c.suspended).map((c) => c.front)).toEqual(['Taylorreihe von sin', 'Taylor in der Mechanik'])
+  await expect(rows.filter({ hasText: 'Ausgesetzt' })).toHaveCount(2)
+})
+
 test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Folien' }, 'deck')

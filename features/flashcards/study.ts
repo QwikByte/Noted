@@ -426,7 +426,7 @@ export const HARDEST_COUNT = 50
  * Wie schwer eine gelernte Seite ist, von 0 bis 1: mit FSRS aus der Schwierigkeit (1–10), sonst aus der Leichtigkeit
  * von SM-2 (2,5 beim Start, 1,3 als Minimum) – so lassen sich Stapel mit beiden Plänen gemeinsam sortieren
  */
-function hardness(state: SrsState): number {
+export function hardness(state: SrsState): number {
   if (state.difficulty != null) return (state.difficulty - 1) / 9
   return Math.min(1, Math.max(0, (2.5 - state.ease) / (2.5 - 1.3)))
 }

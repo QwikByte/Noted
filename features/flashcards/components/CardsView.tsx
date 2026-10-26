@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { ChartColumn, CloudOff, Dumbbell, FileArchive, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
+import { ChartColumn, CloudOff, Dumbbell, FileArchive, GraduationCap, Layers, Loader2, MoreVertical, Plus, Search, Upload } from 'lucide-react'
 import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { useApp } from '@/features/workspace/client/context'
 import { PracticeMenu } from './PracticeMenu'
@@ -84,6 +84,11 @@ export function CardsView() {
             {due > 0 ? (
               <Button variant="primary" size="sm" onClick={() => app.go({ kind: 'study', scope: 'all', mode: 'learn' })}>
                 <GraduationCap className="size-4" /> Alle lernen
+              </Button>
+            ) : null}
+            {total > 0 ? (
+              <Button size="sm" onClick={() => app.go({ kind: 'browse' })} aria-label="Karten durchsuchen" title="Karten durchsuchen">
+                <Search className="size-4" /> <span className="max-sm:hidden">Durchsuchen</span>
               </Button>
             ) : null}
             <Button size="sm" onClick={() => app.go({ kind: 'stats' })} aria-label="Lernstatistik" title="Lernstatistik">

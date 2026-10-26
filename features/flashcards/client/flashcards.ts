@@ -18,6 +18,8 @@ import type {
   CardOption,
   CardReview,
   CardType,
+  CardBatchAction,
+  CardBatchResult,
   CardUpdateResult,
   Deck,
   DeckImportResult,
@@ -607,6 +609,24 @@ export async function importDeckPackage(qc: QueryClient, file: File, deckId: str
   const result = await api<DeckImportResult>('/api/decks/import', { method: 'POST', form })
   await qc.invalidateQueries({ queryKey: flashcardsKey })
   return result
+}
+
+/**
+ * Mehrere Karten auf einmal verschieben (`deckId`), aussetzen, fortsetzen, neu lernen oder löschen. Liefert die IDs,
+ * die der Server geändert hat.
+ */
+export async function batchCards(qc: QueryClient, action: CardBatchAction, ids: string[], deckId?: string): Promise<string[]> {
+  const res = await api<CardBatchResult>('/api/cards/batch', { method: 'POST', body: { action, ids, deckId } })
+  const done = new Set(res.ids)
+  // Gelöscht oder neu zu lernen: auch noch nicht gesendete Bewertungen verwerfen
+  if (action === 'delete' || action === 'reset') reviewQueue.drop(done)
+  const changed = new Map(res.cards.map((c) => [c.id, c]))
+  patch(qc, (d) => ({
+    ...d,
+    cards: d.cards.flatMap((c) => (action === 'delete' && done.has(c.id) ? [] : [changed.get(c.id) ?? c])),
+    reviews: action === 'delete' || action === 'reset' ? d.reviews.filter((r) => !done.has(r.cardId)) : d.reviews,
+  }))
+  return res.ids
 }
 
 export async function deleteCard(qc: QueryClient, id: string) {
