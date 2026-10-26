@@ -56,7 +56,18 @@ function NoteList({ order = [], children }: { order?: readonly string[]; childre
   )
 }
 
-function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
+function NoteCard({
+  note,
+  folders,
+  snippet,
+  find,
+}: {
+  note: NoteSummary | SearchResult
+  folders: Folder[]
+  snippet?: string
+  /** Suchwörter: Die Notiz öffnet an der ersten Fundstelle */
+  find?: string
+}) {
   const { notes } = useNotes()
   const openContextMenu = useContextMenu()
   const selection = useNoteSelectionContext()
@@ -101,7 +112,8 @@ function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult
     >
       {selecting ? <SelectionCheckbox title={note.title} checked={selected} onToggle={toggle} className="pt-3.5 pl-4" /> : null}
       <NavLink
-        to={{ kind: 'note', id: note.id }}
+        // Suchwörter nicht für Tresor-Notizen in die Adresse (Browserverlauf)
+        to={{ kind: 'note', id: note.id, find: summary?.vault ? undefined : find }}
         // Im Auswahlmodus sind die Checkboxen die Tab-Stopps
         tabIndex={selecting ? -1 : undefined}
         onClick={(e) => {
@@ -544,8 +556,9 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
   })
   const results = search.data?.results ?? []
   const files = search.data?.files ?? []
-  // Dieselben Wörter wie auf dem Server (ohne #tags) – der PDF-Viewer hebt sie hervor
+  // Dieselben Wörter wie auf dem Server (ohne #tags) – der PDF-Viewer hebt sie hervor, Notizen öffnen an der Fundstelle
   const fileTerms = useMemo(() => parseSearch(debounced).terms, [debounced])
+  const find = fileTerms.join(' ') || undefined
 
   // Offline: zumindest Titel und Auszüge lokal durchsuchen – wie online ohne den Tresor
   const offlineResults = useMemo(() => {
@@ -591,7 +604,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
             <NoteSelectionBar selection={selection} />
             <NoteList order={order}>
               {offlineResults.map((n) => (
-                <NoteCard key={n.id} note={n} folders={folders} />
+                <NoteCard key={n.id} note={n} folders={folders} find={find} />
               ))}
             </NoteList>
           </NoteSelectionContext.Provider>
@@ -614,7 +627,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
                 <NoteSelectionBar selection={selection} />
                 <NoteList order={order}>
                   {results.map((r) => (
-                    <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
+                    <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} find={find} />
                   ))}
                 </NoteList>
               </NoteSelectionContext.Provider>

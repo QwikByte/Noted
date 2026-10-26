@@ -494,6 +494,53 @@ test('Abschnitte einklappen: Knopf vor der Überschrift, Kontextmenü, Tastatur 
   await expect(line('Text drei')).toBeVisible()
 })
 
+test('Suche: Klick auf einen Treffer springt zur Fundstelle – im Editor und im Lesemodus', async ({ page }) => {
+  await login(page)
+  const filler = Array.from({ length: 80 }, (_, i) => `Absatz ${i + 1}`).join('\n\n')
+  const content = `# Analysis\n\n${filler}\n\nDie **Taylorreihe** nähert eine Funktion an.\n\nÜbungen dazu folgen.\n`
+  const note = await post(page, '/api/notes', { title: 'Lange Mitschrift Reihen', content }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  const highlighted = () =>
+    page.evaluate(() => ({ all: CSS.highlights.get('search-hit')?.size ?? 0, current: CSS.highlights.get('search-current')?.size ?? 0 }))
+
+  // Editor: Die Zeile mit dem Treffer ist im Bild und markiert
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto('/?q=taylor')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(page).toHaveURL(/find=taylor/)
+  const hit = page.locator('.cm-search-hit')
+  await expect(hit).toHaveText('Taylor')
+  await expect(hit).toBeInViewport()
+  const bar = page.getByTestId('find-bar')
+  await expect(bar).toContainText('1 Treffer für „taylor“')
+  await shot(page, '59-find-editor')
+  // Tippen entfernt die Markierung und die Leiste
+  await page.locator('.cm-content').click()
+  await page.keyboard.type('x')
+  await expect(hit).toHaveCount(0)
+  await expect(bar).toBeHidden()
+  await expect(page).not.toHaveURL(/find=/)
+
+  // Lesemodus: „ubung“ findet „Übungen“, mehrere Begriffe, Pfeile springen, Esc schließt
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+  await page.goto('/?q=ubung%20taylor')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(bar).toContainText('Treffer 1 von 2 für „ubung taylor“')
+  await expect.poll(highlighted).toEqual({ all: 2, current: 1 })
+  await expect(page.locator('.markdown-body strong', { hasText: 'Taylorreihe' })).toBeInViewport()
+  await bar.getByRole('button', { name: 'Nächster Treffer' }).click()
+  await expect(bar).toContainText('Treffer 2 von 2')
+  await page.keyboard.press('Escape')
+  await expect(bar).toBeHidden()
+  await expect.poll(highlighted).toEqual({ all: 0, current: 0 })
+
+  // Nur im Titel gefunden: Die Notiz öffnet oben, ohne Leiste
+  await page.goto('/?q=mitschrift')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Lange Mitschrift Reihen' })).toBeVisible()
+  await expect(bar).toBeHidden()
+})
+
 test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen', async ({ page }) => {
   await login(page)
   const folder = await post(page, '/api/folders', { name: 'Glossar-Test', parentId: null }, 'folder')

@@ -32,6 +32,7 @@ import { slashCompletion, slashExtensions } from './slash'
 import { linkExtensions, type EditorLinkActions } from './links'
 import { formattedPaste, pasteFormatted } from './paste'
 import { sectionFolding } from './folding'
+import { searchHits } from './search-hits'
 
 const highlightStyle = HighlightStyle.define([
   { tag: t.heading1, class: 'cm-md-h1' },
@@ -240,6 +241,7 @@ export function createExtensions(opts: {
     theme,
     search({ top: true }),
     highlightSelectionMatches(),
+    searchHits(),
     placeholderExt(opts.placeholder ?? 'Schreib los …'),
     contentAttrs.of(contentAttributes(opts.spellcheck !== false, opts.lang ?? 'de')),
     EditorView.updateListener.of((u) => {

@@ -43,6 +43,7 @@ import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { WordCount } from './WordCount'
+import { FindBar } from './FindBar'
 import { NotePrint } from './NotePrint'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
@@ -78,6 +79,8 @@ import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
 import type { NoteEditorHandle, RichTextHandle } from '../client/editor-handle'
 import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
+import { useFindInNote, type FindSurface } from '../client/find-in-note'
+import { parseSearch } from '@/shared/lib/search-query'
 import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
@@ -190,7 +193,18 @@ function StatusIndicator({ status, memoryOnly }: { status: NoteSyncStatus; memor
 }
 
 /** Lädt die Notiz (Server oder lokaler Entwurf) und zeigt dann den Editor. */
-export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?: string; onOpenSidebar: () => void }) {
+export function NoteView({
+  id,
+  heading,
+  find,
+  onOpenSidebar,
+}: {
+  id: string
+  heading?: string
+  /** Suchwörter aus der Volltextsuche: Fundstellen markieren (nicht im Tresor – die Suche findet dort nichts) */
+  find?: string
+  onOpenSidebar: () => void
+}) {
   const drafts = useDrafts()
   const draft = drafts.find((d) => d.id === id)
   const isLocalOnly = !!draft?.isNew
@@ -240,7 +254,7 @@ export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?:
   if (base.vault) {
     return <VaultNote note={base} serverNote={query.data ?? null} heading={heading} onOpenSidebar={onOpenSidebar} />
   }
-  return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} />
+  return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} find={find} />
 }
 
 /** Statt der Notiz: Laden, Fehler, gesperrt */
@@ -314,7 +328,17 @@ function headingElement(root: HTMLElement | null, heading: string): HTMLElement 
   return [...(all ?? [])].find((h) => headingKey(h.textContent ?? '') === key) ?? null
 }
 
-function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Note | null; heading?: string }) {
+function NoteEditor({
+  note,
+  serverNote,
+  heading,
+  find,
+}: {
+  note: Note
+  serverNote: Note | null
+  heading?: string
+  find?: string
+}) {
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
@@ -372,6 +396,36 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     [infoOpen, format, content],
   )
   const lang = useMemo(() => noteLanguage(format, content, defaultLang), [format, content, defaultLang])
+
+  // Aus der Volltextsuche geöffnet: Fundstellen markieren – bis zur ersten Änderung, Esc oder ✕
+  const [findTerms, setFindTerms] = useState<string[] | null>(() => {
+    const terms = find ? parseSearch(find).terms : []
+    return terms.length ? terms : null
+  })
+  const findSurface: FindSurface =
+    (format === 'markdown' || format === 'text') && effectiveMode !== 'read'
+      ? { kind: 'editor', view: () => cmRef.current?.view() ?? null }
+      : {
+          kind: 'dom',
+          root: () =>
+            contentRef.current?.querySelector<HTMLElement>(
+              effectiveMode === 'read' ? '.note-paper :is(.markdown-body, .plain-text)' : '.ProseMirror',
+            ) ?? null,
+        }
+  // Mindmap und Canvas öffnen wie bisher
+  const found = useFindInNote(visual ? null : findTerms, findSurface, `${format}:${effectiveMode}`)
+  useEffect(() => {
+    if (!findTerms) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) setFindTerms(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [findTerms])
+  // Danach die Suchwörter aus der Adresse nehmen – Neuladen markiert sonst wieder
+  useEffect(() => {
+    if (!findTerms && find) app.go({ kind: 'note', id: note.id }, { replace: true })
+  }, [findTerms, find, app, note.id])
   // Nur solange der Editor den Fokus hat – sonst bliebe nach dem Wechsel in den Titel die alte Markierung gezählt
   const selectedText = useCallback(() => {
     const handle = format === 'richtext' ? richRef.current : cmRef.current
@@ -433,6 +487,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const onChange = useCallback(
     (doc: string) => {
       setContent(doc)
+      setFindTerms(null)
       if (inVault) updateVaultNote(note.id, version, { content: doc }).catch(vaultFailed)
       else sync.update(note.id, version, { content: doc, format })
     },
@@ -1169,6 +1224,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       </header>
 
       {status.state === 'conflict' ? <ConflictBanner status={status} onResolve={resolveConflict} /> : null}
+      {findTerms && !visual && found.count > 0 ? (
+        <FindBar
+          terms={findTerms.join(' ')}
+          index={found.index}
+          count={found.count}
+          onPrev={found.prev}
+          onNext={found.next}
+          onClose={() => setFindTerms(null)}
+        />
+      ) : null}
       {status.state === 'error' ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
           <AlertTriangle className="size-4 shrink-0" />

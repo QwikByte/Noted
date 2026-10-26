@@ -40,6 +40,8 @@
   --warning: #9c5600;
   --warning-soft: #fcf1df;
   --mark: #ffe866;
+  /* Aktueller Treffer beim Springen zwischen Fundstellen */
+  --mark-current: #ffbe5c;
   --code-bg: #f2f3f7;
   --rule: #d9483b;
   --grid-line: #e1e6f0;
@@ -91,6 +93,7 @@
   --warning: #f2b84b;
   --warning-soft: #362c17;
   --mark: #5e5214;
+  --mark-current: #7a4a0c;
   --code-bg: #1f2330;
   --rule: #e2695e;
   --grid-line: #212634;
@@ -635,6 +638,16 @@ html.dragging * {
 }
 /* Textmarker: leicht unregelmäßige Kanten wie ein Strich mit dem Marker */
 .markdown-body mark,
+/* Fundstellen aus der Volltextsuche in der geöffneten Notiz (CSS Custom Highlight API, siehe find-in-note.ts) */
+::highlight(search-hit) {
+  background-color: var(--mark);
+  color: inherit;
+}
+::highlight(search-current) {
+  background-color: var(--mark-current);
+  color: inherit;
+}
+
 .search-snippet mark {
   background: var(--mark);
   color: inherit;
