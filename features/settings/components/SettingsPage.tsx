@@ -335,6 +335,7 @@ function AppearanceSection() {
   const [spellcheck, setSpellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands, setSlashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml, setPasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
+  const [wordCount, setWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
   return (
     <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
@@ -380,6 +381,14 @@ function AppearanceSection() {
             onChange={(v) => setPasteHtml(v ? '1' : '0')}
             label="Beim Einfügen Formatierung übernehmen"
             description="Aus Webseiten, Moodle oder Word Kopiertes kommt als Markdown an – Überschriften, Listen, Fettdruck, Links und Tabellen bleiben. Eine Adresse über markiertem Text wird zum Link. Strg/⌘ + Umschalt + V fügt immer nur den Text ein."
+          />
+        </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={wordCount === '1'}
+            onChange={(v) => setWordCount(v ? '1' : '0')}
+            label="Wortzahl anzeigen"
+            description="Zeigt über der Notiz laufend die Wörter und die Lesezeit – mit Markierung im Editor die Wörter der Markierung. Hilft bei Wortgrenzen für Hausarbeiten und Abstracts."
           />
         </div>
         <Field label="Notizen öffnen im Modus" className="max-w-sm">

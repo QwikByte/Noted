@@ -31,11 +31,6 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
 }
 
-export function wordCount(text: string): number {
-  const m = text.replace(/^---[\s\S]*?\n---/, '').match(/[\p{L}\p{N}]+/gu)
-  return m ? m.length : 0
-}
-
 /** Kurze Beschreibung eines User-Agents, z. B. „Firefox auf Windows“ */
 export function describeUserAgent(ua: string | null): string {
   if (!ua) return 'Unbekanntes Gerät'

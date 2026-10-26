@@ -42,6 +42,7 @@ import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
+import { WordCount } from './WordCount'
 import { NotePrint } from './NotePrint'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
@@ -68,7 +69,7 @@ import { usePref, type EditorMode } from '@/shared/client/prefs'
 import { copyHtml, copyText } from '@/shared/client/clipboard'
 import { folderByPath, folderPath } from '../tree'
 import { noteFromLinkTarget } from '../link-target'
-import { formatDateTime, formatRelative, wordCount } from '@/shared/lib/format'
+import { formatDateTime, formatRelative } from '@/shared/lib/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import type { Attachment } from '@/features/attachments/types'
 import { errorMessage, ApiError } from '@/shared/client/api'
@@ -79,6 +80,7 @@ import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
 import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
+import { noteStats } from '../note-stats'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { extractLinks, findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
@@ -351,6 +353,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
+  const [showWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -360,6 +363,12 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const visual = isVisualFormat(format)
   const effectiveMode: EditorMode = mode === 'split' && !canSplit ? 'edit' : mode
   const text = useMemo(() => noteText(format, content), [format, content])
+  const info = useMemo(() => (infoOpen ? noteStats(format, content) : null), [infoOpen, format, content])
+  // Nur solange der Editor den Fokus hat – sonst bliebe nach dem Wechsel in den Titel die alte Markierung gezählt
+  const selectedText = useCallback(() => {
+    const handle = format === 'richtext' ? richRef.current : cmRef.current
+    return handle && document.activeElement?.closest('.cm-editor, .ProseMirror') ? handle.selectedText() : ''
+  }, [format])
 
   const setMode = (m: EditorMode) => {
     setModeState(m)
@@ -1059,6 +1068,13 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Badge>
             ) : null}
           </nav>
+          {showWordCount === '1' ? (
+            <WordCount
+              format={format}
+              content={content}
+              selectedText={visual || effectiveMode === 'read' ? null : selectedText}
+            />
+          ) : null}
           <StatusIndicator status={status} memoryOnly={memoryOnly} />
           <Menu
             className="max-h-[60vh] w-72 overflow-y-auto"
@@ -1295,9 +1311,15 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <dt className="text-muted">Format</dt>
           <dd>{NOTE_FORMAT_LABELS[format].label}</dd>
           <dt className="text-muted">Wörter</dt>
-          <dd>{wordCount(text).toLocaleString('de-DE')}</dd>
+          <dd>{info?.words.toLocaleString('de-DE')}</dd>
+          {info?.readingMinutes ? (
+            <>
+              <dt className="text-muted">Lesezeit</dt>
+              <dd>ca. {info.readingMinutes} Min.</dd>
+            </>
+          ) : null}
           <dt className="text-muted">Zeichen</dt>
-          <dd>{text.length.toLocaleString('de-DE')}</dd>
+          <dd>{info?.chars.toLocaleString('de-DE')}</dd>
           <dt className="text-muted">Dateiname</dt>
           <dd className="break-all">{[...path.map((f) => f.name), `${title}${noteExtension(format)}`].join('/')}</dd>
           <dt className="text-muted">Version</dt>

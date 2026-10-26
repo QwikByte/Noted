@@ -8,6 +8,7 @@ import {
   headingKey,
   linkFolders,
   makeExcerpt,
+  markdownPlainText,
   splitFrontmatter,
   stripCode,
 } from './meta'
@@ -90,6 +91,24 @@ describe('Hilfsfunktionen', () => {
       'Titel fett und Alias Hinweis',
     )
   })
+
+  it('liefert den lesbaren Text ohne Frontmatter, Code, Kommentare und Einbettungen', () => {
+    const md = [
+      '---',
+      'tags: [mathe]',
+      '---',
+      '## Titel',
+      '- **fett** und [Skript](https://example.org/a/b/c)',
+      '[[Analysis|Ana]] [[Physik]] [[Physik#Wärme]] [[Kapitel 3.1]]',
+      '![[bild.png]] [[skript.pdf]] [[skript.pdf|Skript]] ![[Notiz]]',
+      '`inline` %%geheim%%',
+      '```js',
+      'const x = 1',
+      '```',
+      '> [!note] Hinweis',
+    ].join('\n')
+    expect(markdownPlainText(md)).toBe('Titel fett und Skript Ana Physik Physik Wärme Kapitel 3.1 Skript Hinweis')
+  })
 })
 
 describe('Laufzeit bei böswilligen Eingaben', () => {
@@ -99,6 +118,7 @@ describe('Laufzeit bei böswilligen Eingaben', () => {
       extractTags(s)
       extractLinks(s)
       makeExcerpt(s)
+      markdownPlainText(s)
       findHeadings(s)
       expect(Date.now() - t).toBeLessThan(3000)
     }

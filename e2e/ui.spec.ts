@@ -70,6 +70,31 @@ test('Notiz liegt als Blatt auf dem Tisch – im dunklen Design hell, im hellen 
   expect(light.desk).not.toBe(light.bg)
 })
 
+test('Wortzahl: eingeschaltet zählt die Kopfzeile beim Tippen mit, mit Markierung deren Wörter', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Wortzahl', '')
+  await page.goto(`/?n=${id}`)
+  await expect(page.locator('.note-paper .cm-content')).toBeVisible()
+  // Standardmäßig aus: Für bestehende Nutzer ändert sich nichts
+  await expect(page.getByTestId('word-count')).toHaveCount(0)
+
+  await page.goto('/settings')
+  await page.getByRole('switch', { name: /^Wortzahl anzeigen/ }).click()
+  await page.goto(`/?n=${id}`)
+  await page.locator('.note-paper .cm-content').click()
+  await page.keyboard.type('Eins zwei E-Mail [Link](https://example.org/a/b) fünf')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+
+  await page.keyboard.press('Shift+Home')
+  await expect(page.getByTestId('word-count')).toHaveText('5 von 5 Wörtern')
+  await page.keyboard.press('End')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.locator('.markdown-body')).toContainText('fünf')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+})
+
 test('Menüs der Werkzeugleiste werden nicht abgeschnitten – auch auf dem Handy', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
   const page = await context.newPage()

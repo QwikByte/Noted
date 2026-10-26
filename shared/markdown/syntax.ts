@@ -1,7 +1,7 @@
 // markdown-it-Plugins für die erweiterte Syntax: Wikilinks, Einbettungen, Tags, ==Markierungen==,
 // Callouts, Aufgabenlisten, Kommentare (%% %%) und Überschriften-Anker.
 import type { MarkdownIt, StateCore, StateInline, Token } from 'markdown-it'
-import { isFileTarget, parseWikiTarget } from './meta'
+import { ATTACHMENT_EXT, isFileTarget, parseWikiTarget } from './meta'
 import { escapeHtml } from '@/shared/lib/html'
 
 export type ResolvedNote = { id: string; title: string }
@@ -36,8 +36,6 @@ const AUDIO_EXT = /\.(mp3|m4a|wav|ogg|flac)$/i
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i
 const PDF_PAGE_RE = /^page=(\d{1,5})\b/i
-const ATTACHMENT_EXT =
-  /\.(pdf|png|jpe?g|gif|webp|avif|bmp|svg|heic|heif|mp3|m4a|wav|ogg|flac|mp4|webm|mov|mkv|txt|csv|json|zip|docx?|xlsx?|pptx?|odt|ods|odp|epub)$/i
 
 export function defaultFileUrl(name: string) {
   return '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
