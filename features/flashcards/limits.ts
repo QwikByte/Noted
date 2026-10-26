@@ -14,6 +14,14 @@ export const MAX_MASKS = 50
 export const MAX_MASK_LABEL = 200
 /** Höchstes Tageslimit für neue Karten */
 export const MAX_NEW_PER_DAY = 9999
+/** Tageslimit für Wiederholungen – dieser Wert heißt „ohne Grenze“ */
+export const MAX_REVIEW_PER_DAY = 9999
+/** Lernschritte je Phase (neu bzw. nach dem Vergessen) */
+export const MAX_STEPS = 10
+/** Längster Lernschritt in Minuten (30 Tage) */
+export const MAX_STEP_MINUTES = 43_200
+/** Höchste Schwelle für Problemkarten (so oft vergessen) */
+export const MAX_LEECH_LAPSES = 99
 /** Längste gezählte Antwortzeit pro Karte – wer länger braucht, war meist abgelenkt */
 export const MAX_ANSWER_MS = 120_000
 /** Höchstens so viele Karten auf einmal in einer Sammelaktion (verschieben, aussetzen, löschen …) */

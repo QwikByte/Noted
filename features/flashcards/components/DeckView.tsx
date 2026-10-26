@@ -47,7 +47,6 @@ import { daysUntil, examNewPerDay, nextExam } from '../exam'
 import { cardMatches } from '../browse'
 import { MAX_NEW_PER_DAY } from '../limits'
 import { longDate } from '@/features/calendar/dates'
-import { LEECH_LAPSES } from '../srs'
 import { byPosition, deckCounts, isProblemCard, type DeckCounts } from '../study'
 import type { Deck, DeckExam } from '../types'
 
@@ -75,7 +74,11 @@ export function DeckView({ id }: { id: string }) {
   const exam = nextExam(deck?.exams, now)
   const status = useMemo(() => statusCounts(cards, data?.states ?? new Map()), [cards, data])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
-  const problems = useMemo(() => new Set(data ? cards.filter((c) => isProblemCard(c, data.states)).map((c) => c.id) : []), [cards, data])
+  const leechLapses = deck?.leechLapses
+  const problems = useMemo(
+    () => new Set(data ? cards.filter((c) => isProblemCard(c, data.states, leechLapses)).map((c) => c.id) : []),
+    [cards, data, leechLapses],
+  )
   const suspended = cards.filter((c) => c.suspended).length
   // Ist der Filter leer geworden (z. B. alle Problemkarten neu gelernt), wieder alle Karten zeigen
   const shownFilter: CardFilter =
@@ -305,8 +308,8 @@ export function DeckView({ id }: { id: string }) {
       ) : null}
       {shownFilter === 'problem' ? (
         <p className="mb-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
-          Mindestens {LEECH_LAPSES}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile sie und
-          lerne sie neu; bis dahin kannst du sie aussetzen.
+          Mindestens {deck?.leechLapses}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile
+          sie und lerne sie neu; bis dahin kannst du sie aussetzen.
         </p>
       ) : null}
 

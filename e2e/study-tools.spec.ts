@@ -235,6 +235,76 @@ test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitz
   expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
 })
 
+test('Stapel-Optionen: eigene Lernschritte, und eine Problemkarte wird beim Erreichen der Schwelle ausgesetzt', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Optionen E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const [neu, alt] = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    {
+      cards: [
+        { type: 'basic', front: 'Neue Definition', back: 'a' },
+        { type: 'basic', front: 'Immer wieder vergessen', back: 'b' },
+      ],
+    },
+    'cards',
+  )
+  // Die zweite Karte ist gelernt und heute fällig
+  const now = Date.now()
+  const reviewed = await page.evaluate(
+    async ({ id, now }) => {
+      const me = await (await fetch('/api/auth/me')).json()
+      const day = 86_400_000
+      const review = { cardId: id, side: 0, phase: 'review', step: 0, interval: 3, ease: 2.5, reps: 3, lapses: 0, due: now - day, reviewedAt: now - 3 * day, introducedAt: now - 10 * day }
+      const r = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-noted-request': '1', 'x-noted-user': String(me.user.id) },
+        body: JSON.stringify({ reviews: [review] }),
+      })
+      return (await r.json()).saved
+    },
+    { id: alt.id, now },
+  )
+  expect(reviewed).toBe(1)
+
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByText('Erweitert').click()
+  await dialog.getByLabel('Lernschritte').fill('10m 1x')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('„1x“ ist kein Lernschritt – erlaubt sind z. B. 10m, 2h oder 1d.')
+  await dialog.getByLabel('Lernschritte').fill('10m 1h 1d')
+  await dialog.getByLabel('Problemkarte ab … mal vergessen').fill('1')
+  await dialog.getByLabel('Problemkarten', { exact: true }).selectOption('suspend')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toHaveCount(0)
+  const saved = (await flashcards(page)).decks.find((d: { id: string }) => d.id === deck.id)
+  expect(saved).toMatchObject({ learningSteps: [10, 60, 1440], relearningSteps: [10], leechLapses: 1, leechAction: 'suspend' })
+
+  // Beim Lernen: die fällige Wiederholung zuerst – einmal vergessen genügt jetzt für eine Problemkarte
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  await expect(studyCard).toContainText('Immer wieder vergessen')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(page.getByText('1-mal vergessen – die Karte ist jetzt ausgesetzt.')).toBeVisible()
+  // Die neue Karte zeigt die eigenen Lernschritte auf den Knöpfen
+  await expect(studyCard).toContainText('Neue Definition')
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('rate-1')).toContainText('10 Min.')
+  await expect(page.getByTestId('rate-3')).toContainText('1 Std.')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  // Ausgesetzt auch auf dem Server, sobald die Bewertung ankommt – kommt nicht wieder dran
+  await expect
+    .poll(async () => (await flashcards(page)).cards.find((c: { id: string }) => c.id === alt.id).suspended)
+    .toBe(true)
+  expect((await flashcards(page)).cards.find((c: { id: string }) => c.id === neu.id).suspended).toBe(false)
+})
+
 test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')

@@ -492,9 +492,31 @@ function patch(qc: QueryClient, fn: (d: FlashcardData) => FlashcardData) {
   qc.setQueryData<FlashcardData>(flashcardsKey, (d) => (d ? fn(d) : d))
 }
 
+/**
+ * Zur Problemkarte geworden und der Stapel setzt sie aus: im Browser gleich als ausgesetzt zeigen – der Server setzt
+ * sie selbst aus, sobald die Bewertung ankommt (auch offline gesammelt)
+ */
+export function markSuspended(qc: QueryClient, cardId: string) {
+  patch(qc, (d) => ({ ...d, cards: d.cards.map((c) => (c.id === cardId ? { ...c, suspended: true } : c)) }))
+}
+
 const byName = (a: Deck, b: Deck) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
 
-type DeckInput = Partial<Pick<Deck, 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>> & { name: string }
+type DeckInput = Partial<
+  Pick<
+    Deck,
+    | 'description'
+    | 'newPerDay'
+    | 'typeAnswer'
+    | 'scheduler'
+    | 'retention'
+    | 'learningSteps'
+    | 'relearningSteps'
+    | 'reviewPerDay'
+    | 'leechLapses'
+    | 'leechAction'
+  >
+> & { name: string }
 
 export async function createDeck(qc: QueryClient, input: DeckInput): Promise<Deck> {
   const { deck } = await api<{ deck: Deck }>('/api/decks', { method: 'POST', body: input })

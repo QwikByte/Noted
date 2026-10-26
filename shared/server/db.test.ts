@@ -73,6 +73,31 @@ describe('Datenbank', () => {
     db.close()
   })
 
+  it('Optionen der Stapel (Migration 4): vorhandene Stapel planen wie bisher, Tagesbeginn je Konto', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = ON')
+    for (const sql of migrations.slice(0, 3)) db.exec(sql)
+    db.exec(`
+      INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
+      INSERT INTO decks (id, user_id, name, created_at, updated_at) VALUES ('d', 1, 'Analysis', 0, 0);
+    `)
+    db.exec(migrations[3])
+    expect(db.prepare("SELECT learning_steps, relearning_steps, review_per_day, leech_lapses, leech_action FROM decks WHERE id = 'd'").get()).toEqual({
+      learning_steps: '1 10',
+      relearning_steps: '10',
+      review_per_day: 9999,
+      leech_lapses: 6,
+      leech_action: 'mark',
+    })
+    expect(() => db.exec("UPDATE decks SET leech_action = 'löschen'")).toThrow(/CHECK constraint/)
+    expect(() => db.exec('UPDATE decks SET leech_lapses = 0')).toThrow(/CHECK constraint/)
+    db.exec('INSERT INTO flashcard_settings (user_id, day_start_hour) VALUES (1, 4)')
+    expect(() => db.exec('UPDATE flashcard_settings SET day_start_hour = 24')).toThrow(/CHECK constraint/)
+    db.exec('DELETE FROM users WHERE id = 1')
+    expect(db.prepare('SELECT COUNT(*) FROM flashcard_settings').pluck().get()).toBe(0)
+    db.close()
+  })
+
   it('Bereiche in PDFs (Migration 3): vorhandene Anmerkungen sind Textmarkierungen, andere Arten gibt es nicht', () => {
     const db = new Database(':memory:')
     db.pragma('foreign_keys = ON')

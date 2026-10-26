@@ -63,6 +63,29 @@ describe('Stapel', () => {
     expect(r.data.deck).toMatchObject({ name: 'Analysis 1', newPerDay: 30, description: 'Klausur' })
   })
 
+  it('speichert Lernschritte, Wiederholungslimit und Problemkarten je Stapel – ohne Angabe wie bisher', async () => {
+    const d = await newDeck('Optionen')
+    expect(d).toMatchObject({ learningSteps: [1, 10], relearningSteps: [10], reviewPerDay: 9999, leechLapses: 6, leechAction: 'mark' })
+    const patch = (body: object) =>
+      call(deck.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: d.id }, body: { name: 'Optionen', ...body } })
+    const options = { learningSteps: [10, 60, 1440], relearningSteps: [30], reviewPerDay: 100, leechLapses: 4, leechAction: 'suspend' }
+    expect((await patch(options)).data.deck).toMatchObject(options)
+    for (const [body, message] of [
+      [{ learningSteps: [] }, 'Es braucht mindestens einen Lernschritt.'],
+      [{ learningSteps: [0] }, 'Ein Lernschritt dauert mindestens 1 Minute.'],
+      [{ relearningSteps: [50_000] }, 'Ein Lernschritt dauert höchstens 30 Tage.'],
+      [{ learningSteps: Array(11).fill(1) }, 'Höchstens 10 Lernschritte.'],
+      [{ reviewPerDay: -1 }, 'Das Tageslimit für Wiederholungen darf nicht negativ sein.'],
+      [{ leechLapses: 0 }, 'Die Schwelle für Problemkarten liegt zwischen 1 und 99.'],
+      [{ leechAction: 'löschen' }, 'Unbekannte Aktion für Problemkarten.'],
+    ] as const) {
+      const r = await patch(body)
+      expect(r.status, message).toBe(400)
+      expect(r.data.message).toBe(message)
+    }
+    expect((await data()).decks.find((x) => x.id === d.id)).toMatchObject(options)
+  })
+
   it('speichert „Antwort eintippen“ je Stapel', async () => {
     const d = await newDeck('Französisch')
     expect(d.typeAnswer).toBe(false)
@@ -202,7 +225,7 @@ describe('Lückentext-Karten', () => {
     // Eine dritte Lücke gibt es nicht
     expect((await save(2)).data.saved).toBe(0)
     // Ungültige Seite: verworfen, ohne die Anfrage abzulehnen
-    expect((await save(50)).data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 1 })
+    expect((await save(50)).data).toEqual({ saved: 0, logged: 0, suspended: 0, undone: 0, rejected: 1 })
 
     // Eine Lücke fällt weg: ihr Lernstand auch
     const edited = await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { front: 'Nur noch ==sin==' } })
@@ -391,7 +414,7 @@ describe('Lernstand', () => {
     // Ein ungültiger Eintrag wird einzeln verworfen – die übrigen derselben Anfrage kommen an
     const third = { cardId: c.id, side: 0 as const, ...schedule(second, 3, t + 1_200_000) }
     const mixed = await save([{ ...first, ease: 99, reviewedAt: t + 1_800_000 }, third])
-    expect(mixed.data).toEqual({ saved: 1, logged: 0, undone: 0, rejected: 1 })
+    expect(mixed.data).toEqual({ saved: 1, logged: 0, suspended: 0, undone: 0, rejected: 1 })
     expect((await data()).reviews.find((r) => r.cardId === c.id)).toMatchObject({ reviewedAt: t + 1_200_000 })
 
     const reset = await call(progress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: d.id } })
@@ -433,6 +456,29 @@ describe('Lernstand', () => {
     expect((await call(cardProgress.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: crypto.randomUUID() } })).status).toBe(404)
   })
 
+  it('setzt eine Karte beim Erreichen der Schwelle aus, wenn der Stapel das will – auch offline gesammelt, nur einmal', async () => {
+    const strict = await newDeck('Gleich aussetzen', { leechLapses: 2, leechAction: 'suspend' })
+    const mild = await newDeck('Nur markieren', { leechLapses: 2 })
+    const [c] = (await addCards(strict.id, [{ type: 'basic', front: 'Lang und unklar', back: 'X' }])).data.cards as Card[]
+    const [m] = (await addCards(mild.id, [{ type: 'basic', front: 'Auch schwer', back: 'Y' }])).data.cards as Card[]
+    const t = Date.now() - 10 * DAY
+    const base = schedule(null, 4, t)
+    const forgotten = (cardId: string, lapses: number, at: number) => ({ cardId, side: 0, ...base, reps: lapses + 1, lapses, reviewedAt: at })
+    const save = (list: CardReview[]) => call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: list } })
+    const suspended = async (id: string) => (await data()).cards.find((x) => x.id === id)?.suspended
+
+    expect((await save([forgotten(c.id, 1, t + 1_000), forgotten(m.id, 1, t + 1_000)])).data).toMatchObject({ suspended: 0 })
+    // Das zweite Vergessen erreicht die Schwelle – im einen Stapel ausgesetzt, im anderen nur markiert
+    expect((await save([forgotten(c.id, 2, t + 2_000), forgotten(m.id, 2, t + 2_000)])).data).toMatchObject({ saved: 2, suspended: 1 })
+    expect(await suspended(c.id)).toBe(true)
+    expect(await suspended(m.id)).toBe(false)
+    // Fortgesetzt und noch einmal vergessen: nicht erneut ausgesetzt; ein älterer Stand ändert nichts
+    await call(card.PATCH, '/', { method: 'PATCH', cookie: token, params: { id: c.id }, body: { suspended: false } })
+    expect((await save([forgotten(c.id, 3, t + 3_000)])).data).toMatchObject({ saved: 1, suspended: 0 })
+    expect((await save([forgotten(c.id, 2, t + 2_500)])).data).toMatchObject({ saved: 0, suspended: 0 })
+    expect(await suspended(c.id)).toBe(false)
+  })
+
   it('löscht beim Löschen eines Stapels Karten und Lernstand', async () => {
     const d = await newDeck('Wegwerfen')
     const [c] = (await addCards(d.id, [{ type: 'basic', front: 'A', back: 'B' }])).data.cards as Card[]
@@ -470,11 +516,11 @@ describe('Bewertungsprotokoll und Statistik', () => {
     const log = [entry(t, 3, 'new'), entry(t + 600_000, 1, 'review'), entry(t + 1_200_000, 3, 'review')]
     const send = (body: object) => call(reviews.POST, '/api/reviews', { cookie: token, body })
     const first = await send({ reviews: [{ cardId: c.id, side: 0, ...schedule(null, 3, t + 1_200_000) }], log })
-    expect(first.data).toEqual({ saved: 1, logged: 3, undone: 0, rejected: 0 })
+    expect(first.data).toEqual({ saved: 1, logged: 3, suspended: 0, undone: 0, rejected: 0 })
     // Erneut gesendet (z. B. Antwort ging verloren) und Einträge fremder Karten: nichts doppelt
     const again = await send({ reviews: [], log: [...log, { ...log[0], cardId: crypto.randomUUID() }] })
-    expect(again.data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 0 })
-    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).data).toEqual({ saved: 0, logged: 0, undone: 0, rejected: 1 })
+    expect(again.data).toEqual({ saved: 0, logged: 0, suspended: 0, undone: 0, rejected: 0 })
+    expect((await send({ reviews: [], log: [{ ...log[0], rating: 5 }] })).data).toEqual({ saved: 0, logged: 0, suspended: 0, undone: 0, rejected: 1 })
     // Ältere Geräte senden noch kein Protokoll
     expect((await send({ reviews: [] })).status).toBe(200)
 
@@ -545,7 +591,7 @@ describe('Bewertung zurücknehmen', () => {
       { cardId: known.id, side: 0, reviewedAt: wrong.reviewedAt, previous },
       { cardId: fresh.id, side: 0, reviewedAt: first.reviewedAt, previous: null },
     ]
-    expect((await send({ undo })).data).toEqual({ saved: 0, logged: 0, undone: 2, rejected: 0 })
+    expect((await send({ undo })).data).toEqual({ saved: 0, logged: 0, suspended: 0, undone: 2, rejected: 0 })
     expect(await stateOf(known.id)).toMatchObject({
       phase: previous.phase,
       lapses: 0,
@@ -573,7 +619,7 @@ describe('Bewertung zurücknehmen', () => {
       reviews: [{ cardId: c.id, side: 0, ...right }],
       log: [entry(c.id, t + 5000, 4)],
     })
-    expect(r.data).toEqual({ saved: 1, logged: 1, undone: 1, rejected: 0 })
+    expect(r.data).toEqual({ saved: 1, logged: 1, suspended: 0, undone: 1, rejected: 0 })
     expect(await stateOf(c.id)).toMatchObject({ phase: 'review', lapses: 0, reviewedAt: t + 5000, introducedAt: t + 5000 })
     expect(await total()).toBe(before)
   })

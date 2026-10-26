@@ -1,6 +1,7 @@
 // Wiederholungsplan für Karteikarten (Spaced Repetition) nach dem Vorbild von Anki (SM-2):
 //
-// - Neue Karten durchlaufen kurze Lernschritte (1 und 10 Minuten), danach kommen sie nach einem Tag wieder.
+// - Neue Karten durchlaufen kurze Lernschritte (Standard 1 und 10 Minuten, je Stapel einstellbar), danach kommen sie
+//   nach einem Tag wieder.
 // - Gelernte Karten kommen in wachsenden Abständen (Abstand × Leichtigkeit) wieder.
 // - „Nochmal“ bei einer gelernten Karte zählt als vergessen: Sie wird kurz neu gelernt, der Abstand halbiert
 //   und die Leichtigkeit sinkt. „Schwer“/„Einfach“ verkürzen/verlängern den Abstand und passen die Leichtigkeit an.
@@ -19,10 +20,10 @@ export const RATINGS: { rating: Rating; label: string; key: string }[] = [
 export const MINUTE = 60_000
 export const DAY = 86_400_000
 
-/** Lernschritte für neue Karten (Minuten) */
-const LEARNING_STEPS = [1, 10]
+/** Lernschritte für neue Karten (Minuten), wenn der Stapel keine eigenen hat */
+export const DEFAULT_LEARNING_STEPS: readonly number[] = [1, 10]
 /** Lernschritte nach dem Vergessen (Minuten) */
-const RELEARNING_STEPS = [10]
+export const DEFAULT_RELEARNING_STEPS: readonly number[] = [10]
 const GRADUATING_INTERVAL = 1
 const EASY_INTERVAL = 4
 const START_EASE = 2.5
@@ -36,7 +37,10 @@ const LAPSE_FACTOR = 0.5
 const MAX_INTERVAL = 36_500
 /** Ab diesem Abstand (Tage) gilt eine Karte als „sicher“ */
 const MATURE_INTERVAL = 21
-/** So oft vergessen, gilt eine Karte als Problemkarte (bei Anki „Leech“) – meist ist die Karte selbst das Problem */
+/**
+ * So oft vergessen, gilt eine Karte als Problemkarte (bei Anki „Leech“) – meist ist die Karte selbst das Problem.
+ * Standard für neue Stapel, je Stapel einstellbar.
+ */
 export const LEECH_LAPSES = 6
 export const DEFAULT_NEW_PER_DAY = 20
 /** Gewünschte Behaltensrate mit FSRS */
@@ -85,11 +89,14 @@ export function fuzzInterval(days: number, seed: number | null, min = 1): number
 /** Streuung für eine Bewertung: fest je Kartenseite und Wiederholung, damit Knopf und Bewertung denselben Tag ergeben */
 const fuzzSeed = (key: string | undefined, reps: number) => (key ? fnv1a(`${key}:${reps}`) / 2 ** 32 : null)
 
+/** Lernschritte eines Stapels in Minuten – ohne Angabe die Standardwerte */
+type Steps = { learningSteps?: readonly number[]; relearningSteps?: readonly number[] }
+
 /**
  * Wiederholungsplan eines Stapels: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate – `weights`: auf den eigenen
  * Lernverlauf optimierte Gewichte (sonst die Standardwerte)
  */
-export type Plan = { kind: 'sm2' } | { kind: 'fsrs'; retention: number; weights?: readonly number[] }
+export type Plan = ({ kind: 'sm2' } | { kind: 'fsrs'; retention: number; weights?: readonly number[] }) & Steps
 
 export const SM2: Plan = { kind: 'sm2' }
 
@@ -144,6 +151,9 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
     s.difficulty = memory.difficulty
   }
 
+  const learningSteps = plan.learningSteps?.length ? plan.learningSteps : DEFAULT_LEARNING_STEPS
+  const relearningSteps = plan.relearningSteps?.length ? plan.relearningSteps : DEFAULT_RELEARNING_STEPS
+
   if (s.phase === 'review') {
     if (rating === 1) {
       s.lapses += 1
@@ -151,7 +161,7 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
       s.interval = plan.kind === 'fsrs' ? fsrsDays(1) : clampInterval(s.interval * LAPSE_FACTOR)
       s.phase = 'relearning'
       s.step = 0
-      s.due = now + RELEARNING_STEPS[0] * MINUTE
+      s.due = now + relearningSteps[0] * MINUTE
       return s
     }
     // Jeder Abstand mit Untergrenze – gestreut bleibt so Schwer ≤ Gut < Einfach
@@ -191,7 +201,7 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
   }
 
   // Lernphase (neu oder nach dem Vergessen)
-  const steps = s.phase === 'relearning' ? RELEARNING_STEPS : LEARNING_STEPS
+  const steps = s.phase === 'relearning' ? relearningSteps : learningSteps
   const step = Math.min(s.step, steps.length - 1)
   const graduate = (days: number) => {
     s.phase = 'review'

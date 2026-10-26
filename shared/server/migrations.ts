@@ -400,4 +400,22 @@ export const migrations: string[] = [
   -- (genau ein Rechteck – für Scans, Formeln und Abbildungen). Vorhandene Anmerkungen sind Textmarkierungen.
   ALTER TABLE pdf_annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'area'));
   `,
+
+  /* 4: Optionen der Stapel und Tagesbeginn */ `
+  -- Lernschritte in Minuten, durch Leerzeichen getrennt (neu bzw. nach dem Vergessen); höchstens so viele
+  -- Wiederholungen pro Tag (9999: ohne Grenze); Problemkarten ab so vielen Malen vergessen – nur markiert oder
+  -- gleich ausgesetzt. Die Standardwerte planen genau wie bisher.
+  ALTER TABLE decks ADD COLUMN learning_steps TEXT NOT NULL DEFAULT '1 10';
+  ALTER TABLE decks ADD COLUMN relearning_steps TEXT NOT NULL DEFAULT '10';
+  ALTER TABLE decks ADD COLUMN review_per_day INTEGER NOT NULL DEFAULT 9999 CHECK (review_per_day BETWEEN 0 AND 9999);
+  ALTER TABLE decks ADD COLUMN leech_lapses INTEGER NOT NULL DEFAULT 6 CHECK (leech_lapses BETWEEN 1 AND 99);
+  ALTER TABLE decks ADD COLUMN leech_action TEXT NOT NULL DEFAULT 'mark' CHECK (leech_action IN ('mark', 'suspend'));
+
+  -- Einstellungen der Karteikarten je Konto: Stunde, zu der ein neuer Lerntag beginnt (0 = Mitternacht wie bisher).
+  -- Gilt für alle Stapel, die Statistik und die Serie.
+  CREATE TABLE flashcard_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    day_start_hour INTEGER NOT NULL DEFAULT 0 CHECK (day_start_hour BETWEEN 0 AND 23)
+  );
+  `,
 ]

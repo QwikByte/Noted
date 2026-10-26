@@ -98,6 +98,25 @@ describe('Wiederholungsplan', () => {
     expect(s.ease).toBe(1.3)
   })
 
+  it('folgt den Lernschritten des Stapels – auch über Tage und nach dem Vergessen', () => {
+    const plan: Plan = { kind: 'sm2', learningSteps: [10, 60, 1440], relearningSteps: [30] }
+    const p = previewIntervals(null, NOW, plan)
+    // Schwer im ersten Schritt: Mitte zwischen erstem und zweitem
+    expect([p[1], p[2], p[3]]).toEqual([10 * MINUTE, 35 * MINUTE, 60 * MINUTE])
+    const s1 = schedule(null, 3, NOW, plan)
+    const s2 = schedule(s1, 3, NOW + 60 * MINUTE, plan)
+    expect(s2).toMatchObject({ phase: 'learning', step: 2 })
+    expect(s2.due - (NOW + 60 * MINUTE)).toBe(1440 * MINUTE)
+    const s3 = schedule(s2, 3, s2.due, plan)
+    expect(s3).toMatchObject({ phase: 'review', interval: 1 })
+    const lapsed = schedule(s3, 1, s3.due, plan)
+    expect(lapsed).toMatchObject({ phase: 'relearning', lapses: 1 })
+    expect(lapsed.due - s3.due).toBe(30 * MINUTE)
+    // Ohne eigene Schritte wie bisher
+    expect(schedule(null, 3, NOW, { kind: 'sm2' }).due - NOW).toBe(10 * MINUTE)
+    expect(schedule(null, 3, NOW, { kind: 'sm2', learningSteps: [] }).due - NOW).toBe(10 * MINUTE)
+  })
+
   it('beschriftet die Knöpfe mit dem nächsten Abstand', () => {
     const p = previewIntervals(null, NOW)
     expect([p[1], p[2], p[3], p[4]].map(formatInterval)).toEqual(['1 Min.', '6 Min.', '10 Min.', '4 Tage'])

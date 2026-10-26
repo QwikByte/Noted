@@ -7,16 +7,26 @@ import {
   MAX_ANSWER_MS,
   MAX_CARD_TEXT,
   MAX_CLOZES,
+  MAX_LEECH_LAPSES,
   MAX_MASK_LABEL,
   MAX_MASKS,
   MAX_NEW_PER_DAY,
   MAX_OPTION_TEXT,
   MAX_OPTIONS,
+  MAX_REVIEW_PER_DAY,
+  MAX_STEP_MINUTES,
+  MAX_STEPS,
 } from '../limits'
 import { clozeCount, normalizeCloze } from '../cloze'
 import { fitMask, occlusionError, withMaskIds } from '../occlusion'
 import { movedSides, remapSides, sidesOf } from '../study'
-import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
+import {
+  DEFAULT_LEARNING_STEPS,
+  DEFAULT_NEW_PER_DAY,
+  DEFAULT_RELEARNING_STEPS,
+  DEFAULT_RETENTION,
+  LEECH_LAPSES,
+} from '../srs'
 import { getFsrsParams } from './fsrs-params'
 import type {
   Card,
@@ -28,6 +38,7 @@ import type {
   CardUpdateResult,
   Deck,
   FlashcardData,
+  LeechAction,
   Occlusion,
   ReviewLogEntry,
   ReviewUndo,
@@ -45,6 +56,11 @@ type DeckRow = {
   type_answer: 0 | 1
   scheduler: 'sm2' | 'fsrs'
   retention: number
+  learning_steps: string
+  relearning_steps: string
+  review_per_day: number
+  leech_lapses: number
+  leech_action: LeechAction
   created_at: number
   updated_at: number
 }
@@ -82,6 +98,9 @@ type ReviewRow = {
   difficulty: number | null
 }
 
+/** Lernschritte stehen als „1 10“ (Minuten) in der Datenbank */
+const readSteps = (raw: string) => raw.split(' ').map(Number).filter((n) => Number.isInteger(n) && n > 0)
+
 const toDeck = (r: DeckRow): Deck => ({
   id: r.id,
   name: r.name,
@@ -90,6 +109,11 @@ const toDeck = (r: DeckRow): Deck => ({
   typeAnswer: r.type_answer === 1,
   scheduler: r.scheduler,
   retention: r.retention,
+  learningSteps: readSteps(r.learning_steps),
+  relearningSteps: readSteps(r.relearning_steps),
+  reviewPerDay: r.review_per_day,
+  leechLapses: r.leech_lapses,
+  leechAction: r.leech_action,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
@@ -189,6 +213,11 @@ type DeckInput = {
   typeAnswer?: boolean
   scheduler?: Deck['scheduler']
   retention?: number
+  learningSteps?: number[]
+  relearningSteps?: number[]
+  reviewPerDay?: number
+  leechLapses?: number
+  leechAction?: LeechAction
 }
 
 export function createDeck(userId: number, input: DeckInput): Deck {
@@ -197,8 +226,9 @@ export function createDeck(userId: number, input: DeckInput): Deck {
   const t = Date.now()
   getDb()
     .prepare(
-      `INSERT INTO decks (id, user_id, name, description, new_per_day, type_answer, scheduler, retention, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO decks (id, user_id, name, description, new_per_day, type_answer, scheduler, retention, learning_steps,
+         relearning_steps, review_per_day, leech_lapses, leech_action, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -209,6 +239,11 @@ export function createDeck(userId: number, input: DeckInput): Deck {
       input.typeAnswer ? 1 : 0,
       input.scheduler ?? 'sm2',
       input.retention ?? DEFAULT_RETENTION,
+      (input.learningSteps ?? DEFAULT_LEARNING_STEPS).join(' '),
+      (input.relearningSteps ?? DEFAULT_RELEARNING_STEPS).join(' '),
+      input.reviewPerDay ?? MAX_REVIEW_PER_DAY,
+      input.leechLapses ?? LEECH_LAPSES,
+      input.leechAction ?? 'mark',
       t,
       t,
     )
@@ -220,7 +255,8 @@ export function updateDeck(userId: number, id: string, patch: Partial<Omit<DeckI
   const name = patch.name !== undefined ? checkDeckName(userId, patch.name, id) : deck.name
   getDb()
     .prepare(
-      `UPDATE decks SET name = ?, description = ?, new_per_day = ?, type_answer = ?, scheduler = ?, retention = ?, updated_at = ?
+      `UPDATE decks SET name = ?, description = ?, new_per_day = ?, type_answer = ?, scheduler = ?, retention = ?,
+         learning_steps = ?, relearning_steps = ?, review_per_day = ?, leech_lapses = ?, leech_action = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`,
     )
     .run(
@@ -230,6 +266,11 @@ export function updateDeck(userId: number, id: string, patch: Partial<Omit<DeckI
       patch.typeAnswer !== undefined ? (patch.typeAnswer ? 1 : 0) : deck.type_answer,
       patch.scheduler ?? deck.scheduler,
       patch.retention ?? deck.retention,
+      patch.learningSteps ? patch.learningSteps.join(' ') : deck.learning_steps,
+      patch.relearningSteps ? patch.relearningSteps.join(' ') : deck.relearning_steps,
+      patch.reviewPerDay ?? deck.review_per_day,
+      patch.leechLapses ?? deck.leech_lapses,
+      patch.leechAction ?? deck.leech_action,
       Date.now(),
       id,
       userId,
@@ -549,11 +590,19 @@ export function batchCards(userId: number, action: CardBatchAction, ids: string[
  * Übernimmt Bewertungen (auch offline gesammelte). Pro Kartenseite gewinnt die jüngste Bewertung –
  * so kann ein Gerät, das länger offline war, keinen neueren Stand eines anderen Geräts überschreiben.
  * `log` kommt ins Bewertungsprotokoll; doppelt gesendete Einträge zählen nur einmal.
- * Bewertungen gelöschter Karten werden ignoriert.
+ * Bewertungen gelöschter Karten werden ignoriert. Erreicht eine Karte damit die Schwelle für Problemkarten und soll der
+ * Stapel sie dann aussetzen, wird sie ausgesetzt (`suspended`: so viele Karten).
  */
-export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLogEntry[] = []): { saved: number; logged: number } {
+export function saveReviews(
+  userId: number,
+  reviews: CardReview[],
+  log: ReviewLogEntry[] = [],
+): { saved: number; logged: number; suspended: number } {
   const db = getDb()
   const cardInfo = db.prepare('SELECT type, front, occlusion, deck_id FROM cards WHERE id = ? AND user_id = ?')
+  const leechOf = db.prepare('SELECT leech_lapses, leech_action FROM decks WHERE id = ? AND user_id = ?')
+  const lapsesBefore = db.prepare('SELECT lapses FROM card_reviews WHERE card_id = ? AND side = ? AND user_id = ?')
+  const suspend = db.prepare('UPDATE cards SET suspended = 1, updated_at = ? WHERE id = ? AND user_id = ? AND suspended = 0')
   const upsert = db.prepare(
     `INSERT INTO card_reviews
        (card_id, side, user_id, phase, step, interval, ease, reps, lapses, due, reviewed_at, introduced_at, stability, difficulty)
@@ -573,6 +622,7 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
   )
   let saved = 0
   let logged = 0
+  let suspended = 0
   db.transaction(() => {
     // Nur Seiten, die die Karte (noch) hat
     const card = (id: string, side: number) => {
@@ -580,8 +630,16 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
       return c && side < sidesOf({ ...c, occlusion: parseOcclusion(c.occlusion) }).length ? c : null
     }
     for (const r of reviews) {
-      if (card(r.cardId, r.side)) {
-        saved += upsert.run({ ...r, userId, stability: r.stability ?? null, difficulty: r.difficulty ?? null }).changes
+      const c = card(r.cardId, r.side)
+      if (!c) continue
+      const before = (lapsesBefore.get(r.cardId, r.side, userId) as { lapses: number } | undefined)?.lapses ?? 0
+      const changes = upsert.run({ ...r, userId, stability: r.stability ?? null, difficulty: r.difficulty ?? null }).changes
+      saved += changes
+      if (changes === 0 || r.lapses <= before) continue
+      // Gerade zur Problemkarte geworden – ausgesetzt nur einmal, nicht nach jedem weiteren Vergessen erneut
+      const deck = leechOf.get(c.deck_id, userId) as { leech_lapses: number; leech_action: LeechAction } | undefined
+      if (deck?.leech_action === 'suspend' && before < deck.leech_lapses && r.lapses >= deck.leech_lapses) {
+        suspended += suspend.run(Date.now(), r.cardId, userId).changes
       }
     }
     for (const e of log) {
@@ -589,7 +647,7 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
       if (c) logged += insertLog.run({ ...e, userId, deckId: c.deck_id }).changes
     }
   })()
-  return { saved, logged }
+  return { saved, logged, suspended }
 }
 
 /**
@@ -657,6 +715,17 @@ export function saveSubmittedReviews(userId: number, reviews: unknown[], log: un
 // Eingabeprüfung für die API
 // ---------------------------------------------------------------------------
 
+const stepsSchema = z
+  .array(
+    z
+      .number()
+      .int('Lernschritte sind ganze Minuten.')
+      .min(1, 'Ein Lernschritt dauert mindestens 1 Minute.')
+      .max(MAX_STEP_MINUTES, 'Ein Lernschritt dauert höchstens 30 Tage.'),
+  )
+  .min(1, 'Es braucht mindestens einen Lernschritt.')
+  .max(MAX_STEPS, `Höchstens ${MAX_STEPS} Lernschritte.`)
+
 export const deckSchema = z.object({
   name: z.string().max(1000),
   description: z.string().max(5000).optional(),
@@ -664,6 +733,21 @@ export const deckSchema = z.object({
   typeAnswer: z.boolean().optional(),
   scheduler: z.enum(['sm2', 'fsrs']).optional(),
   retention: z.number().min(0.7).max(0.99).optional(),
+  learningSteps: stepsSchema.optional(),
+  relearningSteps: stepsSchema.optional(),
+  reviewPerDay: z
+    .number()
+    .int()
+    .min(0, 'Das Tageslimit für Wiederholungen darf nicht negativ sein.')
+    .max(MAX_REVIEW_PER_DAY, `Höchstens ${MAX_REVIEW_PER_DAY} Wiederholungen pro Tag.`)
+    .optional(),
+  leechLapses: z
+    .number()
+    .int()
+    .min(1, 'Die Schwelle für Problemkarten liegt zwischen 1 und 99.')
+    .max(MAX_LEECH_LAPSES, 'Die Schwelle für Problemkarten liegt zwischen 1 und 99.')
+    .optional(),
+  leechAction: z.enum(['mark', 'suspend'], 'Unbekannte Aktion für Problemkarten.').optional(),
 })
 
 export const cardSchema = z.object({

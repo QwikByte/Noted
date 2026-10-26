@@ -25,7 +25,7 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { reviewQueue, updateCard, useAgainToday, useFlashcards, type Flashcards } from '../client/flashcards'
+import { markSuspended, reviewQueue, updateCard, useAgainToday, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
 import { LEECH_LAPSES, SM2, formatInterval, previewIntervals, RATINGS, schedule, type Plan, type Rating } from '../srs'
@@ -38,6 +38,7 @@ import {
   isCorrectSelection,
   isProblemCard,
   itemKey,
+  leechThreshold,
   shuffle,
   type ItemKind,
   type StudyFilter,
@@ -103,7 +104,10 @@ export function StudyView({ scope, mode, filter }: { scope: StudyScope; mode: St
           ? {
               data,
               scope: { ...resolved, title: `${resolved.title} · ${FILTER_LABELS[practiceFilter]}` },
-              items: filterItems(practiceFilter, resolved.cards, data.states, { again: again.keys }),
+              items: filterItems(practiceFilter, resolved.cards, data.states, {
+                again: again.keys,
+                leech: leechThreshold(data.decks),
+              }),
             }
           : { data, scope: resolved },
       )
@@ -234,16 +238,24 @@ function StudySession({
   const isMc = card?.type === 'mc' && card.options.length >= 2
   const singleChoice = isMc && card!.options.filter((o) => o.correct).length === 1
   const correct = isMc && answer.checked ? isCorrectSelection(card!.options, answer.selected) : null
-  // Wiederholungsplan des Stapels (SM-2 oder FSRS)
+  // Wiederholungsplan des Stapels (SM-2 oder FSRS) mit seinen Lernschritten
   const deck = card ? live.decks.find((d) => d.id === card.deckId) : undefined
   const scheduler = deck?.scheduler
   const retention = deck?.retention
+  const learningSteps = deck?.learningSteps
+  const relearningSteps = deck?.relearningSteps
   // Eigene FSRS-Gewichte des Kontos (sonst Standardwerte) – kommen mit den Karten, gelten also auch offline
   const weights = live.fsrs?.weights
   const plan = useMemo<Plan>(
-    () => (scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention, weights } : SM2),
-    [scheduler, retention, weights],
+    () => ({
+      ...(scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention, weights } : SM2),
+      learningSteps,
+      relearningSteps,
+    }),
+    [scheduler, retention, weights, learningSteps, relearningSteps],
   )
+  const leechLapses = deck?.leechLapses ?? LEECH_LAPSES
+  const leechAction = deck?.leechAction
   const intervals = useMemo(
     () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan, itemKey(current)) : null),
     [current, state, mode, shownAt, plan],
@@ -287,9 +299,15 @@ function StudySession({
       if (!current || !(session instanceof LearnSession)) return
       const now = Date.now()
       const next = schedule(state, rating, now, plan, itemKey(current))
-      if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
+      // Gerade zur Problemkarte geworden – setzt der Stapel sie dann aus, kommt sie heute nicht mehr dran (ausgesetzt
+      // wird sie auf dem Server, sobald die Bewertung ankommt)
+      const leech = next.lapses >= leechLapses && !isProblemCard(current.card, live.states, leechLapses)
+      const suspend = leech && leechAction === 'suspend'
+      if (leech) {
         toast.show(
-          `${next.lapses}-mal vergessen – überarbeite oder teile die Karte (im Stapel unter „Problemkarten“).`,
+          suspend
+            ? `${next.lapses}-mal vergessen – die Karte ist jetzt ausgesetzt. Überarbeite oder teile sie und setze sie im Stapel fort.`
+            : `${next.lapses}-mal vergessen – überarbeite oder teile die Karte (im Stapel unter „Problemkarten“).`,
           { duration: 8000 },
         )
       }
@@ -298,12 +316,17 @@ function StudySession({
         reviewLogEntry(current.card.id, current.side, state, next, rating, shownAt),
       )
       session.answered(current, next, now)
-      setHistory((h) => [...h, { item: current, previous: state, next }])
+      if (suspend) {
+        session.skipCard(current.card.id)
+        markSuspended(qc, current.card.id)
+        // Nicht zurücknehmbar – sonst käme die ausgesetzte Karte wieder dran
+        setHistory((h) => h.filter((r) => r.item.card.id !== current.card.id))
+      } else setHistory((h) => [...h, { item: current, previous: state, next }])
       setReviewed((n) => n + 1)
       setSeen((prev) => new Set(prev).add(itemKey(current)))
       advance(session)
     },
-    [current, state, session, advance, live.states, toast, shownAt, plan],
+    [current, state, session, advance, live.states, toast, shownAt, plan, leechLapses, leechAction, qc],
   )
 
   /** Letzte Bewertung zurücknehmen: Die Karte kommt verdeckt wieder, mit dem Stand von vorher */
@@ -621,8 +644,8 @@ function StudySession({
                       </span>
                     ) : null}
                     {isMc ? <span>{singleChoice ? 'Eine Antwort ist richtig' : 'Mehrere Antworten können richtig sein'}</span> : null}
-                    {isProblemCard(card, live.states) ? (
-                      <span className="inline-flex items-center gap-1 text-warning" title={`Mindestens ${LEECH_LAPSES}-mal vergessen`}>
+                    {isProblemCard(card, live.states, leechLapses) ? (
+                      <span className="inline-flex items-center gap-1 text-warning" title={`Mindestens ${leechLapses}-mal vergessen`}>
                         <AlertTriangle className="size-3.5" /> Problemkarte
                       </span>
                     ) : null}

@@ -32,11 +32,21 @@ export type Deck = {
   /** Wiederholungsplan: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate (0,7–0,99) */
   scheduler: 'sm2' | 'fsrs'
   retention: number
+  /** Lernschritte in Minuten: für neue Karten und nach dem Vergessen (je mindestens einer) */
+  learningSteps: number[]
+  relearningSteps: number[]
+  /** Höchstens so viele Wiederholungen pro Tag – MAX_REVIEW_PER_DAY heißt „ohne Grenze“ */
+  reviewPerDay: number
+  /** Ab so vielen Malen vergessen ist eine Karte eine Problemkarte – und wird nur markiert oder gleich ausgesetzt */
+  leechLapses: number
+  leechAction: LeechAction
   createdAt: number
   updatedAt: number
   /** Nur im Browser, aus dem Kalender ergänzt: Klausuren, auf die der Stapel vorbereitet (nach Datum) */
   exams?: DeckExam[]
 }
+
+export type LeechAction = 'mark' | 'suspend'
 
 /** Klausur im Kalender, mit der ein Stapel verknüpft ist – `date`: Tag der Klausur (YYYY-MM-DD) */
 export type DeckExam = { id: string; title: string; date: string }

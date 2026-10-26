@@ -122,8 +122,15 @@ export function cardLapses(card: Sided & Pick<Card, 'id'>, states: StateMap): nu
   return Math.max(0, ...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
 }
 
-export const isProblemCard = (card: Sided & Pick<Card, 'id'>, states: StateMap) =>
-  cardLapses(card, states) >= LEECH_LAPSES
+/** Problemkarte: mindestens `leechLapses`-mal vergessen (Schwelle des Stapels) */
+export const isProblemCard = (card: Sided & Pick<Card, 'id'>, states: StateMap, leechLapses = LEECH_LAPSES) =>
+  cardLapses(card, states) >= leechLapses
+
+/** Schwelle für Problemkarten je Karte – die ihres Stapels (Karten aus mehreren Stapeln, z. B. im Kartenbrowser) */
+export function leechThreshold(decks: Pick<Deck, 'id' | 'leechLapses'>[]): (card: Pick<Card, 'deckId'>) => number {
+  const byDeck = new Map(decks.map((d) => [d.id, d.leechLapses]))
+  return (card) => byDeck.get(card.deckId) ?? LEECH_LAPSES
+}
 
 export type DeckCounts = {
   /** Abzufragende Seiten insgesamt */
@@ -433,16 +440,16 @@ export function hardness(state: SrsState): number {
 
 /**
  * Seiten für eine eigene Übung – ohne ausgesetzte Karten. `again`: Kartenseiten (reviewKey), die heute mit „Nochmal“
- * bewertet wurden.
+ * bewertet wurden; `leech`: Schwelle für Problemkarten je Karte (siehe leechThreshold).
  */
 export function filterItems(
   filter: StudyFilter,
   cards: Card[],
   states: StateMap,
-  opts: { again?: ReadonlySet<string>; limit?: number } = {},
+  opts: { again?: ReadonlySet<string>; limit?: number; leech?: (card: Card) => number } = {},
 ): StudyItem[] {
   const items = allItems(cards)
-  if (filter === 'problem') return items.filter((i) => isProblemCard(i.card, states))
+  if (filter === 'problem') return items.filter((i) => isProblemCard(i.card, states, opts.leech?.(i.card)))
   if (filter === 'again-today') return items.filter((i) => opts.again?.has(itemKey(i)))
   // Schwerste: nur schon gelernte Seiten, bei Gleichstand die öfter vergessenen
   return items
