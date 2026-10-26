@@ -1423,6 +1423,57 @@ test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und a
   await expect.poll(queued).toBe(0)
 })
 
+test('PDF-Rückverweise: Notizen zur offenen Seite und zum ganzen PDF, ein Klick öffnet die Notiz', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Kapitel 1'], ['Zweiter Hauptsatz'], ['Kreisprozesse']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Rückverweise.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const lecture = await post(page, '/api/notes', { title: 'Entropie Rückverweis', content: 'Siehe [[Skript Rückverweise.pdf#page=2]]\n', folderId: null }, 'note')
+  const overview = await post(page, '/api/notes', { title: 'Gesamtüberblick Rückverweis', content: '![[Skript Rückverweise.pdf]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${lecture.id}?permanent=1`, `/api/notes/${overview.id}?permanent=1`)
+
+  await page.goto(`/?n=${lecture.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
+
+  await panel.getByRole('button', { name: 'Notizen zu diesem PDF' }).click()
+  const refs = panel.getByTestId('pdf-references')
+  // Diese Seite: nur die Notiz mit dem Seitenlink
+  await expect(refs.getByRole('button', { name: 'Entropie Rückverweis' })).toBeVisible()
+  await expect(refs.getByRole('button', { name: 'Gesamtüberblick Rückverweis' })).toHaveCount(0)
+  await shot(page, '96-pdf-references')
+  await refs.getByRole('tab', { name: 'Ganzes PDF' }).click()
+  const whole = refs.getByRole('listitem').filter({ hasText: 'Gesamtüberblick Rückverweis' })
+  await expect(whole).toContainText('Ganzes PDF')
+  await expect(refs.getByRole('listitem').filter({ hasText: 'Entropie Rückverweis' })).toContainText('S.2')
+
+  // Ein Klick öffnet die Notiz, das PDF bleibt offen
+  await whole.getByRole('button', { name: 'Gesamtüberblick Rückverweis' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${overview.id}`))
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible()
+  await expect(refs).toBeVisible()
+
+  // „PDF hochladen …“ im Viewer bettet die Datei in die offene Notiz ein
+  const extra = makePdf([['Nachtrag']])
+  await panel.locator('input[type="file"]').setInputFiles({ name: 'Nachtrag Rückverweis.pdf', mimeType: 'application/pdf', buffer: extra })
+  await expect(page.getByText('„Nachtrag Rückverweis.pdf“ in „Gesamtüberblick Rückverweis“ eingefügt.')).toBeVisible()
+  const added = ((await (await page.request.get('/api/attachments')).json()).attachments as { id: string; filename: string }[]).find(
+    (a) => a.filename === 'Nachtrag Rückverweis.pdf',
+  )!
+  cleanup.push(`/api/attachments/${added.id}`)
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/notes/${overview.id}`)).json()).note.content, { timeout: 10_000 })
+    .toContain('![[Nachtrag Rückverweis.pdf]]')
+})
+
 test('FSRS-Parameter aus dem Lernverlauf optimieren und zurücksetzen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'FSRS-Optimierung', scheduler: 'fsrs' }, 'deck')

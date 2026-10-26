@@ -5,7 +5,11 @@ import * as attachment from '@/app/api/attachments/[id]/route'
 import * as files from '@/app/api/files/[...name]/route'
 import * as notes from '@/app/api/notes/route'
 import * as note from '@/app/api/notes/[id]/route'
-import { fileReferences } from './references'
+import * as references from '@/app/api/attachments/[id]/references/route'
+import * as users from '@/app/api/admin/users/route'
+import * as password from '@/app/api/account/password/route'
+import { getDb } from '@/shared/server/db'
+import { filePageReferences, fileReferences } from './references'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -119,5 +123,60 @@ describe('Zuordnung von Dateien zu Notizen', () => {
     // Ohne ?notes=1 bleibt die Liste wie bisher (ohne die Notizen zu durchsuchen)
     const plain = await call(attachments.GET, '/', { cookie: token })
     expect(plain.data.attachments[0].noteIds).toBeUndefined()
+  })
+})
+
+describe('Rückverweise im PDF-Viewer', () => {
+  const pages = (format: 'markdown' | 'richtext' | 'canvas' | 'mindmap', content: string) =>
+    Object.fromEntries([...filePageReferences(format, content)].map(([name, p]) => [name, [...p]]))
+
+  it('liest die zitierten Seiten – null für die ganze Datei', () => {
+    expect(pages('markdown', '[[Skript.pdf#page=12]] und ![[Ordner/skript.PDF]], dazu [[Skript.pdf#page=3|S. 3]]')).toEqual({
+      'skript.pdf': [12, null, 3],
+    })
+    // Ein Abschnitt statt einer Seite zählt als ganze Datei, Code nicht
+    expect(pages('markdown', '[[Skript.pdf#Kapitel 2]] `[[Code.pdf#page=1]]`')).toEqual({ 'skript.pdf': [null] })
+    expect(pages('markdown', '[Folien, S. 4](/api/files/Folien%20(1).pdf#page=4)')).toEqual({ 'folien (1).pdf': [4] })
+    const html = '<p><a href="/api/files/Uni/Skript.pdf#page=2">S. 2</a> <a href="/api/files/Skript.pdf">ganz</a></p>'
+    expect(pages('richtext', html)).toEqual({ 'skript.pdf': [2, null] })
+    const canvas = JSON.stringify({
+      nodes: [{ id: 'a', type: 'file', file: 'Plan.pdf', subpath: '#page=3', x: 0, y: 0, width: 100, height: 100 }],
+      edges: [],
+    })
+    expect(pages('canvas', canvas)).toEqual({ 'plan.pdf': [3] })
+    expect(pages('mindmap', '---\nmindmap-plugin: basic\n---\n# Thema\n## Ast [[Skript.pdf#page=7]]')).toEqual({ 'skript.pdf': [7] })
+  })
+
+  it('liefert die Notizen mit ihren Seiten – ohne Papierkorb, Tresor und fremde Konten', async () => {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array([1, 2, 3])], 'Skript Wärme.pdf'))
+    const id = (await call(attachments.POST, '/', { cookie: token, form })).data.attachment.id as string
+    const create = async (title: string, content: string, format = 'markdown', cookie = token) =>
+      (await call(notes.POST, '/api/notes', { cookie, body: { title, content, format } })).data.note as { id: string }
+
+    const lecture = await create('Entropie Mitschrift', 'Siehe [[Skript Wärme.pdf#page=2]] und [[skript wärme.pdf#page=5]]')
+    const summary = await create('Zusammenfassung', '![[Skript Wärme.pdf]] und [[Skript Wärme.pdf#page=2]]')
+    const rich = await create('Formatierte Mitschrift', '<p><a href="/api/files/Skript%20W%C3%A4rme.pdf#page=9">S. 9</a></p>', 'richtext')
+    await create('Ohne Verweis', 'Nichts zum Skript')
+    const trashed = await create('Im Papierkorb', '[[Skript Wärme.pdf#page=2]]')
+    await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: trashed.id } })
+    const locked = await create('Im Tresor', '[[Skript Wärme.pdf#page=2]]')
+    getDb().prepare('UPDATE notes SET vault = 1 WHERE id = ?').run(locked.id)
+
+    const r = await call(references.GET, '/', { cookie: token, params: { id } })
+    expect(r.status).toBe(200)
+    expect(r.data.notes).toEqual([
+      { id: lecture.id, title: 'Entropie Mitschrift', folderId: null, pages: [2, 5], whole: false },
+      { id: rich.id, title: 'Formatierte Mitschrift', folderId: null, pages: [9], whole: false },
+      { id: summary.id, title: 'Zusammenfassung', folderId: null, pages: [2], whole: true },
+    ])
+
+    await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'leserin', password: 'Kennwort-Abc-111' } })
+    const other = await loginAs('leserin', 'Kennwort-Abc-111')
+    await call(password.POST, '/', { cookie: other, body: { currentPassword: 'Kennwort-Abc-111', newPassword: 'Kennwort-Abc-222' } })
+    await create('Fremd', '[[Skript Wärme.pdf#page=2]]', 'markdown', other)
+    expect((await call(references.GET, '/', { cookie: other, params: { id } })).status).toBe(404)
+    expect((await call(references.GET, '/', { cookie: null, params: { id } })).status).toBe(401)
+    expect((await call(references.GET, '/', { cookie: token, params: { id } })).data.notes).toHaveLength(3)
   })
 })

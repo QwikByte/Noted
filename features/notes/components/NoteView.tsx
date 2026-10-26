@@ -520,9 +520,9 @@ function NoteEditor({
   )
 
   // Für Aufrufe von außen (PDF-Viewer, Uploads): immer der aktuelle Stand
-  const latest = useRef({ content, format, title, onChange })
+  const latest = useRef({ content, format, title, onChange, inVault })
   useEffect(() => {
-    latest.current = { content, format, title, onChange }
+    latest.current = { content, format, title, onChange, inVault }
   })
   const editorHandle = (): NoteEditorHandle | null => {
     const f = latest.current.format
@@ -578,6 +578,15 @@ function NoteEditor({
     else sync.update(note.id, version, { title: value.trim() })
   }
 
+  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
+  const addAttachment = useCallback((att: Attachment) => {
+    const handle = editorHandle()
+    if (handle) return handle.insertAttachment(att)
+    const { content: cur, format: f, onChange: change } = latest.current
+    if (f === 'richtext') change(cur + attachmentHtml(att))
+    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
+  }, [])
+
   // Seitenlinks und Zitate aus dem PDF-Viewer an der Cursorposition einfügen – im Lesemodus ans Ende
   useEffect(
     () =>
@@ -594,18 +603,16 @@ function NoteEditor({
           const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
           change(cur + sep + insertionToMarkdown(insertion) + '\n')
         },
+        // Im Tresor keine Dateien, einfacher Text kennt keine Einbettung, ein Canvas nur im Editor
+        attach: (att) => {
+          const { inVault: vaulted, format: f } = latest.current
+          if (vaulted || f === 'text' || (f === 'canvas' && !editorHandle())) return false
+          addAttachment(att)
+          return true
+        },
       }),
-    [note.id],
+    [note.id, addAttachment],
   )
-
-  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
-  const addAttachment = useCallback((att: Attachment) => {
-    const handle = editorHandle()
-    if (handle) return handle.insertAttachment(att)
-    const { content: cur, format: f, onChange: change } = latest.current
-    if (f === 'richtext') change(cur + attachmentHtml(att))
-    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
-  }, [])
 
   const upload = useCallback(
     async (files: File[]) => {

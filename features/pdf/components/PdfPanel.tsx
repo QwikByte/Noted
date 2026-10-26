@@ -23,6 +23,7 @@ import {
   Minimize2,
   MoreVertical,
   MoveHorizontal,
+  NotebookText,
   PanelLeft,
   Quote,
   Search,
@@ -68,6 +69,7 @@ import type { AnnotationColor, PdfAnnotation } from '../types'
 import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
 import PdfSidebar, { type SidebarTab } from './PdfSidebar'
+import PdfReferences from './PdfReferences'
 
 // Zuletzt gelesene Seite je PDF merken
 const POS_KEY = 'noted:pdfpos'
@@ -176,6 +178,8 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   // page: erste Seite der Auswahl (für Seitenlinks), parts: je Seite Text und Rechtecke
   const [selection, setSelection] = useState<{ text: string; page: number; parts: SelectionPart[] } | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  // Rückverweise: Notizen, die dieses PDF bzw. die Seite zitieren – rechts statt der Anmerkungen
+  const [notesOpen, setNotesOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
   const [navTab, setNavTab] = useState<SidebarTab>('outline')
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
@@ -569,13 +573,29 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   const narrow = () => (panelRef.current?.offsetWidth ?? 0) < LIST_BESIDE_WIDTH
 
   const toggleNav = () => {
-    if (!navOpen && narrow()) setListOpen(false)
+    if (!navOpen && narrow()) {
+      setListOpen(false)
+      setNotesOpen(false)
+    }
     setNavOpen(!navOpen)
   }
 
   const toggleList = () => {
     if (!listOpen && narrow()) setNavOpen(false)
+    setNotesOpen(false)
     setListOpen(!listOpen)
+  }
+
+  const toggleNotes = () => {
+    if (!notesOpen && narrow()) setNavOpen(false)
+    setListOpen(false)
+    setNotesOpen(!notesOpen)
+  }
+
+  /** Notiz aus den Rückverweisen öffnen – das PDF bleibt offen, nur nicht mehr bildschirmfüllend */
+  function openReferencingNote(id: string) {
+    if (full) onToggleFull()
+    app.go({ kind: 'note', id })
   }
 
   /** Eintrag im Inhaltsverzeichnis: Ziel im PDF anspringen (mit „Zurück“) oder Adresse in neuem Tab öffnen */
@@ -699,6 +719,10 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       toast.show(`Lade „${f.name}“ hoch …`)
       const att = await uploadAttachment(f, niceFileName(f))
       await qc.invalidateQueries({ queryKey: attachmentsKey })
+      // In die offene Notiz einbetten wie „PDF hochladen und öffnen …“ dort – so hat das PDF seinen Ordner unter
+      // „Dateien“ und Rückverweise
+      const editor = getActiveEditor()
+      if (editor?.attach(att)) toast.success(`„${att.filename}“ in „${editor.title}“ eingefügt.`)
       onOpen(att.filename)
     } catch (err) {
       toast.error(`Upload fehlgeschlagen: ${errorMessage(err)}`)
@@ -1086,6 +1110,17 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             ) : null}
           </Button>
           <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={toggleNotes}
+            disabled={!attachment}
+            aria-label="Notizen zu diesem PDF"
+            aria-pressed={notesOpen}
+            title="Notizen, die dieses PDF oder die Seite zitieren"
+          >
+            <NotebookText className="size-4" />
+          </Button>
+          <Button
             ref={findButtonRef}
             variant="ghost"
             size="icon-sm"
@@ -1227,6 +1262,18 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
               )
             }
             onClose={() => setListOpen(false)}
+          />
+        ) : null}
+        {notesOpen && attachment ? (
+          <PdfReferences
+            attachmentId={attachment.id}
+            current={current}
+            onOpenNote={openReferencingNote}
+            onPage={(n) => {
+              goTo(n)
+              if (narrow()) setNotesOpen(false)
+            }}
+            onClose={() => setNotesOpen(false)}
           />
         ) : null}
         {status.state !== 'ready' ? (

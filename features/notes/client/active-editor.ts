@@ -1,6 +1,7 @@
 'use client'
 // Verbindung zwischen PDF-Viewer und Schmierzettel und der gerade geöffneten Notiz: Seitenlinks und Zitate aus dem PDF
 // sowie Text vom Schmierzettel landen an der Cursorposition im Editor – im Format der Notiz.
+import type { Attachment } from '@/features/attachments/types'
 
 /** Stelle in einem PDF-Anhang */
 export type PdfRef = { file: string; page: number }
@@ -23,6 +24,8 @@ type ActiveEditor = {
   title: string
   /** Fügt den Inhalt als eigenen Absatz an der Cursorposition (bzw. am Ende) ein */
   insert: (insertion: Insertion) => void
+  /** Bettet eine hochgeladene Datei ein wie ein Upload in der Notiz – false, wo das nicht geht (z. B. im Tresor) */
+  attach: (att: Attachment) => boolean
 }
 
 let active: ActiveEditor | null = null

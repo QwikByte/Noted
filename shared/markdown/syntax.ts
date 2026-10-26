@@ -42,6 +42,12 @@ const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i
 const PDF_PAGE_RE = /^page=(\d{1,5})\b/i
 
+/** Seite aus dem Teil hinter „#“ eines Links auf ein PDF (`page=12`) – null ohne Seitenangabe */
+export function pdfPageFromSubpath(subpath: string): number | null {
+  const page = PDF_PAGE_RE.exec(subpath)?.[1]
+  return page ? Number(page) : null
+}
+
 export function defaultFileUrl(name: string) {
   return '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
 }
@@ -89,7 +95,7 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     const name = escapeHtml(target.split('/').pop() ?? target)
     // PDFs öffnen im eingebauten Viewer – auch direkt auf einer Seite: [[Skript.pdf#page=12]]
     const isPdf = PDF_EXT.test(target)
-    const page = isPdf && heading ? (PDF_PAGE_RE.exec(heading)?.[1] ?? null) : null
+    const page = isPdf && heading ? pdfPageFromSubpath(heading) : null
     const pdfAttrs = isPdf ? ` data-pdf="${escapeHtml(target)}"${page ? ` data-page="${page}"` : ''}` : ''
     if (!embed) {
       const label = alias ? escapeHtml(alias) : page ? `${name}, S. ${page}` : name
