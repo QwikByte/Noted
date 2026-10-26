@@ -28,6 +28,7 @@ import type {
   FlashcardData,
   Occlusion,
   ReviewLogEntry,
+  ReviewUndo,
 } from '../types'
 
 const MAX_CARDS_PER_USER = 50_000
@@ -546,21 +547,64 @@ export function saveReviews(userId: number, reviews: CardReview[], log: ReviewLo
 }
 
 /**
- * Bewertungen aus dem Browser: Jeder Eintrag wird einzeln geprüft – ein ungültiger verwirft nicht die übrigen, die
- * womöglich tagelang offline gesammelt wurden.
+ * Nimmt Bewertungen zurück („Rückgängig“ beim Lernen), je Kartenseite die jüngste zuerst. Steht die Seite noch genau
+ * auf dieser Bewertung, bekommt sie ihren Stand davor zurück bzw. ist wieder neu. Der Protokolleintrag entfällt, sofern
+ * kein neuerer Stand vorliegt – wurde auf einem anderen Gerät inzwischen weitergelernt, bleibt alles, wie es ist.
+ * Liefert die Zahl der Rücknahmen, die etwas geändert haben.
  */
-export function saveSubmittedReviews(userId: number, reviews: unknown[], log: unknown[] = []) {
-  const validReviews = reviews.flatMap((r) => {
-    const parsed = reviewSchema.safeParse(r)
+export function undoReviews(userId: number, items: ReviewUndo[]): number {
+  const db = getDb()
+  const current = db.prepare('SELECT reviewed_at FROM card_reviews WHERE card_id = ? AND side = ? AND user_id = ?')
+  const remove = db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side = ? AND user_id = ?')
+  const restore = db.prepare(
+    `UPDATE card_reviews SET
+       phase = @phase, step = @step, interval = @interval, ease = @ease, reps = @reps, lapses = @lapses, due = @due,
+       reviewed_at = @reviewedAt, introduced_at = @introducedAt, stability = @stability, difficulty = @difficulty
+     WHERE card_id = @cardId AND side = @side AND user_id = @userId`,
+  )
+  const unlog = db.prepare('DELETE FROM review_log WHERE user_id = ? AND card_id = ? AND side = ? AND reviewed_at = ?')
+  let undone = 0
+  db.transaction(() => {
+    for (const u of [...items].sort((a, b) => b.reviewedAt - a.reviewedAt)) {
+      const row = current.get(u.cardId, u.side, userId) as { reviewed_at: number } | undefined
+      if (row && row.reviewed_at > u.reviewedAt) continue
+      let changes = 0
+      if (row?.reviewed_at === u.reviewedAt) {
+        const { cardId, side, previous } = u
+        changes += previous
+          ? restore.run({ ...previous, cardId, side, userId, stability: previous.stability ?? null, difficulty: previous.difficulty ?? null })
+              .changes
+          : remove.run(cardId, side, userId).changes
+      }
+      changes += unlog.run(userId, u.cardId, u.side, u.reviewedAt).changes
+      if (changes > 0) undone++
+    }
+  })()
+  return undone
+}
+
+const valid = <T>(schema: z.ZodType<T>, list: unknown[]): T[] =>
+  list.flatMap((item) => {
+    const parsed = schema.safeParse(item)
     return parsed.success ? [parsed.data] : []
   })
-  const validLog = log.flatMap((e) => {
-    const parsed = reviewLogSchema.safeParse(e)
-    return parsed.success ? [parsed.data] : []
-  })
-  const rejected = reviews.length - validReviews.length + log.length - validLog.length
+
+/**
+ * Bewertungen aus dem Browser: Jeder Eintrag wird einzeln geprüft – ein ungültiger verwirft nicht die übrigen, die
+ * womöglich tagelang offline gesammelt wurden. Rücknahmen (`undo`) gelten vor den Bewertungen derselben Anfrage –
+ * so kann eine zurückgenommene und gleich neu bewertete Karte in einem Rutsch ankommen.
+ */
+export function saveSubmittedReviews(userId: number, reviews: unknown[], log: unknown[] = [], undo: unknown[] = []) {
+  const validReviews = valid(reviewSchema, reviews)
+  const validLog = valid(reviewLogSchema, log)
+  const validUndo = valid(reviewUndoSchema, undo)
+  const rejected =
+    reviews.length - validReviews.length + log.length - validLog.length + undo.length - validUndo.length
   if (rejected > 0) console.error(`[noted] ${rejected} ungültige Bewertungen verworfen`)
-  return { ...saveReviews(userId, validReviews, validLog), rejected }
+  return getDb().transaction(() => {
+    const undone = undoReviews(userId, validUndo)
+    return { ...saveReviews(userId, validReviews, validLog), undone, rejected }
+  })()
 }
 
 // ---------------------------------------------------------------------------
@@ -639,3 +683,12 @@ export const reviewLogSchema = z.object({
   durationMs: z.number().int().min(0).max(MAX_ANSWER_MS),
   reviewedAt: time,
 })
+
+const reviewUndoSchema = z
+  .object({
+    cardId: z.string().uuid(),
+    side,
+    reviewedAt: time,
+    previous: reviewSchema.omit({ cardId: true, side: true }).nullable(),
+  })
+  .refine((u) => !u.previous || u.previous.reviewedAt < u.reviewedAt)

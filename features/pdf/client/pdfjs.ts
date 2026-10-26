@@ -1,6 +1,8 @@
 'use client'
 // pdf.js im Browser: Bibliothek bei Bedarf laden, PDF-Dateien öffnen und einzelne Seiten als Bild rendern
+import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { errorMessage } from '@/shared/client/api'
+import { inTurns } from '@/shared/lib/in-turns'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 
 type Lib = { pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs'); viewer: typeof import('pdfjs-dist/legacy/web/pdf_viewer.mjs') }
@@ -90,4 +92,48 @@ export async function renderPdfData(
   } finally {
     void task.destroy()
   }
+}
+
+/** Miniaturen, die gleichzeitig gezeichnet werden – beim schnellen Scrollen durch ein langes Skript nicht alle auf einmal */
+const thumbnailTurn = inTurns(2)
+
+/**
+ * Miniatur einer Seite in `canvas` zeichnen – aus dem schon geladenen Dokument, `width` in CSS-Pixeln. Liefert das
+ * Seitenverhältnis (Höhe durch Breite). Mit `signal` abgebrochen (nicht mehr sichtbar), wird nicht oder nicht weiter
+ * gezeichnet.
+ */
+export function renderThumbnail(
+  doc: PDFDocumentProxy,
+  page: number,
+  canvas: HTMLCanvasElement,
+  width: number,
+  signal: AbortSignal,
+): Promise<number | null> {
+  return thumbnailTurn(async () => {
+    if (signal.aborted) return null
+    const p = await doc.getPage(page)
+    if (signal.aborted) return null
+    const base = p.getViewport({ scale: 1 })
+    // Scharf auf hochauflösenden Bildschirmen, aber nicht größer als nötig – der Speicher für Canvas ist auf Handys knapp
+    const viewport = p.getViewport({ scale: (width * Math.min(2, window.devicePixelRatio || 1)) / base.width })
+    canvas.width = Math.round(viewport.width)
+    canvas.height = Math.round(viewport.height)
+    const task = p.render({ canvas, viewport })
+    const cancel = () => task.cancel()
+    signal.addEventListener('abort', cancel)
+    try {
+      await task.promise
+    } catch (err) {
+      if (!signal.aborted) throw err
+    } finally {
+      signal.removeEventListener('abort', cancel)
+    }
+    return base.height / base.width
+  })
+}
+
+/** Gezeichnete Miniatur freigeben (nicht mehr sichtbar, Seitenleiste zu, anderes PDF) */
+export function releaseCanvas(canvas: HTMLCanvasElement) {
+  canvas.width = 0
+  canvas.height = 0
 }

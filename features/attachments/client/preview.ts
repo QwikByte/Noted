@@ -2,6 +2,7 @@
 // Vorschau eines PDFs im Bereich „Dateien“: die erste Seite, einmal gerendert und im Browser aufbewahrt
 import { useEffect, useState } from 'react'
 import { fetchPdf, renderPdfData } from '@/features/pdf/client/pdfjs'
+import { inTurns } from '@/shared/lib/in-turns'
 import type { Attachment } from '../types'
 
 /** Beginnt mit „noted-data“, damit die Vorschauen beim Abmelden wie die übrigen Offline-Daten gelöscht werden */
@@ -18,21 +19,7 @@ const previews = new Map<string, Promise<string | null>>()
 /** Fertige Vorschauen: erscheinen beim erneuten Öffnen eines Ordners sofort */
 const ready = new Map<string, string>()
 
-const waiting: (() => void)[] = []
-let running = 0
-
-async function inTurn<T>(task: () => Promise<T>): Promise<T> {
-  if (running < PARALLEL) running++
-  // Der Platz wird beim Ende einer anderen Aufgabe direkt übergeben
-  else await new Promise<void>((resolve) => waiting.push(resolve))
-  try {
-    return await task()
-  } finally {
-    const next = waiting.shift()
-    if (next) next()
-    else running--
-  }
-}
+const inTurn = inTurns(PARALLEL)
 
 async function openCache(): Promise<Cache | null> {
   try {

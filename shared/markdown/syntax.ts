@@ -20,6 +20,11 @@ export type RenderEnv = {
    * `url-link` (die Druckansicht schreibt hinter andere Links ihre Adresse)
    */
   print?: boolean
+  /**
+   * Inhalt einer eingebetteten Notiz: Überschriften ohne Anker und Quellzeile – Gliederung und Sprünge zu Abschnitten
+   * meinen die einbettende Notiz
+   */
+  embedded?: boolean
 }
 
 function slugify(text: string): string {
@@ -118,8 +123,10 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
   if (env.plainNoteLinks) return `<span class="wikilink-text">${label}</span>`
   const attrs = `data-target="${escapeHtml(target)}"${heading ? ` data-heading="${escapeHtml(heading)}"` : ''}`
   if (embed) {
+    // data-embed: Platzhalter, den die Vorschau durch den Inhalt der Notiz ersetzt – bis dahin (und ohne JavaScript)
+    // bleibt es bei der Link-Karte
     return note
-      ? `<a class="embed-note" href="/?n=${note.id}${anchor}" data-note-id="${note.id}" ${attrs}><span class="embed-note-label">Eingebettet</span> ${label}</a>`
+      ? `<a class="embed-note" href="/?n=${note.id}${anchor}" data-note-id="${note.id}" ${attrs} data-embed="1"><span class="embed-note-label">Eingebettet</span> ${label}</a>`
       : `<span class="embed-note unresolved" ${attrs}><span class="embed-note-label">Eingebettet</span> ${label}</span>`
   }
   return note
@@ -363,6 +370,7 @@ function tasksRule(state: StateCore) {
 // ---------------------------------------------------------------------------
 
 function headingIdsRule(state: StateCore) {
+  if ((state.env as RenderEnv)?.embedded) return
   const used = new Map<string, number>()
   const tokens = state.tokens
   const offset = (state.env as RenderEnv)?.lineOffset ?? 0

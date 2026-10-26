@@ -746,6 +746,46 @@ html.dragging * {
 .markdown-body .embed-note.unresolved {
   opacity: 0.6;
 }
+/* Eingebettete Notiz (![[Notiz]], ![[Notiz#Abschnitt]]): ihr Inhalt wie ein Auszug, die Herkunft darüber */
+.markdown-body .note-embed {
+  display: block;
+}
+.markdown-body .note-embed-frame {
+  margin: 0.75em 0;
+  padding: 10px 18px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+}
+.markdown-body .note-embed-source {
+  margin: 0 0 0.4em;
+  font-family: var(--font-sans);
+  font-size: 0.8em;
+  color: var(--text-faint);
+}
+.markdown-body .note-embed-source a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.markdown-body .note-embed-source a:hover {
+  text-decoration: underline;
+}
+/* Der eingebettete Text übernimmt Schriftgröße und Breite der einbettenden Notiz */
+.markdown-body .markdown-body.note-embed-body,
+.markdown-body .note-embed .rich-text,
+.markdown-body .note-embed .plain-text {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+}
+.markdown-body .note-embed-body > div > :first-child {
+  margin-top: 0;
+}
+.markdown-body .note-embed-body > div > :last-child {
+  margin-bottom: 0;
+}
 /* Links auf Dateien, z. B. [[Skript.pdf#page=12]] */
 .markdown-body a.file-link {
   text-decoration: none;

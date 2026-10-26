@@ -31,6 +31,22 @@ describe('Vorschau', () => {
     expect(html).toContain('src="/api/s/token/files/bild.png"')
   })
 
+  it('bettet Notizen als Platzhalter ein – die Vorschau lädt den Inhalt, ohne sie bleibt die Link-Karte', () => {
+    const { html } = renderMarkdown('![[Vorhanden]]\n\n![[Vorhanden#Teil 2]]\n\n![[Fehlt]]', env)
+    expect(html).toContain(
+      '<a class="embed-note" href="/?n=abc" data-note-id="abc" data-target="Vorhanden" data-embed="1"><span class="embed-note-label">Eingebettet</span> Vorhanden</a>',
+    )
+    expect(html).toContain('href="/?n=abc#teil-2" data-note-id="abc" data-target="Vorhanden" data-heading="Teil 2" data-embed="1">')
+    // Nicht aufgelöst: kein Platzhalter
+    expect(html).toContain('<span class="embed-note unresolved" data-target="Fehlt"><span class="embed-note-label">')
+    expect(html.match(/data-embed/g)).toHaveLength(2)
+  })
+
+  it('gibt eingebetteten Überschriften weder Anker noch Quellzeile', () => {
+    expect(renderMarkdown('## Teil 2\nText', { embedded: true }).html).toContain('<h2>Teil 2</h2>')
+    expect(renderMarkdown('## Teil 2\nText').html).toContain('<h2 id="teil-2" data-line="0">Teil 2</h2>')
+  })
+
   it('bettet Bilder, PDFs und Audio ein', () => {
     const { html } = renderMarkdown('![[Tafel bild.png|300]]\n![[skript.pdf]]\n![[aufnahme.m4a]]\n![](foto.jpg)')
     expect(html).toContain('<img src="/api/files/Tafel%20bild.png" alt="Tafel bild.png" loading="lazy" class="embed-image" width="300">')

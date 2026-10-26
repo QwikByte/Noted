@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  CornerUpLeft,
   Download,
   FileDown,
   FileText,
@@ -22,6 +23,7 @@ import {
   Minimize2,
   MoreVertical,
   MoveHorizontal,
+  PanelLeft,
   Quote,
   Search,
   Trash2,
@@ -31,7 +33,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import type { PDFDocumentLoadingTask } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
 import { useApp } from '@/features/workspace/client/context'
 import { Button } from '@/shared/ui/button'
@@ -52,9 +54,20 @@ import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } fr
 import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
 import { pdfKeyAction } from '../keyboard'
+import {
+  PositionHistory,
+  pageFromInput,
+  pageLabel,
+  prepareOutline,
+  usefulLabels,
+  type LinkHistory,
+  type OutlineEntry,
+  type ViewPosition,
+} from '../navigation'
 import type { AnnotationColor, PdfAnnotation } from '../types'
 import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
+import PdfSidebar, { type SidebarTab } from './PdfSidebar'
 
 // Zuletzt gelesene Seite je PDF merken
 const POS_KEY = 'noted:pdfpos'
@@ -82,8 +95,11 @@ const NO_FIND_OPTIONS = { caseSensitive: false, entireWord: false }
 const baseName = (file: string) => file.split('/').pop()!.replace(/\.pdf$/i, '')
 /** Farbe für neue Markierungen (zuletzt gewählte) */
 const COLOR_KEY = 'noted:pdf:color'
-/** Ab dieser Breite steht die Liste der Anmerkungen neben den Seiten (@2xl), darunter liegt sie darüber */
+/** Ab dieser Breite stehen die Seitenleisten neben den Seiten (@2xl), darunter liegen sie darüber */
 const LIST_BESIDE_WIDTH = 672
+
+/** Stelle, die pdf.js nach dem Scrollen und Zoomen meldet (updateviewarea) */
+type ViewLocation = { pageNumber: number; scale: number | string; top: number; left: number }
 
 type Matches = { current: number; total: number }
 
@@ -128,7 +144,12 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<PDFViewer | null>(null)
+  const linkRef = useRef<PDFLinkService | null>(null)
   const busRef = useRef<EventBus | null>(null)
+  // Aktuelle Stelle und die Stellen vor internen Links (für „Zurück“) – je Dokument
+  const viewPos = useRef<ViewPosition | null>(null)
+  const history = useRef(new PositionHistory())
+  const labelsRef = useRef<string[] | null>(null)
   const pendingPage = useRef<number | null>(null)
   // Läuft, sobald das Dokument geladen und die Seite angesprungen ist (z. B. die Suche aus der Volltextsuche)
   const afterInit = useRef<(() => void) | null>(null)
@@ -155,6 +176,13 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   // page: erste Seite der Auswahl (für Seitenlinks), parts: je Seite Text und Rechtecke
   const [selection, setSelection] = useState<{ text: string; page: number; parts: SelectionPart[] } | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
+  const [navTab, setNavTab] = useState<SidebarTab>('outline')
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
+  // Inhaltsverzeichnis (null: noch nicht geladen), Seitenzahlen wie im Skript, Ziel von „Zurück“
+  const [outline, setOutline] = useState<OutlineEntry[] | null>(null)
+  const [labels, setLabels] = useState<string[] | null>(null)
+  const [back, setBack] = useState<ViewPosition | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [focusComment, setFocusComment] = useState(false)
   const [colorPref, setColorPref] = usePref(COLOR_KEY, String(DEFAULT_ANNOTATION_COLOR))
@@ -176,6 +204,19 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     for (let n = 1; n <= count; n++) drawPage(n)
   }, [drawPage])
 
+  /** Zurück an die Stelle vor dem letzten internen Link – mit dem Zoom von damals */
+  const goBack = useCallback(() => {
+    const v = viewerRef.current
+    const pos = history.current.pop()
+    setBack(history.current.peek())
+    if (!v?.pagesCount || !pos) return
+    if (pos.scale !== null && pos.scale !== viewPos.current?.scale) {
+      v.currentScaleValue = typeof pos.scale === 'number' ? String(pos.scale / 100) : pos.scale
+    }
+    if (pos.top === null) v.currentPageNumber = pos.page
+    else v.scrollPageIntoView({ pageNumber: pos.page, destArray: [null, { name: 'XYZ' }, pos.left ?? 0, pos.top, null] })
+  }, [])
+
   // Dokument laden
   useEffect(() => {
     const container = containerRef.current
@@ -191,6 +232,12 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     setSelection(null)
     setActiveId(null)
     setMatches(null)
+    viewPos.current = null
+    history.current = new PositionHistory()
+    labelsRef.current = null
+    setBack(null)
+    setLabels(null)
+    setOutline(null)
     ;(async () => {
       try {
         const { pdfjs, viewer: V } = await loadPdfjs()
@@ -217,6 +264,18 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           ...{ abortSignal: ac.signal },
         } as ConstructorParameters<typeof V.PDFViewer>[0])
         linkService.setViewer(viewer)
+        // Eigener Verlauf statt PDFHistory von pdf.js – der schriebe in die Adresse der App
+        const linkHistory: LinkHistory = {
+          pushCurrentPosition: () => {
+            history.current.push(viewPos.current ?? { page: viewer.currentPageNumber, left: null, top: null, scale: null })
+            setBack(history.current.peek())
+          },
+          push: () => {},
+          pushPage: () => {},
+          back: goBack,
+          forward: () => {},
+        }
+        linkService.setHistory(linkHistory as unknown as Parameters<PDFLinkService['setHistory']>[0])
         eventBus.on('pagesinit', () => {
           viewer.currentScaleValue = 'page-width'
           const target = pendingPage.current
@@ -224,11 +283,29 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           if (target && target > 1) viewer.currentPageNumber = Math.min(target, viewer.pagesCount)
           afterInit.current?.()
           afterInit.current = null
+          // Seitenzahlen wie im Skript („xii“, „S. 10“) – Links und #page= bleiben bei der Position in der Datei
+          doc.getPageLabels().then(
+            (raw) => {
+              const found = usefulLabels(raw, doc.numPages)
+              if (cancelled || !found) return
+              viewer.setPageLabels(found)
+              labelsRef.current = found
+              setLabels(found)
+              setPageInput(pageLabel(viewer.currentPageNumber, found))
+            },
+            () => {
+              /* Ungültige Labels: es bleibt bei den Seitenzahlen der Datei */
+            },
+          )
         })
         eventBus.on('pagechanging', (e: { pageNumber: number }) => {
           setCurrent(e.pageNumber)
-          setPageInput(String(e.pageNumber))
+          setPageInput(pageLabel(e.pageNumber, labelsRef.current))
           savePosition(file, e.pageNumber)
+        })
+        eventBus.on('updateviewarea', (e: { location: ViewLocation }) => {
+          const { pageNumber, left, top, scale } = e.location
+          viewPos.current = { page: pageNumber, left, top, scale }
         })
         eventBus.on('scalechanging', (e: { scale: number }) => {
           setScale(e.scale)
@@ -242,7 +319,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         linkService.setDocument(doc)
         opened = { viewer, linkService }
         viewerRef.current = viewer
+        linkRef.current = linkService
         busRef.current = eventBus
+        setPdfDoc(doc)
         setNumPages(doc.numPages)
         setCurrent(1)
         setPageInput('1')
@@ -258,7 +337,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       opened?.viewer.setDocument(null)
       opened?.linkService.setDocument(null)
       viewerRef.current = null
+      linkRef.current = null
       busRef.current = null
+      setPdfDoc(null)
       void task?.destroy()
     }
     // Seite wird separat angesprungen (siehe unten)
@@ -272,6 +353,26 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     if (viewer?.pagesCount) viewer.currentPageNumber = Math.min(page, viewer.pagesCount)
     else pendingPage.current = page
   }, [page, nonce])
+
+  // Inhaltsverzeichnis erst laden, wenn es gebraucht wird – die Ziele aufzulösen kostet bei langen Skripten etwas
+  useEffect(() => {
+    if (!navOpen || !pdfDoc || outline) return
+    let cancelled = false
+    pdfDoc
+      .getOutline()
+      .then((raw) => prepareOutline(raw, pdfDoc))
+      .then(
+        (entries) => {
+          if (!cancelled) setOutline(entries)
+        },
+        () => {
+          if (!cancelled) setOutline([])
+        },
+      )
+    return () => {
+      cancelled = true
+    }
+  }, [navOpen, pdfDoc, outline])
 
   // Geänderte Markierungen (auch aus anderen Tabs und nach dem Laden vom Server) neu zeichnen
   useEffect(() => {
@@ -464,6 +565,31 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     v.currentPageNumber = Math.max(1, Math.min(v.pagesCount, n))
   }
 
+  /** Liegen die Seitenleisten über den Seiten (schmales Panel), passt nur eine hin */
+  const narrow = () => (panelRef.current?.offsetWidth ?? 0) < LIST_BESIDE_WIDTH
+
+  const toggleNav = () => {
+    if (!navOpen && narrow()) setListOpen(false)
+    setNavOpen(!navOpen)
+  }
+
+  const toggleList = () => {
+    if (!listOpen && narrow()) setNavOpen(false)
+    setListOpen(!listOpen)
+  }
+
+  /** Eintrag im Inhaltsverzeichnis: Ziel im PDF anspringen (mit „Zurück“) oder Adresse in neuem Tab öffnen */
+  function openOutlineEntry(entry: OutlineEntry) {
+    if (entry.url) window.open(entry.url, '_blank', 'noopener,noreferrer')
+    else if (entry.dest) void linkRef.current?.goToDestination(entry.dest as string | unknown[])
+    if (narrow()) setNavOpen(false)
+  }
+
+  function openThumbnail(n: number) {
+    goTo(n)
+    if (narrow()) setNavOpen(false)
+  }
+
   /** Text in die geöffnete Notiz einfügen – ohne offene Notiz eine neue anlegen. */
   function insert(insertion: Insertion, what: string) {
     const editor = getActiveEditor()
@@ -543,7 +669,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       drawPage(a.page)
     }, 1600)
     // Liegt die Liste über den Seiten, gibt sie den Blick auf die Markierung frei
-    if ((panelRef.current?.offsetWidth ?? 0) < LIST_BESIDE_WIDTH) setListOpen(false)
+    if (narrow()) setListOpen(false)
   }
 
   function deleteAnnotation(a: PdfAnnotation) {
@@ -831,6 +957,18 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       </p>
       {/* Werkzeugleiste – passt sich der Breite des Panels an */}
       <div className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border bg-bg px-1.5">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={toggleNav}
+          disabled={!ready}
+          aria-label="Inhalt und Seiten"
+          aria-pressed={navOpen}
+          title="Inhalt und Seiten"
+          className="@max-md:hidden"
+        >
+          <PanelLeft className="size-4" />
+        </Button>
         <div className="min-w-0 flex-1">
           <Menu
             align="left"
@@ -861,6 +999,21 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             </MenuItem>
           </Menu>
         </div>
+        {back ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={goBack}
+            aria-label={`Zurück zu S. ${pageLabel(back.page, labels)}`}
+            title={`Zurück zu S. ${pageLabel(back.page, labels)} (vor dem Link)`}
+            className="shrink-0 px-2"
+          >
+            <CornerUpLeft className="size-4" />
+            <span className="@max-lg:hidden">
+              <span className="@max-2xl:hidden">Zurück zu </span>S. {pageLabel(back.page, labels)}
+            </span>
+          </Button>
+        ) : null}
 
         <div className="flex shrink-0 items-center gap-0.5">
           <div className="flex items-center @max-sm:hidden">
@@ -870,20 +1023,28 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                goTo(Number(pageInput) || current)
+                const target = pageFromInput(pageInput, labels, numPages)
+                if (target) goTo(target)
+                setPageInput(pageLabel(target ?? current, labels))
               }}
               className="flex items-center gap-1 text-xs text-muted"
             >
+              {/* Mit Seitenlabels: Seite wie im Skript, dahinter die Position in der Datei – eingeben lässt sich beides */}
               <input
                 ref={pageInputRef}
                 value={pageInput}
-                onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))}
-                onBlur={() => setPageInput(String(current))}
-                inputMode="numeric"
+                onChange={(e) => setPageInput(labels ? e.target.value.slice(0, 20) : e.target.value.replace(/\D/g, ''))}
+                onBlur={() => setPageInput(pageLabel(current, labels))}
+                inputMode={labels ? 'text' : 'numeric'}
                 aria-label="Seite"
-                className="h-7 w-9 rounded-md border border-border bg-elevated text-center text-xs text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                className={cn(
+                  'h-7 rounded-md border border-border bg-elevated text-center text-xs text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20',
+                  labels ? 'w-12' : 'w-9',
+                )}
               />
-              <span className="whitespace-nowrap">/ {numPages || '–'}</span>
+              <span className={cn('whitespace-nowrap tabular-nums', labels && '@max-lg:hidden')} data-testid="pdf-page-count">
+                {labels ? `(${current} / ${numPages})` : `/ ${numPages || '–'}`}
+              </span>
             </form>
             <Button variant="ghost" size="icon-sm" onClick={() => goTo(current + 1)} disabled={!ready || current >= numPages} aria-label="Nächste Seite">
               <ChevronRight className="size-4" />
@@ -911,7 +1072,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => setListOpen((o) => !o)}
+            onClick={toggleList}
             aria-label="Anmerkungen"
             aria-pressed={listOpen}
             title={annotations.length ? `Anmerkungen (${annotations.length})` : 'Anmerkungen'}
@@ -956,6 +1117,11 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
               </Button>
             )}
           >
+            {/* In der Leiste nur bei breitem Panel – hier immer */}
+            <MenuItem icon={<PanelLeft />} onSelect={toggleNav} disabled={!ready}>
+              {navOpen ? 'Inhalt und Seiten ausblenden' : 'Inhalt und Seiten'}
+            </MenuItem>
+            <MenuSeparator />
             {pdfActions(current)}
           </Menu>
           <Button variant="ghost" size="icon-sm" onClick={onToggleFull} aria-label={full ? 'Neben der Notiz anzeigen' : 'Vollbild'} title={full ? 'Geteilte Ansicht' : 'Vollbild'}>
@@ -1023,8 +1189,21 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         </div>
       ) : null}
 
-      {/* Seiten (pdf.js braucht einen absolut positionierten Container) und die Liste der Anmerkungen */}
+      {/* Inhalt und Seiten, die Seiten (pdf.js braucht einen absolut positionierten Container) und die Anmerkungen */}
       <div className="relative flex min-h-0 flex-1">
+        {navOpen && pdfDoc && ready ? (
+          <PdfSidebar
+            doc={pdfDoc}
+            outline={outline}
+            labels={labels}
+            current={current}
+            tab={navTab}
+            onTab={setNavTab}
+            onOutline={openOutlineEntry}
+            onPage={openThumbnail}
+            onClose={() => setNavOpen(false)}
+          />
+        ) : null}
         <div className="relative min-w-0 flex-1">
           <div
             ref={containerRef}

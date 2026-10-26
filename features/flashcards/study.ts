@@ -264,6 +264,8 @@ function interleave(review: StudyItem[], fresh: StudyItem[]): StudyItem[] {
 export class LearnSession {
   private main: StudyItem[]
   private learning: { item: StudyItem; due: number }[]
+  /** Nach „Rückgängig“ zurückgelegte Karten – kommen vor allen anderen dran, die zuletzt zurückgelegte zuerst */
+  private front: StudyItem[] = []
 
   /** `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden */
   constructor(
@@ -290,6 +292,7 @@ export class LearnSession {
   }
 
   next(now: number): StudyItem | null {
+    if (this.front.length > 0) return this.front.pop()!
     if (this.learning.length > 0 && this.learning[0].due <= now) return this.learning.shift()!.item
     if (this.main.length > 0) return this.main.shift()!
     if (this.learning.length > 0) return this.learning.shift()!.item
@@ -305,8 +308,21 @@ export class LearnSession {
     else this.learning.splice(idx, 0, entry)
   }
 
+  /**
+   * Bewertung von `item` zurückgenommen: Was `answered` wieder eingereiht hat, fällt weg, `item` kommt sofort wieder
+   * dran und die gerade angezeigte Karte `current` direkt danach.
+   */
+  undo(item: StudyItem, current: StudyItem | null) {
+    const key = itemKey(item)
+    // Jede Kartenseite steht höchstens einmal in der Sitzung – ist `current` die wieder eingereihte, wird sie verworfen
+    this.learning = this.learning.filter((l) => itemKey(l.item) !== key)
+    if (current && itemKey(current) !== key) this.front.push(current)
+    this.front.push(item)
+  }
+
   /** Karte ausgesetzt: alle ihre Seiten aus der Sitzung nehmen, auch die wieder eingereihten in der Lernphase */
   skipCard(cardId: string) {
+    this.front = this.front.filter((i) => i.card.id !== cardId)
     this.main = this.main.filter((i) => i.card.id !== cardId)
     this.learning = this.learning.filter((l) => l.item.card.id !== cardId)
   }
@@ -314,12 +330,13 @@ export class LearnSession {
   /** Verbleibende Karten nach Art (ohne die aktuell angezeigte) */
   remaining(): Record<ItemKind, number> {
     const counts = { new: 0, learning: this.learning.length, review: 0 }
+    for (const item of this.front) counts[item.kind]++
     for (const item of this.main) counts[item.kind === 'new' ? 'new' : 'review']++
     return counts
   }
 
   get size() {
-    return this.main.length + this.learning.length
+    return this.front.length + this.main.length + this.learning.length
   }
 }
 

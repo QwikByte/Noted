@@ -235,6 +235,69 @@ test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitz
   expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
 })
 
+test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const [first, second] = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: [{ type: 'basic', front: 'Erste Frage', back: 'a' }, { type: 'basic', front: 'Zweite Frage', back: 'b' }] },
+    'cards',
+  )
+  const total = async () => (await (await page.request.get('/api/stats?tz=UTC')).json()).total as number
+  const loggedBefore = await total()
+
+  await page.goto(`/?s=deck:${deck.id}`)
+  const studyCard = page.getByTestId('study-card')
+  const counts = page.getByRole('group', { name: 'Verbleibend' })
+  const undo = page.getByRole('button', { name: 'Letzte Bewertung rückgängig' })
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(undo).toBeDisabled()
+  const countsBefore = (await counts.textContent()) ?? ''
+
+  // Versehentlich „Nochmal“: Rückgängig zeigt dieselbe Karte verdeckt, die Zähler sind wie vorher
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+  await expect(counts).not.toHaveText(countsBefore)
+  await undo.click()
+  await expect(page.getByText('Bewertung zurückgenommen.')).toBeVisible()
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(page.getByTestId('study-answer')).toHaveCount(0)
+  await expect(counts).toHaveText(countsBefore)
+  await expect(undo).toBeDisabled()
+
+  // Beide richtig, dann nach der letzten Karte per Tastatur zurück – zweimal bis zur ersten
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  await page.keyboard.press('z')
+  await expect(studyCard).toContainText('Zweite Frage')
+  await page.keyboard.press('Control+z')
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(counts).toHaveText(countsBefore)
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+
+  // Auf dem Server: nur die letzte Bewertung der ersten Karte, die zweite ist wieder neu
+  await expect
+    .poll(
+      async () => {
+        const { reviews } = await flashcards(page)
+        const of = (id: string) => reviews.find((r: { cardId: string }) => r.cardId === id)
+        return [of(first.id)?.lapses, of(second.id)]
+      },
+      { timeout: 15_000 },
+    )
+    .toEqual([0, undefined])
+  await expect.poll(total, { timeout: 15_000 }).toBe(loggedBefore + 1)
+})
+
 test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Folien' }, 'deck')
@@ -274,6 +337,171 @@ test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
   for (const a of attachments as { id: string; filename: string }[]) {
     if (['Folie 3.png', 'Lösung.png'].includes(a.filename)) cleanup.push(`/api/attachments/${a.id}`)
   }
+})
+
+test('PDF-Viewer: Inhaltsverzeichnis, Miniaturen, Seitenzahlen wie im Skript und „Zurück“ nach internem Link', async ({ page }) => {
+  await login(page)
+  // Sechs Seiten Vorspann (i–vi), danach zählt das Skript ab 1; auf S. 1 verweist ein Link auf S. 7
+  const pdf = makePdf(
+    Array.from({ length: 14 }, (_, i) => [i < 6 ? `Vorspann ${i + 1}` : `Skriptseite ${i - 5}`]),
+    {
+      outline: [
+        { title: 'Vorwort', page: 1 },
+        { title: 'Kapitel 1', page: 7, open: true, items: [{ title: 'Abschnitt 1.1', page: 9 }] },
+        { title: 'Kapitel 2', page: 12, items: [{ title: 'Abschnitt 2.1', page: 13 }] },
+      ],
+      labels: [
+        { from: 1, style: 'r' },
+        { from: 7, style: 'D' },
+      ],
+      links: [{ page: 7, rect: [60, 740, 400, 790], to: 13 }],
+    },
+  )
+  const up = await page.request.post('/api/attachments', {
+    headers: await apiHeaders(page),
+    multipart: { file: { name: 'Skript Navigation.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  cleanup.push(`/api/attachments/${(await up.json()).attachment.id}`)
+  const note = await post(page, '/api/notes', { title: 'Navigation im Skript', content: '![[Skript Navigation.pdf]]\n' }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.embed-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await panel.getByRole('button', { name: 'Vollbild' }).click()
+
+  // Seitenzahlen wie im Skript: das Label, dahinter die Position in der Datei – eingeben lässt sich beides
+  const pageInput = panel.getByLabel('Seite', { exact: true })
+  const position = panel.getByTestId('pdf-page-count')
+  await expect(pageInput).toHaveValue('i')
+  await expect(position).toHaveText('(1 / 14)')
+  await pageInput.fill('v')
+  await pageInput.press('Enter')
+  await expect(position).toHaveText('(5 / 14)')
+  await expect(pageInput).toHaveValue('v')
+  await pageInput.fill('1')
+  await pageInput.press('Enter')
+  await expect(position).toHaveText('(7 / 14)')
+
+  // Interner Link und zurück an die Stelle davor
+  const link = panel.locator('.page[data-page-number="7"] .annotationLayer a')
+  await expect(link).toHaveCount(1)
+  await link.click()
+  await expect(position).toHaveText('(13 / 14)')
+  const back = panel.getByRole('button', { name: 'Zurück zu S. 1' })
+  await back.click()
+  await expect(position).toHaveText('(7 / 14)')
+  await expect(back).toHaveCount(0)
+
+  // Inhaltsverzeichnis: Baum mit dem aktuellen Kapitel, ein Klick springt hin
+  await panel.getByRole('button', { name: 'Inhalt und Seiten' }).click()
+  const nav = panel.getByTestId('pdf-navigation')
+  const outline = nav.getByTestId('pdf-outline')
+  await expect(outline.getByRole('button', { name: 'Abschnitt 1.1, S. 3' })).toBeVisible()
+  await expect(outline.getByRole('button', { name: 'Abschnitt 2.1, S. 7' })).toHaveCount(0)
+  await expect(outline.locator('[aria-current="location"]')).toHaveText(/^Kapitel 1/)
+  await outline.getByRole('button', { name: 'Kapitel 2, S. 6' }).click()
+  await expect(position).toHaveText('(12 / 14)')
+  await expect(outline.locator('[aria-current="location"]')).toHaveText(/^Kapitel 2/)
+
+  // Miniaturen: die aktuelle Seite hervorgehoben, nur sichtbare gezeichnet, ein Klick springt hin
+  await nav.getByRole('tab', { name: 'Seiten' }).click()
+  const thumbnails = nav.getByTestId('pdf-thumbnails')
+  await expect(thumbnails.locator('[aria-current="page"]')).toHaveAccessibleName('Seite 6')
+  await thumbnails.getByRole('button', { name: 'Seite iii' }).click()
+  await expect(position).toHaveText('(3 / 14)')
+  await expect(thumbnails.locator('[aria-current="page"]')).toHaveAccessibleName('Seite iii')
+  const drawn = () => thumbnails.locator('canvas').evaluateAll((list) => list.filter((c) => (c as HTMLCanvasElement).width > 0).length)
+  await expect.poll(drawn).toBeGreaterThan(0)
+  expect(await drawn()).toBeLessThan(14)
+})
+
+test('Notizen und Abschnitte einbetten: Inhalt im Lesemodus, Aufgaben bleiben in ihrer Notiz', async ({ page }) => {
+  await login(page)
+  const source = await post(
+    page,
+    '/api/notes',
+    {
+      title: 'Vorlesung 3 (Einbettung)',
+      content: [
+        '---',
+        'quelle: Skript Analysis',
+        '---',
+        '# Vorlesung 3',
+        'Einleitung zur Vorlesung',
+        '',
+        '## Grenzwert',
+        'Eine Folge konvergiert gegen a, wenn …',
+        '',
+        '### Beispiel',
+        '1/n → 0',
+        '',
+        '- [ ] Übung 4 rechnen',
+        '',
+        '## Stetigkeit',
+        'Kommt im Lernzettel nicht vor',
+      ].join('\n'),
+    },
+    'note',
+  )
+  const content = ['## Eigene Gliederung', '', '![[Vorlesung 3 (Einbettung)#Grenzwert]]', '', '- [ ] Eigene Aufgabe', ''].join('\n')
+  const sheet = await post(page, '/api/notes', { title: 'Lernzettel (Einbettung)', content }, 'note')
+  cleanup.push(`/api/notes/${sheet.id}?permanent=1`, `/api/notes/${source.id}?permanent=1`)
+
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+  await page.goto(`/?n=${sheet.id}`)
+  const embed = page.getByTestId('note-embed')
+  await expect(embed).toContainText('Eine Folge konvergiert gegen a')
+  await expect(embed).toContainText('1/n → 0')
+  for (const outside of ['Einleitung zur Vorlesung', 'Kommt im Lernzettel nicht vor', 'Skript Analysis']) {
+    await expect(embed).not.toContainText(outside)
+  }
+  // Eingebettete Überschriften zählen nicht zur Gliederung dieser Notiz
+  await expect(embed.locator('h2, h3')).toHaveCount(2)
+  await expect(page.locator('.markdown-body h2[data-line], .markdown-body h3[data-line]')).toHaveCount(1)
+
+  // Eine Aufgabe in der Einbettung lässt sich nicht abhaken – weder hier noch in der eigenen Notiz
+  const foreign = embed.getByRole('checkbox')
+  await foreign.click()
+  await expect(foreign).not.toBeChecked()
+  await page.waitForTimeout(1500)
+  const stored = async (id: string) => (await (await page.request.get(`/api/notes/${id}`)).json()).note.content as string
+  expect(await stored(sheet.id)).toBe(content)
+  expect(await stored(source.id)).toContain('- [ ] Übung 4 rechnen')
+
+  // Die Herkunft öffnet die eingebettete Notiz am Abschnitt
+  await embed.getByRole('link', { name: 'Vorlesung 3 (Einbettung) › Grenzwert' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${source.id}`))
+  await expect(page.getByRole('heading', { name: 'Kommt im Lernzettel nicht vor' })).toHaveCount(0)
+  await expect(page.locator('.markdown-body').first()).toContainText('Kommt im Lernzettel nicht vor')
+})
+
+test('Einbettungen: Zyklen und mehr als zwei Ebenen bleiben Link-Karten', async ({ page }) => {
+  await login(page)
+  const note = (title: string, content: string) => post(page, '/api/notes', { title, content }, 'note')
+  const a = await note('Zyklus A', 'Text von A\n\n![[Zyklus B]]')
+  const b = await note('Zyklus B', 'Text von B\n\n![[Zyklus A]]')
+  const levels = [await note('Ebene 1', 'Text 1\n\n![[Ebene 2]]'), await note('Ebene 2', 'Text 2\n\n![[Ebene 3]]')]
+  levels.push(await note('Ebene 3', 'Text 3\n\n![[Ebene 4]]'), await note('Ebene 4', 'Text 4'))
+  for (const n of [a, b, ...levels]) cleanup.push(`/api/notes/${n.id}?permanent=1`)
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+
+  // A zeigt B, B zeigt A nur als Link-Karte
+  await page.goto(`/?n=${a.id}`)
+  const embeds = page.getByTestId('note-embed')
+  await expect(embeds).toHaveCount(1)
+  await expect(embeds).toContainText('Text von B')
+  await expect(embeds.locator('a.embed-note')).toContainText('Zyklus A')
+
+  // Zwei Ebenen tief, die dritte bleibt Link-Karte
+  await page.goto(`/?n=${levels[0].id}`)
+  await expect(embeds).toHaveCount(2)
+  await expect(embeds.first()).toContainText('Text 3')
+  await expect(page.locator('.markdown-body').first()).not.toContainText('Text 4')
+  await expect(page.locator('a.embed-note', { hasText: 'Ebene 4' })).toHaveCount(1)
 })
 
 test('Notiz abfragen und nicht Gewusstes als Karteikarte übernehmen', async ({ page }) => {

@@ -47,6 +47,7 @@ import { WordCount } from './WordCount'
 import { FindBar } from './FindBar'
 import { ConflictDialog } from './ConflictDialog'
 import { NotePrint } from './NotePrint'
+import { NoteEmbeds } from './NoteEmbed'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
@@ -339,13 +340,16 @@ function VaultNote({
   )
 }
 
-/** Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz */
+/**
+ * Überschrift im gerenderten Inhalt (Lesemodus, Vorschau, formatierter Text) – nicht der Titel der Notiz und nicht in
+ * eingebetteten Notizen
+ */
 function headingElement(root: HTMLElement | null, heading: string): HTMLElement | null {
   const key = headingKey(heading)
   const all = root?.querySelectorAll<HTMLElement>(
     ':is(.markdown-body, .ProseMirror) :is(h1, h2, h3, h4, h5, h6)',
   )
-  return [...(all ?? [])].find((h) => headingKey(h.textContent ?? '') === key) ?? null
+  return [...(all ?? [])].find((h) => !h.closest('.note-embed') && headingKey(h.textContent ?? '') === key) ?? null
 }
 
 function NoteEditor({
@@ -1115,7 +1119,9 @@ function NoteEditor({
     ) : format === 'text' ? (
       <PlainTextView text={content} lang={lang} />
     ) : (
-      <Preview content={previewContent} {...previewLinks} lang={lang} onToggleTask={toggleTask} />
+      <NoteEmbeds noteId={note.id} links={previewLinks}>
+        <Preview content={previewContent} {...previewLinks} lang={lang} onToggleTask={toggleTask} embeds />
+      </NoteEmbeds>
     )
 
   return (
@@ -1420,6 +1426,7 @@ function NoteEditor({
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
       {printOpen ? (
         <NotePrint
+          noteId={note.id}
           title={title}
           format={format}
           content={content}

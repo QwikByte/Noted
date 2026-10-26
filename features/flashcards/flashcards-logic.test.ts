@@ -327,6 +327,38 @@ describe('Lernsitzung', () => {
     expect(session.next(NOW)).toBeNull()
   })
 
+  it('Rückgängig: die Karte kommt sofort wieder, die angezeigte danach – die Lernphase ist wie vorher', () => {
+    const cards = [card('c1'), card('c2'), card('c3')]
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
+    const before = session.remaining()
+    const first = session.next(NOW)!
+    session.answered(first, schedule(null, 1, NOW), NOW)
+    const second = session.next(NOW)!
+    expect(second.card.id).toBe('c2')
+    session.answered(second, schedule(null, 4, NOW), NOW)
+    const third = session.next(NOW)!
+    // Zweimal zurück bis zum Anfang: c1 kommt wieder dran, ohne den eingereihten Lernschritt
+    session.undo(second, third)
+    session.undo(first, session.next(NOW))
+    expect(session.remaining()).toEqual(before)
+    const order: string[] = []
+    for (let item = session.next(NOW); item; item = session.next(NOW)) order.push(`${item.card.id}:${item.kind}`)
+    expect(order).toEqual(['c1:new', 'c2:new', 'c3:new'])
+  })
+
+  it('Rückgängig nach „Nochmal“ bei der letzten Karte: sie kommt nur einmal wieder', () => {
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], [card('c1')], new Map(), NOW)
+    const first = session.next(NOW)!
+    session.answered(first, schedule(null, 1, NOW), NOW)
+    // Sonst ist nichts mehr übrig – die wieder eingereihte Seite wird gleich angezeigt
+    const again = session.next(NOW)!
+    expect(again).toMatchObject({ kind: 'learning' })
+    session.undo(first, again)
+    expect(session.remaining()).toEqual({ new: 1, learning: 0, review: 0 })
+    expect(session.next(NOW)).toMatchObject({ kind: 'new', card: { id: 'c1' } })
+    expect(session.next(NOW)).toBeNull()
+  })
+
   it('fragt bei beidseitigen Karten die Rückseite erst ab einem späteren Tag ab', () => {
     const cards = [card('c1', { type: 'reversed' })]
     const fresh = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
