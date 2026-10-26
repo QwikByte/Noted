@@ -195,7 +195,7 @@ function StudySession({
     [scheduler, retention, weights],
   )
   const intervals = useMemo(
-    () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan) : null),
+    () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan, itemKey(current)) : null),
     [current, state, mode, shownAt, plan],
   )
   const isCloze = card?.type === 'cloze'
@@ -236,7 +236,7 @@ function StudySession({
     (rating: Rating) => {
       if (!current || !(session instanceof LearnSession)) return
       const now = Date.now()
-      const next = schedule(state, rating, now, plan)
+      const next = schedule(state, rating, now, plan, itemKey(current))
       if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
         toast.show(
           `${next.lapses}-mal vergessen – überarbeite oder teile die Karte (im Stapel unter „Problemkarten“).`,

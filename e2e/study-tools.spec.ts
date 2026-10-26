@@ -680,7 +680,8 @@ test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
   // Erst tippen, wenn die Karte da ist – sonst geht die Leertaste je nach Auslastung ins Leere
   await expect(page.getByTestId('study-card')).toContainText('Frage')
   await page.keyboard.press('Space')
-  await expect(page.getByTestId('rate-4')).toContainText('16 Tage')
+  // Gut zwei Wochen (16 Tage), je Karte leicht gestreut: 13–19 Tage
+  await expect(page.getByTestId('rate-4')).toContainText(/(?<!\d)1[3-9] Tage/)
   await expect(page.getByTestId('rate-3')).toContainText('10 Min.')
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { localDate } from '@/features/calendar/dates'
-import { DAY, MINUTE, formatInterval, previewIntervals, schedule, cardStatus, type Rating } from './srs'
+import { DAY, MINUTE, formatInterval, fuzzInterval, previewIntervals, schedule, cardStatus, type Plan, type Rating } from './srs'
 import {
   LearnSession,
   PracticeSession,
@@ -109,6 +109,71 @@ describe('Wiederholungsplan', () => {
     expect(cardStatus(null)).toBe('new')
     expect(cardStatus(schedule(null, 3, NOW))).toBe('learning')
     expect(cardStatus({ ...run([4]), interval: 30 })).toBe('mature')
+  })
+})
+
+describe('Streuung der Abstände (Fuzz)', () => {
+  const FSRS: Plan = { kind: 'fsrs', retention: 0.9 }
+  const learn = (key: string, ratings: Rating[], plan?: Plan) => {
+    let state: SrsState | null = null
+    let t = NOW
+    for (const r of ratings) {
+      state = schedule(state, r, t, plan, key)
+      t = state.due
+    }
+    return state!
+  }
+
+  it('verteilt gemeinsam gelernte Karten auf mehrere Tage statt alle auf denselben', () => {
+    for (const plan of [undefined, FSRS]) {
+      const days = new Set(Array.from({ length: 50 }, (_, i) => learn(`karte-${i}:0`, [3, 3, 3, 3], plan).due))
+      expect(days.size).toBeGreaterThan(1)
+    }
+  })
+
+  it('bleibt ohne Schlüssel beim genauen Abstand', () => {
+    const days = new Set(Array.from({ length: 10 }, () => run([3, 3, 3, 3]).due))
+    expect(days.size).toBe(1)
+  })
+
+  it('streut in den Bereichen von Anki', () => {
+    const range = (days: number, min?: number) => [fuzzInterval(days, 0, min), fuzzInterval(days, 0.999999, min)]
+    expect(range(2.4)).toEqual([2, 2])
+    expect(range(2.5)).toEqual([2, 4])
+    expect(range(7)).toEqual([5, 9])
+    expect(range(20)).toEqual([17, 23])
+    expect(range(100)).toEqual([93, 107])
+    expect(range(36_500)).toEqual([34_673, 36_500])
+    expect(range(3, 3)).toEqual([3, 4])
+    expect(fuzzInterval(10, null)).toBe(10)
+    expect(fuzzInterval(10.4, null, 12)).toBe(12)
+  })
+
+  it('hält Schwer ≤ Gut < Einfach ein und lässt Lernschritte in Minuten unverändert', () => {
+    for (let i = 0; i < 200; i++) {
+      for (const plan of [undefined, FSRS]) {
+        const key = `c${i}:1`
+        const review = learn(key, [3, 3, 3], plan)
+        const [hard, good, easy] = ([2, 3, 4] as Rating[]).map((r) => schedule(review, r, review.due, plan, key).interval)
+        expect(hard <= good && good < easy).toBe(true)
+        expect(schedule(null, 3, NOW, plan, key).due - NOW).toBe(10 * MINUTE)
+        const graduated = ([3, 4] as Rating[]).map((r) => schedule(schedule(null, 3, NOW, plan, key), r, NOW, plan, key).interval)
+        expect(graduated[0] < graduated[1]).toBe(true)
+      }
+    }
+  })
+
+  it('beschriftet die Knöpfe mit genau dem Abstand, den die Bewertung plant – auch etwas später', () => {
+    for (const plan of [undefined, FSRS]) {
+      const review = learn('karte-7:0', [3, 3, 3, 3], plan)
+      const shown = review.due
+      const preview = previewIntervals(review, shown, plan, 'karte-7:0')
+      for (const r of [2, 3, 4] as Rating[]) {
+        const later = shown + 5000
+        const days = Math.round((schedule(review, r, later, plan, 'karte-7:0').due - later) / DAY)
+        expect(days).toBe(Math.round(preview[r] / DAY))
+      }
+    }
   })
 })
 

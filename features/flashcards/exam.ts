@@ -4,7 +4,7 @@
 // gilt er wieder, ohne dass etwas zurückgesetzt werden muss.
 import { addDays, dateOf, daysBetween, localDate } from '@/features/calendar/dates'
 import type { CalendarEvent } from '@/features/calendar/types'
-import { startOfDay } from './srs'
+import { fnv1a, startOfDay } from './srs'
 import type { DeckExam, SrsState } from './types'
 
 /** Auf so viele Tage vor der Klausur verteilen sich die vorgezogenen Wiederholungen */
@@ -37,12 +37,8 @@ export const daysUntil = (exam: DeckExam, now: number) => daysBetween(localDate(
 /** Beginn des Tages in Ortszeit */
 const dayStart = (date: string) => new Date(`${date}T00:00`).getTime()
 
-/** Gleichmäßige, aber für jede Kartenseite feste Verteilung auf die Tage vor der Klausur (FNV-1a) */
-function slot(key: string): number {
-  let h = 0x811c9dc5
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 0x01000193)
-  return (h >>> 0) % EXAM_REVIEW_DAYS
-}
+/** Gleichmäßige, aber für jede Kartenseite feste Verteilung auf die Tage vor der Klausur */
+const slot = (key: string) => fnv1a(key) % EXAM_REVIEW_DAYS
 
 /**
  * Fälligkeit einer Kartenseite (`key`) vor der Klausur. Gelernte Seiten, die erst am Klausurtag oder danach dran

@@ -99,7 +99,8 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
       await page.keyboard.press('Space')
       await expect(page.getByTestId('study-answer')).toBeVisible()
     }
-    await expect(page.getByTestId('rate-4')).toContainText('4 Tage')
+    // „Einfach“ plant 4 Tage, je Karte leicht gestreut (3–5 Tage), damit gemeinsam gelernte Karten auseinanderlaufen
+    await expect(page.getByTestId('rate-4')).toContainText(/(?<!\d)[345] Tage/)
     await page.getByTestId('rate-4').click()
   }
   await expect(page.getByTestId('study-done')).toContainText('Geschafft!')
