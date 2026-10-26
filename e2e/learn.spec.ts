@@ -454,3 +454,82 @@ test('PDF-Viewer mit der Tastatur: suchen, blättern, zoomen und markieren', asy
   await expect(page.locator('.cm-search')).toBeVisible()
   await expect(input).toHaveCount(0)
 })
+
+test.describe('Handy', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+
+  test('Bewerten per Wischen: links „Nochmal“, rechts „Gut“ – vor dem Aufdecken und knapp darunter nichts', async ({ page }) => {
+    await login(page)
+    const headers = await apiHeaders(page)
+    const deck = (await (await page.request.post('/api/decks', { headers, data: { name: 'Wischen E2E' } })).json()).deck
+    const cards = (
+      await (
+        await page.request.post(`/api/decks/${deck.id}/cards`, {
+          headers,
+          data: {
+            cards: [
+              { type: 'basic', front: 'Hauptstadt von Frankreich?', back: 'Paris' },
+              { type: 'basic', front: 'Hauptstadt von Italien?', back: 'Rom' },
+            ],
+          },
+        })
+      ).json()
+    ).cards as { id: string; front: string }[]
+    await page.goto(`/?s=${encodeURIComponent(`deck:${deck.id}`)}`)
+    const card = page.getByTestId('study-card')
+    await expect(card).toBeVisible()
+
+    const cdp = await page.context().newCDPSession(page)
+    const box = (await card.boundingBox())!
+    const y = box.y + 40
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y }] })
+    const swipe = async (from: number, to: number) => {
+      await touch('touchStart', from)
+      for (let i = 1; i <= 4; i++) await touch('touchMove', from + ((to - from) * i) / 4)
+      await touch('touchEnd')
+    }
+    const frontOf = async () => {
+      const text = (await card.locator('.markdown-body').first().innerText()).trim()
+      return cards.find((c) => c.front === text)!
+    }
+
+    // Vor dem Aufdecken bewertet ein Wisch nichts
+    await swipe(80, 340)
+    await expect(page.getByTestId('reveal')).toBeVisible()
+    // Aufdecken per Klick: Ein Tippen direkt nach einem Wisch hielte in Chrome nur dessen Nachlauf an
+    const reveal = page.getByTestId('reveal')
+    await reveal.click()
+    await expect(page.getByTestId('study-answer')).toBeVisible()
+
+    // Während des Wischens: Beschriftung, die Karte folgt dem Finger
+    await touch('touchStart', 300)
+    await touch('touchMove', 250)
+    await touch('touchMove', 100)
+    await expect(page.getByTestId('swipe-label')).toHaveText('Nochmal')
+    await shot(page, '34-swipe')
+    // Zurück unter die Schwelle und loslassen: schnappt zurück, nichts bewertet
+    await touch('touchMove', 270)
+    await touch('touchEnd')
+    await expect(page.getByTestId('swipe-label')).toHaveCount(0)
+    await expect(page.getByTestId('study-answer')).toBeVisible()
+
+    const first = await frontOf()
+    await swipe(330, 60)
+    await expect(page.getByTestId('study-answer')).toHaveCount(0)
+    const second = await frontOf()
+    expect(second.id).not.toBe(first.id)
+    await reveal.click()
+    await swipe(60, 330)
+
+    // Nochmal: erster Lernschritt, Gut: der nächste
+    await expect
+      .poll(async () => {
+        const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+        const step = (id: string) => data.reviews.find((r: { cardId: string }) => r.cardId === id)?.step
+        return [step(first.id), step(second.id)]
+      })
+      .toEqual([0, 1])
+    await page.request.delete(`/api/decks/${deck.id}`, { headers })
+  })
+})

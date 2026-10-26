@@ -337,6 +337,7 @@ function AppearanceSection() {
   const [slashCommands, setSlashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml, setPasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
   const [wordCount, setWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
+  const [swipeGrading, setSwipeGrading] = usePref<'1' | '0'>('noted:swipeGrading', '1')
   return (
     <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
@@ -390,6 +391,14 @@ function AppearanceSection() {
             onChange={(v) => setWordCount(v ? '1' : '0')}
             label="Wortzahl anzeigen"
             description="Zeigt über der Notiz laufend die Wörter und die Lesezeit – mit Markierung im Editor die Wörter der Markierung. Hilft bei Wortgrenzen für Hausarbeiten und Abstracts."
+          />
+        </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={swipeGrading === '1'}
+            onChange={(v) => setSwipeGrading(v ? '1' : '0')}
+            label="Karteikarten per Wischen bewerten"
+            description="Auf Touchscreens nach dem Aufdecken: nach links „Nochmal“, nach rechts „Gut“ – beim Üben „Nicht gewusst“ bzw. „Gewusst“."
           />
         </div>
         <NoteLanguageField />
