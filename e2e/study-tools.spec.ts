@@ -934,6 +934,9 @@ test('Lückentext: im Editor markieren und Lücke für Lücke lernen', async ({ 
   await front.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(18, 21))
   await dialog.getByRole('button', { name: 'Als Lücke' }).click()
   await expect(front).toHaveValue('Die Ableitung von ==sin== ist cos.')
+  // Der Editor setzt den Cursor im nächsten Frame hinter die Lücke – erst danach ersetzen, sonst landet der neue Text
+  // mitten im alten
+  await expect.poll(() => front.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(25)
   await front.fill('Die Ableitung von ==sin== ist {{cos}}.')
   await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
   await expect(page.getByTestId('card-list')).toContainText('Lückentext')
