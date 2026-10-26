@@ -40,6 +40,13 @@ describe('Fundstellen der Volltextsuche', () => {
     expect(findMatches('Text', ['"', '*'])).toEqual([])
   })
 
+  it('entfernt Satzzeichen am Rand der Suchwörter in linearer Zeit', () => {
+    expect(words('Satz von Bayes', ['„Bayes“!'])).toEqual(['Bayes'])
+    const t = Date.now()
+    expect(findMatches('a b', ['a' + '-'.repeat(100_000) + 'b'])).toEqual([])
+    expect(Date.now() - t).toBeLessThan(1000)
+  })
+
   it('liefert höchstens 500 Treffer, auch in großen Texten schnell', () => {
     const text = 'wort '.repeat(200_000)
     const t = Date.now()

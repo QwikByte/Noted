@@ -9,7 +9,7 @@ import { Button } from '@/shared/ui/button'
 import { Field, Input } from '@/shared/ui/input'
 import { useToast } from '@/shared/ui/toast'
 import { api, errorMessage } from '@/shared/client/api'
-import { normalizeTag } from '@/shared/markdown/meta'
+import { normalizeTag, trimTag } from '@/shared/markdown/meta'
 import { keys, useNotes, useTags } from '../client/queries'
 import { sync } from '../client/sync'
 
@@ -42,7 +42,7 @@ export function RenameTagDialog({ tag, onClose }: { tag: string; onClose: () => 
       }
       const res = await api<{ notes: number }>('/api/tags/rename', { method: 'POST', body: { from: tag, to: value } })
       await Promise.all([keys.notes, keys.tags, ['note'], graphKey].map((queryKey) => qc.invalidateQueries({ queryKey })))
-      const name = value.trim().replace(/^#+/, '').replace(/\/+$/, '')
+      const name = trimTag(value)
       const count = `${res.notes} ${res.notes === 1 ? 'Notiz' : 'Notizen'}`
       const vaultHint = inVault ? ` ${inVault} ${inVault === 1 ? 'Notiz' : 'Notizen'} im Tresor bitte selbst anpassen.` : ''
       toast.success(`#${tag} in ${count} ${existing ? `mit #${target} zusammengeführt` : `in #${name} umbenannt`}.${vaultHint}`)

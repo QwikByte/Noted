@@ -9,8 +9,10 @@ import {
   linkFolders,
   makeExcerpt,
   markdownPlainText,
+  normalizeTag,
   splitFrontmatter,
   stripCode,
+  trimTag,
 } from './meta'
 
 describe('Frontmatter', () => {
@@ -112,6 +114,15 @@ describe('Hilfsfunktionen', () => {
 })
 
 describe('Laufzeit bei böswilligen Eingaben', () => {
+  it('kürzt eingegebene Tags in linearer Zeit – auch aus vielen „/“', () => {
+    expect(trimTag(' ##Mathe/Analysis// ')).toBe('Mathe/Analysis')
+    expect(normalizeTag('#Mathe/')).toBe('mathe')
+    const t = Date.now()
+    expect(normalizeTag('/'.repeat(200_000) + 'x')).toBe('/'.repeat(200_000) + 'x')
+    expect(trimTag('#'.repeat(200_000) + '/'.repeat(200_000))).toBe('')
+    expect(Date.now() - t).toBeLessThan(1000)
+  })
+
   it('verarbeitet 2 MB große Notizen in linearer Zeit', () => {
     for (const s of ['\n'.repeat(2_000_000), '[['.repeat(1_000_000), '[('.repeat(1_000_000), '```\n'.repeat(500_000)]) {
       const t = Date.now()

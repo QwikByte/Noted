@@ -52,13 +52,21 @@ function folded(text: string): { norm: string; start: number[]; end: number[] } 
   return { norm, start, end }
 }
 
+/** Ohne Satzzeichen am Rand – als Schleife, ein regulärer Ausdruck bräuchte bei langen Eingaben quadratisch viel Zeit */
+function trimNonWord(text: string): string {
+  const chars = Array.from(text)
+  let start = 0
+  let end = chars.length
+  while (start < end && !WORD_CHAR.test(chars[start])) start++
+  while (end > start && !WORD_CHAR.test(chars[end - 1])) end--
+  return chars.slice(start, end).join('')
+}
+
 /** Suchwörter in Vergleichsform – ohne Satzzeichen am Rand, die FTS5 ohnehin nicht mitsucht */
 function foldTerms(terms: string[]): string[] {
   const out = new Set<string>()
   for (const t of terms) {
-    const f = foldText(t)
-      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-      .replace(/ +/g, ' ')
+    const f = trimNonWord(foldText(t)).replace(/ +/g, ' ')
     if (f) out.add(f)
   }
   return [...out]

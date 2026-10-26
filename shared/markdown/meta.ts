@@ -167,9 +167,22 @@ export function findHeadingLine(content: string, heading: string): number | null
 /** #tag im Text: am Zeilenanfang oder nach Leerraum */
 export const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
 
+/**
+ * Eingegebener Tag ohne „#“ vorn und „/“ am Ende, Schreibweise wie eingegeben. Als Schleife: ein regulärer Ausdruck wie
+ * /\/+$/ braucht bei langen Eingaben aus vielen „/“ quadratisch viel Zeit.
+ */
+export function trimTag(tag: string): string {
+  const t = tag.trim()
+  let start = 0
+  let end = t.length
+  while (start < end && t[start] === '#') start++
+  while (end > start && t[end - 1] === '/') end--
+  return t.slice(start, end)
+}
+
 /** Tag in Vergleichsform – klein, ohne „#“ und „/“ am Ende; null, wenn es kein gültiger Tag ist (z. B. nur Ziffern) */
 export function normalizeTag(tag: string): string | null {
-  const t = tag.trim().replace(/^#+/, '').replace(/\/+$/, '').toLowerCase()
+  const t = trimTag(tag).toLowerCase()
   if (!t || !/^[\p{L}\p{N}_\-/]+$/u.test(t)) return null
   if (/^[\d/]+$/.test(t)) return null // rein numerisch ist kein Tag
   return t

@@ -2,7 +2,7 @@ import 'server-only'
 // Tags umbenennen und zusammenführen – in allen eigenen Notizen auf einmal, samt Unter-Tags
 import { getDb } from '@/shared/server/db'
 import { badRequest } from '@/shared/server/http'
-import { makeExcerpt, normalizeTag } from '@/shared/markdown/meta'
+import { makeExcerpt, normalizeTag, trimTag } from '@/shared/markdown/meta'
 import { noteText } from '../format'
 import { renameTagIn } from '../tag-rewrite'
 import { indexNote } from './notes'
@@ -31,7 +31,7 @@ export function renameTag(userId: number, fromInput: string, toInput: string): {
   if (!to) throw badRequest('Ein Tag besteht aus Buchstaben, Ziffern, „-“, „_“ und „/“ – und nicht nur aus Ziffern.')
   // Groß- und Kleinschreibung ist bei Tags egal – „#Mathe“ ist schon „#mathe“
   if (from === to) return { notes: 0 }
-  const name = toInput.trim().replace(/^#+/, '').replace(/\/+$/, '')
+  const name = trimTag(toInput)
   const db = getDb()
   const rows = db
     .prepare(
