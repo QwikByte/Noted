@@ -80,7 +80,7 @@ import { insertionToMarkdown, registerActiveEditor } from '../client/active-edit
 import type { NoteEditorHandle, RichTextHandle } from '../client/editor-handle'
 import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
 import { useFindInNote, type FindSurface } from '../client/find-in-note'
-import { parseSearch } from '@/shared/lib/search-query'
+import { highlightTerms } from '@/shared/lib/search-query'
 import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
@@ -399,7 +399,7 @@ function NoteEditor({
 
   // Aus der Volltextsuche geöffnet: Fundstellen markieren – bis zur ersten Änderung, Esc oder ✕
   const [findTerms, setFindTerms] = useState<string[] | null>(() => {
-    const terms = find ? parseSearch(find).terms : []
+    const terms = find ? highlightTerms(find) : []
     return terms.length ? terms : null
   })
   const findSurface: FindSurface =

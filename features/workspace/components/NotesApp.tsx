@@ -402,7 +402,7 @@ export default function NotesApp() {
       main = <TagView tag={view.tag} />
       break
     case 'search':
-      main = <SearchView initialQuery={view.q} />
+      main = <SearchView initialQuery={view.q} folder={view.folder} />
       break
     case 'trash':
       main = <TrashView />

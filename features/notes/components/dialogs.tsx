@@ -59,18 +59,23 @@ export function FolderSelect({
   noRoot?: boolean
   id?: string
 }) {
-  const options = useFolderOptions(exclude)
   return (
     <Select id={id} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
       {noRoot ? null : <option value="">— Oberste Ebene —</option>}
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {'   '.repeat(o.depth)}
-          {o.label}
-        </option>
-      ))}
+      <FolderOptions exclude={exclude} />
     </Select>
   )
+}
+
+/** Die Ordner als eingerückte Einträge eines Auswahlfelds – für Felder mit eigenen Einträgen davor */
+export function FolderOptions({ exclude }: { exclude?: Set<string> }) {
+  const options = useFolderOptions(exclude)
+  return options.map((o) => (
+    <option key={o.id} value={o.id}>
+      {'   '.repeat(o.depth)}
+      {o.label}
+    </option>
+  ))
 }
 
 type TemplateChoice = {

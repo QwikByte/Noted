@@ -321,6 +321,44 @@ test('Sortierung: Ordner nach Name, Bearbeitung oder Erstellung – gemerkt, Aus
   await page.keyboard.press('Escape')
 })
 
+test('Suche: Phrase, Ausschluss und Ordnerfilter – die Wahl übersteht das Neuladen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = (await (await page.request.post('/api/folders', { headers, data: { name: 'Suchfilter Mathe' } })).json())
+    .folder as { id: string }
+  cleanup.unshift(`/api/folders/${folder.id}`)
+  for (const [title, content, folderId] of [
+    ['Filter innen', 'Grenzwert einer Folge', folder.id],
+    ['Filter außen', 'Folge einer Grenzwert-Rechnung', null],
+  ] as const) {
+    const n = (await (await page.request.post('/api/notes', { headers, data: { title, content, folderId } })).json()).note
+    cleanup.unshift(`/api/notes/${n.id}?permanent=1`)
+  }
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+
+  await page.goto('/?q=grenzwert%20folge')
+  await expect.poll(titles).toEqual(expect.arrayContaining(['Filter innen', 'Filter außen']))
+  // Phrase: nur die Wortfolge
+  await page.getByLabel('Suchbegriff').fill('"Grenzwert einer"')
+  await expect.poll(titles).toEqual(['Filter innen'])
+  // Ausschluss
+  await page.getByLabel('Suchbegriff').fill('grenzwert -rechnung')
+  await expect.poll(titles).toEqual(['Filter innen'])
+  // Nur ausgeschlossen: Hinweis statt aller Notizen
+  await page.getByLabel('Suchbegriff').fill('-rechnung')
+  await expect(page.getByText('Gib mindestens ein Suchwort ein')).toBeVisible()
+
+  await page.getByLabel('Suchbegriff').fill('grenzwert folge')
+  await expect.poll(titles).toEqual(expect.arrayContaining(['Filter innen', 'Filter außen']))
+  await page.getByLabel('Suchen in').selectOption(folder.id)
+  await expect.poll(titles).toEqual(['Filter innen'])
+  await expect(page).toHaveURL(new RegExp(`in=${folder.id}`))
+  await expect(page.getByTestId('search-files-hidden')).toBeVisible()
+  await page.reload()
+  await expect(page.getByLabel('Suchen in')).toHaveValue(folder.id)
+  await expect.poll(titles).toEqual(['Filter innen'])
+})
+
 test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

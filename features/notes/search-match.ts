@@ -7,10 +7,17 @@ const MAX_MATCHES = 500
 const WORD_CHAR = /[\p{L}\p{N}]/u
 const MARKS = /\p{M}/gu
 
-/** Ein Zeichen ohne Akzente und klein – kann mehrere Zeichen ergeben (z. B. „İ“) oder keins (allein stehender Akzent) */
+/**
+ * Ein Zeichen ohne Akzente und klein – kann mehrere Zeichen ergeben (z. B. „İ“) oder keins (allein stehender Akzent).
+ * Leerraum wird ein Leerzeichen, damit Phrasen auch über Zeilenumbrüche passen.
+ */
 function fold(ch: string): string {
   const code = ch.charCodeAt(0)
-  if (code < 0x80) return code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : ch
+  if (code < 0x80) {
+    if (code >= 65 && code <= 90) return String.fromCharCode(code + 32)
+    return code === 9 || code === 10 || code === 13 ? ' ' : ch
+  }
+  if (/\s/.test(ch)) return ' '
   return ch.normalize('NFD').replace(MARKS, '').toLowerCase()
 }
 
@@ -25,8 +32,16 @@ function folded(text: string): { norm: string; start: number[]; end: number[] } 
   const start: number[] = []
   const end: number[] = []
   let i = 0
+  let space = false
   for (const ch of text) {
     const f = fold(ch)
+    // Mehrfacher Leerraum zählt wie ein Leerzeichen
+    if (f === ' ' && space) {
+      end[end.length - 1] = i + ch.length
+      i += ch.length
+      continue
+    }
+    space = f === ' '
     for (let k = 0; k < f.length; k++) {
       start.push(i)
       end.push(i + ch.length)
@@ -41,7 +56,9 @@ function folded(text: string): { norm: string; start: number[]; end: number[] } 
 function foldTerms(terms: string[]): string[] {
   const out = new Set<string>()
   for (const t of terms) {
-    const f = foldText(t).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+    const f = foldText(t)
+      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+      .replace(/ +/g, ' ')
     if (f) out.add(f)
   }
   return [...out]

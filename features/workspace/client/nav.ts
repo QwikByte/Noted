@@ -11,7 +11,8 @@ export type View =
   | { kind: 'note'; id: string; heading?: string; find?: string }
   | { kind: 'folder'; id: string }
   | { kind: 'tag'; tag: string }
-  | { kind: 'search'; q: string }
+  /** folder: nur in diesem Ordner samt Unterordnern suchen */
+  | { kind: 'search'; q: string; folder?: string }
   | { kind: 'trash' }
   /** Dateien in der Ordnerstruktur der Notizen – folder: Ordner-ID oder UNLINKED (Dateien ohne Notiz) */
   | { kind: 'files'; folder?: string }
@@ -48,7 +49,7 @@ export function viewFromParams(params: URLSearchParams): View {
   const quiz = params.get('quiz')
   if (quiz) return { kind: 'quiz', id: quiz }
   const q = params.get('q')
-  if (q !== null) return { kind: 'search', q }
+  if (q !== null) return { kind: 'search', q, folder: params.get('in') || undefined }
   const v = params.get('v')
   if (v === 'trash') return { kind: 'trash' }
   if (v === 'files') return { kind: 'files', folder: params.get('in') || undefined }
@@ -74,7 +75,7 @@ export function viewToUrl(view: View): string {
     case 'tag':
       return `/?t=${encodeURIComponent(view.tag)}`
     case 'search':
-      return `/?q=${encodeURIComponent(view.q)}`
+      return `/?q=${encodeURIComponent(view.q)}${view.folder ? `&in=${encodeURIComponent(view.folder)}` : ''}`
     case 'trash':
       return '/?v=trash'
     case 'files':

@@ -4,7 +4,7 @@ import { getDb } from '@/shared/server/db'
 import { badRequest, conflict, notFound } from '@/shared/server/http'
 import { isValidId, uuid } from '@/shared/server/crypto'
 import { getConfig } from '@/shared/server/config'
-import { buildFtsQuery, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
+import { buildExclusionQuery, buildFtsQuery, SNIPPET_END, SNIPPET_START } from '@/shared/server/fts'
 import { parseSearch } from '@/shared/lib/search-query'
 import { extractLinks, extractTags, linkFolders, linkKey, makeExcerpt } from '@/shared/markdown/meta'
 import { uniqueName, validateName } from '@/shared/lib/names'
@@ -797,37 +797,54 @@ export function purgeTrash(userId?: number) {
 // Suche, Tags, Backlinks
 // ---------------------------------------------------------------------------
 
-export function searchNotes(userId: number, query: string, limit = 50): SearchResult[] {
+/**
+ * Volltextsuche mit Wörtern, Phrasen, Ausschlüssen und Tags (siehe parseSearch) – mit `folderId` nur in diesem Ordner
+ * samt Unterordnern. Ohne Wort, Phrase oder Tag gibt es nichts: Nur ausschließen liefert keine Treffer.
+ */
+export function searchNotes(userId: number, query: string, opts: { folderId?: string; limit?: number } = {}): SearchResult[] {
   const db = getDb()
-  const { terms, tags } = parseSearch(query)
-  if (tags.length === 0 && terms.length === 0) return []
+  const parsed = parseSearch(query)
+  const { tags, excludedTags } = parsed
+  const match = buildFtsQuery(parsed)
+  if (!match && tags.length === 0) return []
 
-  const tagFilter = tags
-    .map(() => `AND EXISTS (SELECT 1 FROM note_tags t WHERE t.note_id = n.id AND (t.tag = ? OR t.tag LIKE ? ESCAPE '\\'))`)
-    .join(' ')
-  const tagParams = tags.flatMap((t) => [t, t.replace(/[\\%_]/g, '\\$&') + '/%'])
-
-  if (terms.length === 0) {
-    const rows = db
-      .prepare(
-        `SELECT n.id, n.title, n.folder_id AS folderId, n.excerpt AS snippet, n.updated_at AS updatedAt
-         FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${tagFilter}
-         ORDER BY n.updated_at DESC LIMIT ?`,
-      )
-      .all(userId, ...tagParams, limit) as SearchResult[]
-    return rows
+  const tagCondition = `EXISTS (SELECT 1 FROM note_tags t WHERE t.note_id = n.id AND (t.tag = ? OR t.tag LIKE ? ESCAPE '\\'))`
+  const tagParam = (t: string) => [t, t.replace(/[\\%_]/g, '\\$&') + '/%']
+  const filters = [...tags.map(() => `AND ${tagCondition}`), ...excludedTags.map(() => `AND NOT ${tagCondition}`)]
+  const params: unknown[] = [...tags.flatMap(tagParam), ...excludedTags.flatMap(tagParam)]
+  if (opts.folderId) {
+    // Fremde oder unbekannte Ordner haben keine Unterordner und damit keine Treffer
+    const folders = descendantIds(userId, opts.folderId)
+    if (folders.length === 0) return []
+    filters.push('AND n.folder_id IN (SELECT value FROM json_each(?))')
+    params.push(JSON.stringify(folders))
   }
+  const limit = opts.limit ?? 50
 
   try {
+    if (!match) {
+      // Nur Tags: ohne Volltext, Ausschlüsse über den Suchindex der Notiz
+      const exclusion = buildExclusionQuery(parsed.excluded)
+      const excluding = exclusion
+        ? 'AND n.id NOT IN (SELECT note_id FROM notes_fts WHERE notes_fts MATCH ? AND user_id = ?)'
+        : ''
+      return db
+        .prepare(
+          `SELECT n.id, n.title, n.folder_id AS folderId, n.excerpt AS snippet, n.updated_at AS updatedAt
+           FROM notes n WHERE n.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${filters.join(' ')} ${excluding}
+           ORDER BY n.updated_at DESC LIMIT ?`,
+        )
+        .all(userId, ...params, ...(exclusion ? [exclusion, userId] : []), limit) as SearchResult[]
+    }
     return db
       .prepare(
         `SELECT n.id, n.title, n.folder_id AS folderId, n.updated_at AS updatedAt,
                 snippet(notes_fts, 3, '${SNIPPET_START}', '${SNIPPET_END}', '…', 14) AS snippet
          FROM notes_fts f JOIN notes n ON n.id = f.note_id
-         WHERE notes_fts MATCH ? AND f.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${tagFilter}
+         WHERE notes_fts MATCH ? AND f.user_id = ? AND n.deleted_at IS NULL AND n.vault = 0 ${filters.join(' ')}
          ORDER BY bm25(notes_fts, 0.0, 0.0, 8.0, 1.0) LIMIT ?`,
       )
-      .all(buildFtsQuery(terms), userId, ...tagParams, limit) as SearchResult[]
+      .all(match, userId, ...params, limit) as SearchResult[]
   } catch (err) {
     console.warn('[noted] Suchanfrage fehlgeschlagen', err)
     return []

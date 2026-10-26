@@ -15,7 +15,7 @@ export const keys = {
   folders: ['folders'] as const,
   tags: ['tags'] as const,
   trash: ['trash'] as const,
-  search: (q: string) => ['search', q] as const,
+  search: (q: string, folder?: string) => ['search', q, folder ?? null] as const,
   backlinks: (id: string) => ['backlinks', id] as const,
   versions: (id: string) => ['versions', id] as const,
   version: (id: string, versionId: number) => ['versions', id, versionId] as const,
