@@ -197,6 +197,69 @@ test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitz
   expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
 })
 
+test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const [first, second] = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: [{ type: 'basic', front: 'Erste Frage', back: 'a' }, { type: 'basic', front: 'Zweite Frage', back: 'b' }] },
+    'cards',
+  )
+  const total = async () => (await (await page.request.get('/api/stats?tz=UTC')).json()).total as number
+  const loggedBefore = await total()
+
+  await page.goto(`/?s=deck:${deck.id}`)
+  const studyCard = page.getByTestId('study-card')
+  const counts = page.getByRole('group', { name: 'Verbleibend' })
+  const undo = page.getByRole('button', { name: 'Letzte Bewertung rückgängig' })
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(undo).toBeDisabled()
+  const countsBefore = (await counts.textContent()) ?? ''
+
+  // Versehentlich „Nochmal“: Rückgängig zeigt dieselbe Karte verdeckt, die Zähler sind wie vorher
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+  await expect(counts).not.toHaveText(countsBefore)
+  await undo.click()
+  await expect(page.getByText('Bewertung zurückgenommen.')).toBeVisible()
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(page.getByTestId('study-answer')).toHaveCount(0)
+  await expect(counts).toHaveText(countsBefore)
+  await expect(undo).toBeDisabled()
+
+  // Beide richtig, dann nach der letzten Karte per Tastatur zurück – zweimal bis zur ersten
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  await page.keyboard.press('z')
+  await expect(studyCard).toContainText('Zweite Frage')
+  await page.keyboard.press('Control+z')
+  await expect(studyCard).toContainText('Erste Frage')
+  await expect(counts).toHaveText(countsBefore)
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-4').click()
+  await expect(studyCard).toContainText('Zweite Frage')
+
+  // Auf dem Server: nur die letzte Bewertung der ersten Karte, die zweite ist wieder neu
+  await expect
+    .poll(
+      async () => {
+        const { reviews } = await flashcards(page)
+        const of = (id: string) => reviews.find((r: { cardId: string }) => r.cardId === id)
+        return [of(first.id)?.lapses, of(second.id)]
+      },
+      { timeout: 15_000 },
+    )
+    .toEqual([0, undefined])
+  await expect.poll(total, { timeout: 15_000 }).toBe(loggedBefore + 1)
+})
+
 test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Folien' }, 'deck')

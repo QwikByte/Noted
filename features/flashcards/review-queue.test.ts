@@ -13,7 +13,7 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('window', { addEventListener: () => {} })
 vi.stubGlobal('document', { addEventListener: () => {} })
 
-const { ReviewQueue } = await import('./client/flashcards')
+const { ReviewQueue, applyUndos } = await import('./client/flashcards')
 
 const KEY = 'noted:reviews:1'
 const qc = { setQueryData: () => {} } as unknown as QueryClient
@@ -193,5 +193,118 @@ describe('Bewertungsprotokoll in der Warteschlange', () => {
     store.set(KEY, old)
     q.add(review('b', 2000), entry('b', 2000))
     expect(storedLog().map((e) => e.reviewedAt)).toEqual([2000])
+  })
+})
+
+describe('Bewertung zurücknehmen in der Warteschlange', () => {
+  const entry = (cardId: string, at: number) => ({
+    cardId,
+    side: 0 as const,
+    rating: 1 as const,
+    phase: 'review' as const,
+    intervalBefore: 1,
+    intervalAfter: 0,
+    durationMs: 4000,
+    reviewedAt: at,
+  })
+  const storedAll = () => JSON.parse(store.get(KEY) ?? '{}') as { pending?: CardReview[]; log?: { reviewedAt: number }[]; undo?: unknown[] }
+  const data = (reviews: CardReview[]): FlashcardData => ({
+    decks: [],
+    cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], occlusion: null, position: 0, suspended: false, createdAt: 0, updatedAt: 0 }],
+    reviews,
+    fsrs: null,
+  })
+
+  it('vor dem Senden: Der Stand davor gilt wieder und geht mit der Rücknahme in einer Anfrage raus', async () => {
+    const q = started()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    const previous = schedule(null, 4, 1000)
+    const first: CardReview = { cardId: 'a', side: 0, ...previous }
+    q.add(first, { ...entry('a', 1000), rating: 4 })
+    await q.flush()
+    // Versehentlich „Nochmal“ – ersetzt den ungesendeten Stand in der Warteschlange
+    const wrong: CardReview = { cardId: 'a', side: 0, ...schedule(previous, 1, 61_000) }
+    q.add(wrong, entry('a', 61_000))
+    expect(stored().pending).toEqual([wrong])
+    q.undo({ cardId: 'a', side: 0, reviewedAt: 61_000, previous })
+    expect(stored().pending).toEqual([first])
+    expect(storedAll().log?.map((e) => e.reviewedAt)).toEqual([1000])
+    expect(q.getSnapshot()).toEqual([first])
+
+    const fetchMock = vi.fn().mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock)
+    await q.flush()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.reviews).toEqual([first])
+    expect(body.log.map((e: { reviewedAt: number }) => e.reviewedAt)).toEqual([1000])
+    expect(body.undo).toEqual([{ cardId: 'a', side: 0, reviewedAt: 61_000, previous }])
+  })
+
+  it('nach dem Senden, offline: Die Rücknahme wird nachgereicht und überlagert bis dahin die Serverdaten', async () => {
+    const q = started()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok()))
+    const r = review('a', 1000)
+    q.add(r, entry('a', 1000))
+    await q.flush()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    // Neue Karte: Danach ist sie wieder neu
+    const undo = { cardId: 'a', side: 0, reviewedAt: 1000, previous: null }
+    q.undo(undo)
+    await q.flush()
+    expect(q.getSnapshot()).toEqual([])
+    expect(applyUndos([r], q.getUndoSnapshot())).toEqual([])
+    // Auch nach einem Neuladen der Seite
+    expect(storedAll().undo).toEqual([undo])
+    const reloaded = new ReviewQueue()
+    reloaded.start(1, qc)
+    expect(reloaded.getUndoSnapshot()).toEqual([undo])
+
+    const fetchMock = vi.fn().mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock)
+    await q.flush()
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).undo).toEqual([undo])
+    expect(storedAll().undo).toEqual([])
+    // Daten aus dem Offline-Cache mit der alten Bewertung: Die Überlagerung bleibt, bis der Server sie nicht mehr führt
+    q.prune(data([r]))
+    expect(applyUndos([r], q.getUndoSnapshot())).toEqual([])
+    q.prune(data([]))
+    expect(q.getUndoSnapshot()).toEqual([])
+    expect(store.has(KEY)).toBe(false)
+  })
+
+  it('lässt einen inzwischen neueren Stand stehen und reicht mehrfaches Rückgängig bis zum Anfang', () => {
+    const s0 = schedule(null, 3, 1000)
+    const s1 = schedule(s0, 3, 2000)
+    const s2 = schedule(s1, 1, 3000)
+    const undos = [
+      { cardId: 'a', side: 0, reviewedAt: 2000, previous: s0 },
+      { cardId: 'a', side: 0, reviewedAt: 3000, previous: s1 },
+    ]
+    expect(applyUndos([{ cardId: 'a', side: 0, ...s2 }], undos)).toEqual([{ cardId: 'a', side: 0, ...s0 }])
+    // Ein anderes Gerät hat später weitergelernt
+    const later: CardReview = { cardId: 'a', side: 0, ...schedule(s2, 3, 4000) }
+    expect(applyUndos([later], undos)).toEqual([later])
+  })
+
+  it('holt zurückgenommene Bewertungen nicht aus dem Speicher eines anderen Tabs zurück', () => {
+    const q = started()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    q.add(review('a', 1000), entry('a', 1000))
+    const old = store.get(KEY)!
+    q.undo({ cardId: 'a', side: 0, reviewedAt: 1000, previous: null })
+    // Ein anderer Tab schreibt seinen älteren Stand zurück
+    store.set(KEY, old)
+    q.add(review('b', 2000))
+    expect(stored().pending.map((r) => r.cardId)).toEqual(['b'])
+    expect(storedAll().log).toEqual([])
+    // Ein Tab, der die Bewertung schon geladen hat, übernimmt die Rücknahme aus dem Speicher
+    store.set(KEY, old)
+    const other = new ReviewQueue()
+    other.start(1, qc)
+    expect(other.getSnapshot().map((r) => r.cardId)).toEqual(['a'])
+    q.add(review('c', 3000))
+    other.add(review('d', 4000))
+    expect(other.getSnapshot().map((r) => r.cardId).sort()).toEqual(['b', 'c', 'd'])
   })
 })

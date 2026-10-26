@@ -132,6 +132,12 @@ export type ReviewLogEntry = {
   reviewedAt: number
 }
 
+/**
+ * Rücknahme einer Bewertung („Rückgängig“ beim Lernen): Die Kartenseite bekommt den Stand von vorher zurück
+ * (`previous`, null = sie war neu), der Eintrag im Protokoll entfällt.
+ */
+export type ReviewUndo = { cardId: string; side: number; reviewedAt: number; previous: SrsState | null }
+
 /** Ergebnis eines Anki-Imports – `skipped`: Hinweise auf übersprungene Karten und Dateien (gekürzt) */
 export type AnkiImportResult = { decks: number; cards: number; media: number; skipped: string[] }
 
