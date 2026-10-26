@@ -4,6 +4,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   BookOpenText,
   ChevronRight,
+  CloudDownload,
+  CloudOff,
   Copy,
   Download,
   ExternalLink,
@@ -29,6 +31,7 @@ import { formatBytes, formatRelative } from '@/shared/lib/format'
 import { copyText } from '@/shared/client/clipboard'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '../client/upload'
 import { prunePdfPreviews } from '../client/preview'
+import { makePdfOffline, pruneOfflineFiles, unpinPdf, useOfflineUsage, usePinnedPdfs } from '@/features/pdf/client/offline'
 import { filesAt, UNLINKED, type FileItem } from '../folders'
 import type { FileEntry, SearchIndexInfo } from '../types'
 import { FilePreview } from './FilePreview'
@@ -50,7 +53,7 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const qc = useQueryClient()
   const toast = useToast()
   const input = useRef<HTMLInputElement>(null)
-  const { data: files = [], isLoading, isSuccess } = useFiles()
+  const { data: files = [], isLoading, isSuccess, isFetchedAfterMount } = useFiles()
   const { notes } = useNotes()
   const { data: folders = [], isLoading: foldersLoading } = useFolders()
   const [uploading, setUploading] = useState(false)
@@ -63,9 +66,15 @@ export function FilesView({ folder: level }: { folder?: string }) {
   const content = useMemo(() => filesAt(files, notes, folders, level ?? null), [files, notes, folders, level])
   const path = folder ? folderPath(folders, folder.id) : []
 
+  // Offline-Speicher aufräumen: Vorschauen, Dateien, die es nicht mehr gibt, und PDFs über dem Budget – Letzteres erst
+  // mit der frisch geladenen Liste (die zwischengespeicherte kennt neue Dateien womöglich noch nicht)
+  const [pruned, setPruned] = useState(0)
   useEffect(() => {
-    if (isSuccess) void prunePdfPreviews(files.map((f) => f.id))
-  }, [isSuccess, files])
+    if (!isSuccess) return
+    const offline = isFetchedAfterMount ? pruneOfflineFiles(files) : null
+    void Promise.all([prunePdfPreviews(files.map((f) => f.id)), offline]).then(() => setPruned((n) => n + 1))
+  }, [isSuccess, isFetchedAfterMount, files])
+  const usage = useOfflineUsage(pruned)
 
   async function upload(list: File[]) {
     setUploading(true)
@@ -117,7 +126,7 @@ export function FilesView({ folder: level }: { folder?: string }) {
 
   const total = files.reduce((s, f) => s + f.size, 0)
   const subtitle = !level
-    ? `${filesLabel(files.length)} · ${formatBytes(total)}`
+    ? `${filesLabel(files.length)} · ${formatBytes(total)}${usage ? ` · offline gespeichert: ${formatBytes(usage)}` : ''}`
     : `${filesLabel(content.files.length)}${content.folders.length ? ` · ${content.folders.length} Unterordner` : ''}`
   const empty = content.folders.length === 0 && content.files.length === 0 && (level || content.unlinked === 0)
 
@@ -282,6 +291,23 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
   const openContextMenu = useContextMenu()
   const { file: f, notes } = item
   const url = `/api/attachments/${f.id}`
+  const pdf = f.mime === 'application/pdf'
+  const offline = usePinnedPdfs().has(f.filename.toLowerCase())
+
+  /** „Offline verfügbar“: in den Offline-Speicher laden und dort halten – oder die Markierung aufheben */
+  async function toggleOffline() {
+    if (offline) {
+      unpinPdf(f.filename)
+      toast.show(`„${f.filename}“ wird nicht mehr offline gehalten.`)
+      return
+    }
+    try {
+      await makePdfOffline(f.filename)
+      toast.success(`„${f.filename}“ ist offline verfügbar.`)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
 
   async function copyEmbed() {
     if (await copyText(attachmentMarkdown(f))) toast.success('In die Zwischenablage kopiert.')
@@ -315,6 +341,11 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
             {notes.length > 0 ? (
               <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: notes[0].id })}>
                 Zur Notiz
+              </MenuItem>
+            ) : null}
+            {pdf ? (
+              <MenuItem icon={offline ? <CloudOff /> : <CloudDownload />} onSelect={() => void toggleOffline()}>
+                {offline ? 'Nicht mehr offline halten' : 'Offline verfügbar machen'}
               </MenuItem>
             ) : null}
             {f.search && f.search.state !== 'pending' ? (
@@ -356,8 +387,13 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
         <p className="truncate text-sm font-medium" title={f.filename}>
           {f.filename}
         </p>
-        <p className="text-xs text-faint">
+        <p className="flex items-center gap-1.5 text-xs text-faint">
           {formatBytes(f.size)} · {formatRelative(f.createdAt)}
+          {offline ? (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-accent-soft px-1.5 font-medium text-accent-text" data-testid="file-offline">
+              <CloudDownload className="size-3" /> offline
+            </span>
+          ) : null}
         </p>
         {f.search ? (
           <p className="truncate text-xs text-faint" title={searchLabel(f.search)} data-testid="file-search-state">
@@ -386,7 +422,7 @@ function FileCard({ item, onDelete, onReindex }: { item: FileItem; onDelete: () 
           >
             <Copy className="size-4" />
           </Button>
-          {f.mime === 'application/pdf' ? (
+          {pdf ? (
             <Button size="icon-sm" variant="ghost" title="Im PDF-Viewer öffnen" aria-label="Im PDF-Viewer öffnen" onClick={() => app.openPdf(f.filename)}>
               <BookOpenText className="size-4" />
             </Button>

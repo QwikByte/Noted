@@ -28,8 +28,15 @@ export const VIEWER_OFFLINE = 'Der PDF-Viewer ist offline noch nicht bereit. Öf
 
 const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
-/** Ganze Datei laden (statt Teilbereichen) – so landet sie im Offline-Cache des Service Workers */
-export async function fetchPdf(file: string, signal?: AbortSignal): Promise<Uint8Array> {
+/**
+ * Ganze Datei laden (statt Teilbereichen) – so landet sie im Offline-Cache des Service Workers. `onProgress` meldet
+ * den Fortschritt, `total` ist null, wenn der Server die Größe nicht nennt.
+ */
+export async function fetchPdf(
+  file: string,
+  signal?: AbortSignal,
+  onProgress?: (loaded: number, total: number | null) => void,
+): Promise<Uint8Array> {
   let res: Response
   try {
     res = await fetch(defaultFileUrl(file), { credentials: 'same-origin', signal })
@@ -40,7 +47,25 @@ export async function fetchPdf(file: string, signal?: AbortSignal): Promise<Uint
   // Offline und nicht im Cache des Service Workers
   if (res.headers.get('x-noted-offline') === '1') throw new Error(FILE_OFFLINE)
   if (!res.ok) throw new Error(res.status === 404 ? 'Die Datei wurde nicht gefunden.' : `Die Datei konnte nicht geladen werden (${res.status}).`)
-  return new Uint8Array(await res.arrayBuffer())
+  if (!onProgress || !res.body) return new Uint8Array(await res.arrayBuffer())
+  const total = Number(res.headers.get('content-length')) || null
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    loaded += value.length
+    onProgress(loaded, total)
+  }
+  const data = new Uint8Array(loaded)
+  let offset = 0
+  for (const chunk of chunks) {
+    data.set(chunk, offset)
+    offset += chunk.length
+  }
+  return data
 }
 
 /**

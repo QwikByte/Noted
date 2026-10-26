@@ -1,6 +1,7 @@
 'use client'
-// Vorschauen von PDFs, einmal gerendert und im Browser aufbewahrt: die erste Seite im Bereich „Dateien“ und eingebettete
-// Seiten in Notizen und Karteikarten (![[Skript.pdf#page=3]])
+// Vorschauen, einmal gerendert und im Browser aufbewahrt: im Bereich „Dateien“ die erste Seite von PDFs und kleine
+// Bilder (statt der Bilder in voller Größe im Offline-Speicher), eingebettete PDF-Seiten in Notizen und Karteikarten
+// (![[Skript.pdf#page=3]])
 import { useEffect, useState } from 'react'
 import { fetchPdf, renderPdfData, renderPdfDataPages } from '@/features/pdf/client/pdfjs'
 import { inTurns } from '@/shared/lib/in-turns'
@@ -12,6 +13,8 @@ const CACHE = 'noted-data-previews'
 const WIDTH = 640
 /** Breite eingebetteter Seiten – Schrift auf Folien und Formeln soll lesbar bleiben */
 const PAGE_WIDTH = 1200
+/** Breite der Vorschau eines Bilds – die Karte ist klein, auch auf hochauflösenden Bildschirmen scharf genug */
+const IMAGE_WIDTH = 480
 /** PDFs, die gleichzeitig geladen und gerendert werden – sonst holt ein voller Ordner alle Dateien auf einmal */
 const PARALLEL = 2
 
@@ -76,8 +79,33 @@ function remembered(key: string, make: () => Promise<Blob>): Promise<string | nu
   return p
 }
 
-const preview = (file: Pick<Attachment, 'id' | 'filename'>) =>
+const pdfPreview = (file: Pick<Attachment, 'id' | 'filename'>) =>
   remembered(cacheKey(file.id), async () => (await inTurn(async () => renderPdfData(await loadPdf(file), 1, WIDTH, 'image/jpeg'))).blob)
+
+/** Verkleinertes Bild – geladen mit „Range“, damit der Service Worker das Original nicht offline ablegt */
+async function renderImage(file: Pick<Attachment, 'id' | 'mime'>): Promise<Blob> {
+  const res = await fetch(`/api/attachments/${file.id}`, { credentials: 'same-origin', headers: { range: 'bytes=0-' } })
+  if (!res.ok) throw new Error(`Bild nicht geladen (${res.status})`)
+  const blob = await res.blob()
+  // Vektorgrafik: keine Pixel zum Verkleinern
+  if (file.mime === 'image/svg+xml') return blob
+  const bitmap = await createImageBitmap(blob)
+  const scale = Math.min(1, IMAGE_WIDTH / bitmap.width)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  const ctx = canvas.getContext('2d')!
+  // Durchsichtige Stellen weiß statt schwarz (JPEG kennt keine Transparenz)
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  const small = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8))
+  if (!small) throw new Error('Vorschau nicht erzeugt')
+  return small
+}
+
+const imagePreview = (file: Pick<Attachment, 'id' | 'mime'>) => remembered(cacheKey(file.id), () => inTurn(() => renderImage(file)))
 
 type PageRequest = { resolve: (blob: Blob) => void; reject: (err: unknown) => void }
 /** Seiten, die gerade aus demselben PDF angefordert werden – die Datei wird für alle zusammen einmal geladen und geöffnet */
@@ -151,13 +179,13 @@ export async function renderPdfPageImages(root: HTMLElement, files: () => Promis
 }
 
 /**
- * Bildadresse der ersten Seite – sobald `ref` in die Nähe des sichtbaren Bereichs kommt; null, solange sie fehlt oder
- * sich nicht erzeugen lässt.
+ * Bildadresse der Vorschau (erste Seite eines PDFs, verkleinertes Bild) – sobald `ref` in die Nähe des sichtbaren
+ * Bereichs kommt; null, solange sie fehlt oder sich nicht erzeugen lässt.
  */
-export function usePdfPreview(ref: React.RefObject<Element | null>, file: Pick<Attachment, 'id' | 'filename'>): string | null {
+export function useFilePreview(ref: React.RefObject<Element | null>, file: Pick<Attachment, 'id' | 'filename' | 'mime'>): string | null {
   const [visible, setVisible] = useState(false)
   const [url, setUrl] = useState<string | null>(() => ready.get(cacheKey(file.id)) ?? null)
-  const { id, filename } = file
+  const { id, filename, mime } = file
 
   useEffect(() => {
     const el = ref.current
@@ -175,13 +203,14 @@ export function usePdfPreview(ref: React.RefObject<Element | null>, file: Pick<A
   useEffect(() => {
     if (!visible || url) return
     let active = true
-    void preview({ id, filename }).then((u) => {
+    const make = mime === 'application/pdf' ? pdfPreview({ id, filename }) : imagePreview({ id, mime })
+    void make.then((u) => {
       if (active) setUrl(u)
     })
     return () => {
       active = false
     }
-  }, [visible, url, id, filename])
+  }, [visible, url, id, filename, mime])
 
   return url
 }

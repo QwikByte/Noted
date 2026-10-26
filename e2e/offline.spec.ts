@@ -259,3 +259,129 @@ test('PDF-Viewer nach einem App-Update: offline geht ein früher geöffnetes PDF
   await context.setOffline(false)
   for (const url of cleanup) await page.request.delete(url, { headers })
 })
+
+test('PDFs offline verfügbar halten: markieren, ohne Netz öffnen, Löschen räumt den Speicher auf', async ({ page, context }) => {
+  await page.goto('/login')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
+  const headers = await apiHeaders(page)
+  const ids: Record<string, string> = {}
+  for (const [name, text] of [
+    ['Klausur Offline.pdf', 'Prüfungsstoff'],
+    ['Weg Offline.pdf', 'Wird gelöscht'],
+  ]) {
+    const up = await page.request.post('/api/attachments', {
+      headers,
+      multipart: { file: { name, mimeType: 'application/pdf', buffer: makePdf([[text]]) } },
+    })
+    expect(up.status()).toBe(201)
+    ids[name] = (await up.json()).attachment.id
+  }
+  const cached = () =>
+    page.evaluate(async () => (await (await caches.open('noted-data')).keys()).map((r) => decodeURIComponent(new URL(r.url).pathname)))
+
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true))
+  await page.goto('/?v=files&in=unlinked')
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller)
+  // Im Leerlauf lädt die App den PDF-Viewer vorab
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('noted:pdfWarm')), { timeout: 20_000 }).toBeTruthy()
+
+  // Vor der Bahnfahrt: das Skript für die Klausur offline verfügbar machen, ohne es zu öffnen
+  const card = (name: string) => page.getByTestId('file-card').filter({ hasText: name })
+  await card('Klausur Offline.pdf').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Offline verfügbar machen' }).click()
+  await expect(page.getByText('„Klausur Offline.pdf“ ist offline verfügbar.')).toBeVisible()
+  await expect(card('Klausur Offline.pdf').getByTestId('file-offline')).toBeVisible()
+  await expect(card('Weg Offline.pdf').getByTestId('file-offline')).toHaveCount(0)
+  await expect.poll(cached).toContain('/api/files/Klausur Offline.pdf')
+  // Oben in „Dateien“ steht, wie viel offline gespeichert ist
+  await page.getByRole('main').getByRole('navigation', { name: 'Ordnerpfad' }).getByRole('button', { name: 'Dateien' }).click()
+  await expect(page.getByRole('heading', { level: 1 }).locator('..')).toContainText('offline gespeichert:')
+  await page.goto('/?v=files&in=unlinked')
+
+  // Im Zug ohne Netz: Die App startet aus dem Cache, das markierte PDF geht auf
+  await context.setOffline(true)
+  await page.reload()
+  await expect(card('Klausur Offline.pdf').getByTestId('file-offline')).toBeVisible()
+  await card('Klausur Offline.pdf').getByRole('button', { name: 'Im PDF-Viewer öffnen' }).click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.locator('.textLayer').first()).toContainText('Prüfungsstoff')
+  // Auch im Menü des Viewers steht, dass es offline bleibt
+  await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Nicht mehr offline halten' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await panel.getByRole('button', { name: 'PDF schließen' }).click()
+  await context.setOffline(false)
+
+  // Markierung aufheben: Die Datei bleibt im Speicher, bis das Budget sie verdrängt
+  await card('Klausur Offline.pdf').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Nicht mehr offline halten' }).click()
+  await expect(card('Klausur Offline.pdf').getByTestId('file-offline')).toHaveCount(0)
+  expect(await page.evaluate(() => localStorage.getItem('noted:pdf:offline'))).toBe('[]')
+  expect(await cached()).toContain('/api/files/Klausur Offline.pdf')
+
+  // Eine gelöschte Datei verschwindet auch aus dem Offline-Speicher – offline zeigte der Viewer sonst womöglich eine
+  // alte Datei gleichen Namens
+  await card('Weg Offline.pdf').getByRole('button', { name: 'Im PDF-Viewer öffnen' }).click()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await panel.getByRole('button', { name: 'PDF schließen' }).click()
+  await expect.poll(cached).toContain('/api/files/Weg Offline.pdf')
+  await card('Weg Offline.pdf').getByRole('button', { name: 'Löschen' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Löschen' }).click()
+  await expect(card('Weg Offline.pdf')).toHaveCount(0)
+  await expect
+    .poll(async () => (await cached()).filter((p) => p.includes('Weg Offline.pdf') || p.includes(ids['Weg Offline.pdf'])))
+    .toEqual([])
+  expect(await cached()).toContain('/api/files/Klausur Offline.pdf')
+
+  await page.request.delete(`/api/attachments/${ids['Klausur Offline.pdf']}`, { headers })
+})
+
+test('Großes Skript: Der Viewer zeigt, wie weit es geladen ist', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
+  const headers = await apiHeaders(page)
+  // Rund 400 KB – bei gedrosselter Verbindung einige Sekunden
+  const lines = (page: number) =>
+    Array.from({ length: 30 }, (_, j) => `Seite ${page} Zeile ${j + 1}: Die innere Energie eines abgeschlossenen Systems bleibt erhalten.`)
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: {
+      file: { name: 'Skript Gross.pdf', mimeType: 'application/pdf', buffer: makePdf(Array.from({ length: 120 }, (_, i) => lines(i + 1))) },
+    },
+  })
+  expect(up.status()).toBe(201)
+  const id = (await up.json()).attachment.id as string
+
+  await page.goto('/?v=files&in=unlinked')
+  // Ohne Service Worker, damit die Drosselung des Browsers auch für die Datei gilt
+  await page.evaluate(async () => {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister()
+  })
+  await page.reload()
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Network.enable')
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 50,
+    downloadThroughput: 100 * 1024,
+    uploadThroughput: 100 * 1024,
+  })
+  await page.getByTestId('file-card').filter({ hasText: 'Skript Gross.pdf' }).getByRole('button', { name: 'Im PDF-Viewer öffnen' }).click()
+  const panel = page.getByTestId('pdf-panel')
+  const progress = panel.getByRole('progressbar', { name: 'PDF wird geladen' })
+  await expect(progress).toBeVisible({ timeout: 15_000 })
+  await expect.poll(async () => Number(await progress.getAttribute('aria-valuenow'))).toBeGreaterThan(0)
+  await expect(panel.getByTestId('pdf-progress')).toContainText('%')
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByTestId('pdf-progress')).toHaveCount(0)
+
+  await page.request.delete(`/api/attachments/${id}`, { headers })
+})

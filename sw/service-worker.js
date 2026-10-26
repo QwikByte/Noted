@@ -144,6 +144,9 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // Downloads nicht noch einmal ablegen – die Datei liegt dort schon unter ihrer Adresse, falls sie geöffnet wurde
+  if (url.searchParams.get('download') === '1') return
+
   // Anhänge (Bilder usw.) – keine Teilbereiche (Range) cachen. Offline und nicht im Cache: 503 mit Kennzeichen, damit
   // die App sagen kann, dass die Datei erst einmal mit Verbindung geöffnet werden muss
   if (FILE_ROUTES.some((r) => r.test(url.pathname)) && !request.headers.has('range')) {

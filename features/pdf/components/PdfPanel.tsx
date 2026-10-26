@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   CaseSensitive,
+  CloudDownload,
+  CloudOff,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -47,7 +49,7 @@ import { cn } from '@/shared/ui/cn'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { getActiveEditor, insertionToMarkdown, pdfPageLink, type Insertion } from '@/features/notes/client/active-editor'
 import { copyText } from '@/shared/client/clipboard'
-import { attachmentsKey, useAttachments } from '@/features/attachments/client/queries'
+import { attachmentsKey, attachmentsQuery, useAttachments } from '@/features/attachments/client/queries'
 import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { errorMessage } from '@/shared/client/api'
 import { usePref } from '@/shared/client/prefs'
@@ -74,6 +76,7 @@ import AnnotationList from './AnnotationList'
 import PdfSidebar, { type SidebarTab } from './PdfSidebar'
 import PdfReferences from './PdfReferences'
 import { parseViews, rotateRight, withView, type PdfView, type Rotation } from '../positions'
+import { makePdfOffline, pruneOfflineFiles, rememberOpened, unpinPdf, usePinnedPdfs } from '../client/offline'
 
 // Zuletzt benutzte Ansicht je PDF merken: Seite, Zoom, Drehung, Folienmodus (positions.ts)
 const POS_KEY = 'noted:pdfpos'
@@ -170,6 +173,10 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   const findButtonRef = useRef<HTMLButtonElement>(null)
 
   const [status, setStatus] = useState<{ state: 'loading' | 'ready' | 'error'; message?: string }>({ state: 'loading' })
+  // Ladefortschritt großer Skripte – null ohne bekannte Größe (dann bleibt es beim Kreisel)
+  const [progress, setProgress] = useState<number | null>(null)
+  const pinnedPdfs = usePinnedPdfs()
+  const offline = pinnedPdfs.has(fileName)
   const [numPages, setNumPages] = useState(0)
   const [current, setCurrent] = useState(1)
   const [pageInput, setPageInput] = useState('1')
@@ -259,8 +266,15 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     ;(async () => {
       try {
         const { pdfjs, viewer: V } = await loadPdfjs()
-        const data = await fetchPdf(file, ac.signal)
+        setProgress(null)
+        rememberOpened(file.split('/').pop()!)
+        const data = await fetchPdf(file, ac.signal, (loaded, total) => {
+          if (total && !cancelled) setProgress(Math.min(1, loaded / total))
+        })
         if (cancelled) return
+        // Offline-Speicher im Budget halten – mit frischer Dateiliste (eine ältere kennt eine gerade erst hochgeladene
+        // Datei womöglich noch nicht und hielte sie für gelöscht)
+        if (navigator.onLine) void qc.fetchQuery({ ...attachmentsQuery, staleTime: 0 }).then(pruneOfflineFiles, () => {})
         task = pdfjs.getDocument({ data, ...DOCUMENT_OPTIONS })
         const doc = await task.promise
         if (cancelled) return
@@ -950,8 +964,27 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       <MenuItem icon={<FileDown />} onSelect={() => void downloadWithAnnotations()} disabled={annotations.length === 0}>
         Mit Markierungen herunterladen
       </MenuItem>
+      <MenuItem icon={offline ? <CloudOff /> : <CloudDownload />} onSelect={() => void toggleOffline()}>
+        {offline ? 'Nicht mehr offline halten' : 'Offline verfügbar machen'}
+      </MenuItem>
     </>
   )
+
+  /** „Offline verfügbar“: Datei in den Offline-Speicher laden und dort halten – oder die Markierung aufheben */
+  async function toggleOffline() {
+    const name = file.split('/').pop()!
+    if (offline) {
+      unpinPdf(name)
+      toast.show(`„${name}“ wird nicht mehr offline gehalten.`)
+      return
+    }
+    try {
+      await makePdfOffline(name)
+      toast.success(`„${name}“ ist offline verfügbar.`)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
 
   async function downloadWithAnnotations() {
     toast.show('PDF mit Markierungen wird erstellt …')
@@ -1346,7 +1379,23 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         {status.state !== 'ready' ? (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted">
             {status.state === 'loading' ? (
-              <Loader2 className="size-6 animate-spin" />
+              progress !== null ? (
+                <div className="w-full max-w-56 space-y-2" data-testid="pdf-progress">
+                  <div
+                    className="h-1.5 overflow-hidden rounded-full bg-subtle"
+                    role="progressbar"
+                    aria-label="PDF wird geladen"
+                    aria-valuenow={Math.round(progress * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div className="h-full bg-accent transition-[width]" style={{ width: `${progress * 100}%` }} />
+                  </div>
+                  <p className="tabular-nums">{Math.round(progress * 100)} %</p>
+                </div>
+              ) : (
+                <Loader2 className="size-6 animate-spin" />
+              )
             ) : (
               <div className="space-y-3">
                 <FileText className="mx-auto size-8 text-faint" />
