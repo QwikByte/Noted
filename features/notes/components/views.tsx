@@ -32,13 +32,14 @@ import { api, NetworkError } from '@/shared/client/api'
 import { keys, useFolders, useNotes } from '../client/queries'
 import { startDrag, useDraggedIds, useDropTarget } from '../client/drag'
 import { NoteSelectionContext, useNoteSelection, useNoteSelectionContext } from '../client/selection'
-import { folderPath, sortByName } from '../tree'
+import { folderPath, sortByName, sortNotes } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
 import { parseSearch } from '@/shared/lib/search-query'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
 import { NoteSelectionBar, NoteSelectionMenuItems, SelectButton, SelectionCheckbox } from './SelectionBar'
+import { SortMenu, useNoteOrder } from './SortMenu'
 import { NavLink } from '@/features/workspace/components/NavLink'
 import { useVaultInfo, useVaultState } from '@/features/vault/client/vault'
 import { requestVault } from '@/features/vault/client/vault-ui'
@@ -263,8 +264,13 @@ export function FolderView({ id }: { id: string }) {
   const dragged = useDraggedIds()
   const folder = folders.find((f) => f.id === id)
   const path = folderPath(folders, id)
+  const [sortOrder, setSortOrder] = useNoteOrder('folder')
+  // Unterordner bleiben alphabetisch, nur die Notizen folgen der gewählten Reihenfolge
   const children = sortByName(folders.filter((f) => f.parentId === id))
-  const items = sortByName(notes.filter((n) => n.folderId === id))
+  const items = sortNotes(
+    notes.filter((n) => n.folderId === id),
+    sortOrder,
+  )
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
   // Nur die Notizen sind auswählbar, nicht die Karten der Unterordner
@@ -337,6 +343,7 @@ export function FolderView({ id }: { id: string }) {
           }
           actions={
             <>
+              {items.length > 1 ? <SortMenu order={sortOrder} onChange={setSortOrder} /> : null}
               <SelectButton selection={selection} />
               <Button variant="primary" size="sm" onClick={() => app.openNewNote({ folderId: id })} className="max-sm:hidden">
                 <Plus className="size-4" /> Notiz
@@ -429,9 +436,11 @@ export function FolderView({ id }: { id: string }) {
 export function TagView({ tag }: { tag: string }) {
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
-  const items = notes
-    .filter((n) => n.tags.some((t) => t === tag || t.startsWith(tag + '/')))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+  const [sortOrder, setSortOrder] = useNoteOrder('tag')
+  const items = sortNotes(
+    notes.filter((n) => n.tags.some((t) => t === tag || t.startsWith(tag + '/'))),
+    sortOrder,
+  )
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
   const selection = useNoteSelection({ order, resetKey: `tag:${tag}`, root })
@@ -441,7 +450,12 @@ export function TagView({ tag }: { tag: string }) {
         <PageHeader
           title={`#${tag}`}
           subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`}
-          actions={<SelectButton selection={selection} />}
+          actions={
+            <>
+              {items.length > 1 ? <SortMenu order={sortOrder} onChange={setSortOrder} /> : null}
+              <SelectButton selection={selection} />
+            </>
+          }
         />
         {items.length === 0 ? (
           <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />

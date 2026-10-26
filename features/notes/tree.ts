@@ -8,6 +8,35 @@ export function sortByName<T extends { name?: string; title?: string }>(items: T
   return items.slice().sort((a, b) => collator.compare(a.name ?? a.title ?? '', b.name ?? b.title ?? ''))
 }
 
+type NoteSort = 'name' | 'updated' | 'created'
+type SortDir = 'asc' | 'desc'
+/** Gewählte Reihenfolge einer Notizliste, so wie sie auf dem Gerät gespeichert wird, z. B. „updated:desc“ */
+export type NoteOrder = `${NoteSort}:${SortDir}`
+
+export const NOTE_ORDERS: readonly NoteOrder[] = [
+  'name:asc',
+  'name:desc',
+  'updated:desc',
+  'updated:asc',
+  'created:desc',
+  'created:asc',
+]
+
+/** Gespeicherte Reihenfolge prüfen – Unbekanntes (alter oder fremder Wert) ergibt den Standard */
+export function parseNoteOrder(value: string, fallback: NoteOrder): NoteOrder {
+  return NOTE_ORDERS.includes(value as NoteOrder) ? (value as NoteOrder) : fallback
+}
+
+/** Notizen nach Name („Übung 2“ vor „Übung 10“) oder Datum sortieren; bei gleichem Datum nach Name */
+export function sortNotes(notes: NoteSummary[], order: NoteOrder): NoteSummary[] {
+  const [sort, dir] = order.split(':') as [NoteSort, SortDir]
+  const sign = dir === 'asc' ? 1 : -1
+  const byName = (a: NoteSummary, b: NoteSummary) => collator.compare(a.title, b.title)
+  if (sort === 'name') return notes.slice().sort((a, b) => sign * byName(a, b))
+  const time = sort === 'updated' ? (n: NoteSummary) => n.updatedAt : (n: NoteSummary) => n.createdAt
+  return notes.slice().sort((a, b) => sign * (time(a) - time(b)) || byName(a, b))
+}
+
 export function buildTree(folders: Folder[], notes: NoteSummary[]) {
   const nodes = new Map<string, FolderNode>()
   for (const f of folders) nodes.set(f.id, { ...f, children: [], notes: [], depth: 0 })

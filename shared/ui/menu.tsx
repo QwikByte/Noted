@@ -1,6 +1,6 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Copy } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { cn } from './cn'
 import { useToast } from './toast'
 import { copyText } from '@/shared/client/clipboard'
@@ -15,7 +15,7 @@ type Placement = { up: boolean; style: React.CSSProperties }
 
 /** Pfeiltasten, Pos1 und Ende bewegen den Fokus durch die Einträge eines Menüs */
 function moveFocus(menu: HTMLElement, key: string): boolean {
-  const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled), a[href]')]
+  const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled), a[href]')]
   if (items.length === 0) return false
   const at = items.indexOf(document.activeElement as HTMLElement)
   const next =
@@ -177,6 +177,7 @@ export function MenuItem({
   danger,
   disabled,
   hint,
+  checked,
 }: {
   onSelect: () => void
   icon?: React.ReactNode
@@ -184,12 +185,15 @@ export function MenuItem({
   danger?: boolean
   disabled?: boolean
   hint?: string
+  /** Eintrag einer Auswahl, von der genau einer gilt (z. B. Sortierung) – mit Häkchen am aktiven */
+  checked?: boolean
 }) {
   const { close } = useContext(MenuContext)
   return (
     <button
       type="button"
-      role="menuitem"
+      role={checked === undefined ? 'menuitem' : 'menuitemradio'}
+      aria-checked={checked}
       disabled={disabled}
       onClick={() => {
         close()
@@ -203,6 +207,7 @@ export function MenuItem({
       {icon ? <span className="flex size-4 shrink-0 items-center justify-center text-muted [&>svg]:size-4">{icon}</span> : null}
       <span className="min-w-0 flex-1">{children}</span>
       {hint ? <span className="text-xs text-faint">{hint}</span> : null}
+      {checked ? <Check className="size-4 shrink-0 text-accent-text" /> : null}
     </button>
   )
 }

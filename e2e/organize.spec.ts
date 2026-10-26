@@ -269,6 +269,58 @@ test('Mehrfachauswahl: auswählen, gemeinsam ziehen, in den Papierkorb und zurü
   await mobileContext.close()
 })
 
+test('Sortierung: Ordner nach Name, Bearbeitung oder Erstellung – gemerkt, Auswahl folgt der Reihenfolge', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = (await (await page.request.post('/api/folders', { headers, data: { name: 'Sortierung' } })).json())
+    .folder as { id: string }
+  cleanup.unshift(`/api/folders/${folder.id}`)
+  const ids: Record<string, string> = {}
+  // Unterschiedliche Zeiten: erstellt in dieser Reihenfolge, zuletzt bearbeitet „Sort A“
+  for (const title of ['Sort B 2', 'Sort A', 'Sort B 10']) {
+    const data = { title, content: title, folderId: folder.id }
+    ids[title] = ((await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }).id
+    cleanup.unshift(`/api/notes/${ids[title]}?permanent=1`)
+    await page.waitForTimeout(20)
+  }
+  await page.request.put(`/api/notes/${ids['Sort A']}`, { headers, data: { content: 'Sort A bearbeitet' } })
+
+  await page.goto(`/?f=${folder.id}`)
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+  await expect.poll(titles).toEqual(['Sort A', 'Sort B 2', 'Sort B 10'])
+
+  const sort = page.getByRole('button', { name: /^Sortieren:/ })
+  await expect(sort).toHaveAccessibleName('Sortieren: Name, aufsteigend')
+  await sort.click()
+  await expect(page.getByRole('menuitemradio', { name: 'Name (A–Z)' })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('menuitemradio', { name: 'Zuletzt bearbeitet (neueste zuerst)' }).click()
+  await expect.poll(titles).toEqual(['Sort A', 'Sort B 10', 'Sort B 2'])
+  await shot(page, '93-sort')
+
+  // Mit der Tastatur: Pfeiltasten wandern durch die Einträge
+  await sort.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitemradio', { name: 'Zuletzt bearbeitet (neueste zuerst)' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('menuitemradio', { name: 'Name (A–Z)' })).toBeFocused()
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitemradio', { name: 'Erstellt (neueste zuerst)' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(sort).toBeFocused()
+  await expect.poll(titles).toEqual(['Sort B 10', 'Sort A', 'Sort B 2'])
+
+  // Gemerkt nach dem Neuladen
+  await page.reload()
+  await expect.poll(titles).toEqual(['Sort B 10', 'Sort A', 'Sort B 2'])
+  await expect(sort).toHaveAccessibleName('Sortieren: erstellt, neueste zuerst')
+
+  // Umschalt-Klick wählt den sichtbaren Bereich
+  const card = (title: string) => page.getByRole('main').getByRole('link', { name: new RegExp(`^${title}`) })
+  await card('Sort B 10').click({ modifiers: ['Control'] })
+  await card('Sort A').click({ modifiers: ['Shift'] })
+  await expect(page.getByText('2 ausgewählt')).toBeVisible()
+  await page.keyboard.press('Escape')
+})
+
 test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

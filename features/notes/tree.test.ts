@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canMoveTo, folderByPath } from './tree'
+import { canMoveTo, folderByPath, parseNoteOrder, sortNotes } from './tree'
 import type { Folder, NoteSummary } from './types'
 
 const folder = (id: string, parentId: string | null = null): Folder => ({
@@ -90,5 +90,38 @@ describe('Ordner zu einem Pfad', () => {
     expect(folderByPath(folders, ['Chemie'])).toBeNull()
     expect(folderByPath(folders, ['Wellen'])).toBeNull()
     expect(folderByPath(folders, ['Tresor'])).toBeNull()
+  })
+})
+
+describe('Sortierung der Notizlisten', () => {
+  const at = (title: string, createdAt: number, updatedAt: number) => ({ ...note(title, null), createdAt, updatedAt })
+  const notes = [at('Übung 10', 3, 30), at('Übung 2', 1, 50), at('Analysis', 2, 50), at('Ölpreis', 4, 10)]
+  const titles = (list: NoteSummary[]) => list.map((n) => n.title)
+
+  it('sortiert nach Name mit Zahlen und Umlauten wie im Deutschen', () => {
+    expect(titles(sortNotes(notes, 'name:asc'))).toEqual(['Analysis', 'Ölpreis', 'Übung 2', 'Übung 10'])
+    expect(titles(sortNotes(notes, 'name:desc'))).toEqual(['Übung 10', 'Übung 2', 'Ölpreis', 'Analysis'])
+  })
+
+  it('sortiert nach Bearbeitung und bei gleicher Zeit nach Name', () => {
+    expect(titles(sortNotes(notes, 'updated:desc'))).toEqual(['Analysis', 'Übung 2', 'Übung 10', 'Ölpreis'])
+    expect(titles(sortNotes(notes, 'updated:asc'))).toEqual(['Ölpreis', 'Übung 10', 'Analysis', 'Übung 2'])
+  })
+
+  it('sortiert nach Erstellung', () => {
+    expect(titles(sortNotes(notes, 'created:desc'))).toEqual(['Ölpreis', 'Übung 10', 'Analysis', 'Übung 2'])
+    expect(titles(sortNotes(notes, 'created:asc'))).toEqual(['Übung 2', 'Analysis', 'Übung 10', 'Ölpreis'])
+  })
+
+  it('lässt die Eingabe unverändert', () => {
+    const before = titles(notes)
+    sortNotes(notes, 'name:asc')
+    expect(titles(notes)).toEqual(before)
+  })
+
+  it('nimmt für unbekannte gespeicherte Werte den Standard', () => {
+    expect(parseNoteOrder('created:asc', 'name:asc')).toBe('created:asc')
+    expect(parseNoteOrder('größe:asc', 'name:asc')).toBe('name:asc')
+    expect(parseNoteOrder('', 'updated:desc')).toBe('updated:desc')
   })
 })
