@@ -3,6 +3,7 @@ import {
   annotationAt,
   annotationsMarkdown,
   cleanQuote,
+  highlightGeometry,
   joinSelection,
   mergeLineRects,
   sortAnnotations,
@@ -147,5 +148,21 @@ describe('Markierungen', () => {
         '',
       ].join('\n'),
     )
+  })
+})
+
+describe('Markierungen als PDF-Anmerkung', () => {
+  it('liefert Hülle, QuadPoints und Umrisse je Rechteck', () => {
+    const g = highlightGeometry([
+      [60, 755, 150, 785],
+      [60, 725, 180, 745],
+    ])
+    expect(g.rect).toEqual([60, 725, 180, 785])
+    // links oben, rechts oben, links unten, rechts unten
+    expect(g.quadPoints).toEqual([60, 785, 150, 785, 60, 755, 150, 755, 60, 745, 180, 745, 60, 725, 180, 725])
+    expect(g.outlines).toEqual([
+      [60, 755, 150, 755, 150, 785, 60, 785],
+      [60, 725, 180, 725, 180, 745, 60, 745],
+    ])
   })
 })

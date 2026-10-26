@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Copy,
   Download,
+  FileDown,
   FileText,
   Highlighter,
   ImageIcon,
@@ -46,6 +47,7 @@ import { errorMessage } from '@/shared/client/api'
 import { usePref } from '@/shared/client/prefs'
 import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, pdfErrorMessage, renderPdfPage } from '../client/pdfjs'
 import { pdfAnnotations, useAnnotations } from '../client/annotations'
+import { downloadAnnotatedPdf } from '../client/annotated-download'
 import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
 import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
@@ -728,8 +730,20 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       >
         Herunterladen
       </MenuItem>
+      <MenuItem icon={<FileDown />} onSelect={() => void downloadWithAnnotations()} disabled={annotations.length === 0}>
+        Mit Markierungen herunterladen
+      </MenuItem>
     </>
   )
+
+  async function downloadWithAnnotations() {
+    toast.show('PDF mit Markierungen wird erstellt …')
+    try {
+      await downloadAnnotatedPdf(file, annotations)
+    } catch (err) {
+      toast.error(`Das PDF mit Markierungen ließ sich nicht erstellen: ${errorMessage(err)}`)
+    }
+  }
 
   /** Ausgewählter Text: dieselben Aktionen wie die Leiste unter den Seiten */
   function selectionMenu(canMark: boolean) {

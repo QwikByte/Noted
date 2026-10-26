@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { strToU8, zipSync } from 'fflate'
@@ -1005,6 +1006,49 @@ test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite'
   await expect(card.getByTestId('file-search-state')).toHaveText('durchsuchbar')
   await card.getByRole('button', { name: 'Erneut indizieren' }).click()
   await expect(page.getByText('„Skript Optik.pdf“ ist durchsuchbar.')).toBeVisible()
+})
+
+test('PDF mit Markierungen herunterladen: echte Anmerkungen mit Kommentar, Original unverändert', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Wärmelehre'], ['Zweiter Hauptsatz', 'Die Entropie nimmt nie ab']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Export.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const now = Date.now()
+  const saved = await page.request.put(`/api/attachments/${att.id}/annotations`, {
+    headers,
+    data: {
+      annotations: [
+        { id: crypto.randomUUID(), page: 2, rects: [[60, 730, 300, 752]], quote: 'Die Entropie nimmt nie ab', comment: 'Klausurrelevant', color: 4, createdAt: now, updatedAt: now },
+      ],
+    },
+  })
+  expect(saved.ok()).toBe(true)
+  const note = await post(page, '/api/notes', { title: 'Export Mitschrift', content: 'Siehe [[Skript Export.pdf#page=2]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.page[data-page-number="2"] .pdf-annotation')).toHaveCount(1, { timeout: 15_000 })
+  await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('menuitem', { name: 'Mit Markierungen herunterladen' }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('Skript Export (mit Markierungen).pdf')
+  const file = await readFile((await download.path())!)
+  expect(file.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  expect(file.toString('latin1')).toContain('/Highlight')
+  expect(file.length).toBeGreaterThan(pdf.length)
+  // Auf dem Server liegt weiter das Original
+  const original = await page.request.get(`/api/attachments/${att.id}`)
+  expect(Buffer.from(await original.body()).equals(pdf)).toBe(true)
 })
 
 test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und als Zitat einfügen', async ({ page }) => {
