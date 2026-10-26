@@ -1520,6 +1520,90 @@ test('PDF-Seite als Bild in der Notiz: Breite, fehlende Seite bleibt Karte, im D
   await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
 })
 
+test('PDF-Ansicht: Folienmodus, Drehen mit Markierung, Nachtmodus – Zoom, Drehung und Seite je PDF gemerkt', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Folie eins'], ['Folie zwei', 'Die Entropie nimmt nie ab'], ['Folie drei']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Folien Ansicht.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const note = await post(page, '/api/notes', { title: 'Ansicht Mitschrift', content: '[[Folien Ansicht.pdf]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  const menu = async (name: string) => {
+    await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+    await page.getByRole('menuitem', { name }).click()
+  }
+  const pageNumber = panel.getByLabel('Seite', { exact: true })
+  const pages = panel.locator('.pdfViewer .page:visible')
+
+  // Folienmodus: genau eine Seite, → blättert weiter
+  await menu('Folienmodus')
+  await expect(pages).toHaveCount(1)
+  await panel.locator('.pdf-container').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(pageNumber).toHaveValue('2')
+  await expect(pages).toHaveCount(1)
+  await shot(page, '98-pdf-slides')
+  await menu('Fortlaufend scrollen')
+  await expect(pages).toHaveCount(3)
+
+  // Drehen: Die Markierung bleibt auf dem markierten Text
+  const span = panel.locator('.page[data-page-number="2"] .textLayer span', { hasText: 'Die Entropie nimmt nie ab' })
+  await span.scrollIntoViewIfNeeded()
+  const b = (await span.boundingBox())!
+  await page.mouse.move(b.x + 1, b.y + b.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width - 1, b.y + b.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await panel.getByTestId('pdf-selection').getByRole('button', { name: 'Markieren' }).click()
+  const mark = panel.locator('.page[data-page-number="2"] .pdf-annotation')
+  await expect(mark).toHaveCount(1)
+  await menu('Nach rechts drehen')
+  const inside = async () => {
+    const m = await mark.boundingBox()
+    const t = await span.boundingBox()
+    if (!m || !t) return false
+    const tol = 4
+    return m.x >= t.x - tol && m.y >= t.y - tol && m.x + m.width <= t.x + t.width + tol && m.y + m.height <= t.y + t.height + tol
+  }
+  await expect.poll(inside).toBe(true)
+  // Quer: die Seite ist jetzt breiter als hoch
+  const landscape = async () => {
+    const box = (await panel.locator('.page[data-page-number="1"]').boundingBox())!
+    return box.width > box.height
+  }
+  await expect.poll(landscape).toBe(true)
+
+  // Nachtmodus und Zoom
+  await menu('Nachtmodus')
+  await expect(panel.locator('.pdf-container')).toHaveClass(/pdf-night/)
+  await panel.locator('.pdf-container').focus()
+  await page.keyboard.press('+')
+  await page.keyboard.press('+')
+  const width = async () => Math.round((await panel.locator('.page[data-page-number="1"]').boundingBox())!.width)
+  await expect.poll(width).toBeGreaterThan(0)
+  const zoomed = await width()
+
+  // Nach dem Neuladen: dieselbe Ansicht
+  await page.reload()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.locator('.pdf-container')).toHaveClass(/pdf-night/)
+  await expect.poll(landscape).toBe(true)
+  await expect.poll(width).toBe(zoomed)
+  await expect(pageNumber).toHaveValue('2')
+  await menu('Nachtmodus ausschalten')
+  await expect(panel.locator('.pdf-container')).not.toHaveClass(/pdf-night/)
+})
+
 test('FSRS-Parameter aus dem Lernverlauf optimieren und zurücksetzen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'FSRS-Optimierung', scheduler: 'fsrs' }, 'deck')

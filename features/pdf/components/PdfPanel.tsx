@@ -21,11 +21,14 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
+  Moon,
   MoreVertical,
   MoveHorizontal,
   NotebookText,
   PanelLeft,
+  Presentation,
   Quote,
+  RotateCw,
   Search,
   Trash2,
   Upload,
@@ -70,27 +73,26 @@ import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
 import PdfSidebar, { type SidebarTab } from './PdfSidebar'
 import PdfReferences from './PdfReferences'
+import { parseViews, rotateRight, withView, type PdfView, type Rotation } from '../positions'
 
-// Zuletzt gelesene Seite je PDF merken
+// Zuletzt benutzte Ansicht je PDF merken: Seite, Zoom, Drehung, Folienmodus (positions.ts)
 const POS_KEY = 'noted:pdfpos'
-function loadPositions(): Record<string, number> {
+function loadViews(): Record<string, PdfView> {
   try {
-    return JSON.parse(localStorage.getItem(POS_KEY) ?? '{}')
+    return parseViews(localStorage.getItem(POS_KEY))
   } catch {
     return {}
   }
 }
-function savePosition(file: string, page: number) {
+function saveView(file: string, patch: Partial<PdfView>) {
   try {
-    const all = loadPositions()
-    delete all[file]
-    all[file] = page
-    const entries = Object.entries(all).slice(-50)
-    localStorage.setItem(POS_KEY, JSON.stringify(Object.fromEntries(entries)))
+    localStorage.setItem(POS_KEY, JSON.stringify(withView(loadViews(), file, patch)))
   } catch {
     /* egal */
   }
 }
+/** Mindestweg (px) eines Wischs, der im Folienmodus blättert */
+const SLIDE_SWIPE = 50
 
 const AUTO_SCALES = new Set(['page-width', 'page-fit', 'auto'])
 const NO_FIND_OPTIONS = { caseSensitive: false, entireWord: false }
@@ -178,6 +180,15 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   // page: erste Seite der Auswahl (für Seitenlinks), parts: je Seite Text und Rechtecke
   const [selection, setSelection] = useState<{ text: string; page: number; parts: SelectionPart[] } | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  // Folienmodus: eine Seite füllt die Fläche, Wischen oder Pfeiltasten blättern
+  const [slides, setSlides] = useState(false)
+  const slidesRef = useRef(false)
+  useEffect(() => {
+    slidesRef.current = slides
+  }, [slides])
+  // Ansicht, mit der das PDF zuletzt geschlossen wurde – beim Laden angewandt
+  const initialView = useRef<PdfView | null>(null)
+  const [night, setNight] = usePref<'1' | '0'>('noted:pdf:night', '0')
   // Rückverweise: Notizen, die dieses PDF bzw. die Seite zitieren – rechts statt der Anmerkungen
   const [notesOpen, setNotesOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
@@ -231,7 +242,10 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     let task: PDFDocumentLoadingTask | null = null
     // Erst setDocument(null) entfernt, was pdf.js an Listenern und Seiten festhält – sonst bliebe jedes geöffnete PDF
     let opened: { viewer: PDFViewer; linkService: PDFLinkService } | null = null
-    pendingPage.current = page ?? loadPositions()[file] ?? 1
+    const stored = loadViews()[file] ?? null
+    initialView.current = stored
+    pendingPage.current = page ?? stored?.page ?? 1
+    setSlides(stored?.mode === 'slides')
     setStatus({ state: 'loading' })
     setSelection(null)
     setActiveId(null)
@@ -281,7 +295,10 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         }
         linkService.setHistory(linkHistory as unknown as Parameters<PDFLinkService['setHistory']>[0])
         eventBus.on('pagesinit', () => {
-          viewer.currentScaleValue = 'page-width'
+          const initial = initialView.current
+          if (initial?.rotation) viewer.pagesRotation = initial.rotation
+          if (initial?.mode === 'slides') viewer.scrollMode = V.ScrollMode.PAGE
+          viewer.currentScaleValue = initial?.scale ?? (initial?.mode === 'slides' ? 'page-fit' : 'page-width')
           const target = pendingPage.current
           pendingPage.current = null
           if (target && target > 1) viewer.currentPageNumber = Math.min(target, viewer.pagesCount)
@@ -305,7 +322,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         eventBus.on('pagechanging', (e: { pageNumber: number }) => {
           setCurrent(e.pageNumber)
           setPageInput(pageLabel(e.pageNumber, labelsRef.current))
-          savePosition(file, e.pageNumber)
+          saveView(file, { page: e.pageNumber })
         })
         eventBus.on('updateviewarea', (e: { location: ViewLocation }) => {
           const { pageNumber, left, top, scale } = e.location
@@ -314,7 +331,10 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         eventBus.on('scalechanging', (e: { scale: number }) => {
           setScale(e.scale)
           requestAnimationFrame(drawAll)
+          if (viewer.pagesCount) saveView(file, { scale: viewer.currentScaleValue })
         })
+        // Markierungen liegen in PDF-Koordinaten – nach dem Drehen an der neuen Stelle zeichnen
+        eventBus.on('rotationchanging', () => requestAnimationFrame(drawAll))
         eventBus.on('pagerendered', (e: { pageNumber: number }) => drawPage(e.pageNumber))
         eventBus.on('textlayerrendered', (e: { pageNumber: number }) => drawPage(e.pageNumber))
         eventBus.on('updatefindmatchescount', (e: { matchesCount: Matches }) => setMatches(e.matchesCount))
@@ -429,11 +449,17 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       viewerRef.current.updateScale({ steps: e.deltaY < 0 ? 1 : -1, origin: [e.clientX, e.clientY], drawingDelay: 300 })
     }
     let pinch: { dist: number; applied: number } | null = null
+    // Im Folienmodus: waagerecht wischen blättert – nicht während des Zoomens und nicht beim Markieren von Text
+    let swipe: { x: number; y: number } | null = null
     const distance = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) pinch = { dist: distance(e.touches), applied: 1 }
+      if (e.touches.length === 2) {
+        pinch = { dist: distance(e.touches), applied: 1 }
+        swipe = null
+      } else if (e.touches.length === 1 && slidesRef.current) swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }
     }
     const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 1) swipe = null
       if (!pinch || e.touches.length !== 2 || !viewerRef.current) return
       e.preventDefault()
       const ratio = distance(e.touches) / pinch.dist
@@ -447,6 +473,16 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     }
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) pinch = null
+      const start = swipe
+      if (!start || e.touches.length > 0) return
+      swipe = null
+      const t = e.changedTouches[0]
+      const dx = t.clientX - start.x
+      const v = viewerRef.current
+      if (!v || Math.abs(dx) < SLIDE_SWIPE || Math.abs(dx) < 2 * Math.abs(t.clientY - start.y)) return
+      if (document.getSelection()?.isCollapsed === false) return
+      if (dx < 0) v.nextPage()
+      else v.previousPage()
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     container.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -823,6 +859,28 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     latest.current = { markSelection, quoteSelection, selectionToCard, copySelection }
   })
 
+  /** Folienmodus an oder aus – die Seite bleibt, eingepasst wird ganze Seite bzw. Seitenbreite */
+  async function setSlideMode(on: boolean) {
+    const v = viewerRef.current
+    if (!v?.pagesCount) return
+    const { viewer: V } = await loadPdfjs()
+    const pageNumber = v.currentPageNumber
+    v.scrollMode = on ? V.ScrollMode.PAGE : V.ScrollMode.VERTICAL
+    v.currentScaleValue = on ? 'page-fit' : 'page-width'
+    v.currentPageNumber = pageNumber
+    setSlides(on)
+    saveView(file, { mode: on ? 'slides' : 'scroll' })
+  }
+
+  /** Alle Seiten um 90° im Uhrzeigersinn drehen (quer gescannte Seiten, Tabellen im Querformat) */
+  function rotate() {
+    const v = viewerRef.current
+    if (!v?.pagesCount) return
+    const next = rotateRight(v.pagesRotation as Rotation)
+    v.pagesRotation = next
+    saveView(file, { rotation: next })
+  }
+
   /** Weitere Aktionen: im Menü der Leiste für die aktuelle Seite, im Kontextmenü für die angeklickte */
   const pdfActions = (page: number) => (
     <>
@@ -849,6 +907,15 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         disabled={!ready}
       >
         Ganze Seite
+      </MenuItem>
+      <MenuItem icon={<Presentation />} onSelect={() => void setSlideMode(!slides)} disabled={!ready}>
+        {slides ? 'Fortlaufend scrollen' : 'Folienmodus'}
+      </MenuItem>
+      <MenuItem icon={<RotateCw />} onSelect={rotate} disabled={!ready}>
+        Nach rechts drehen
+      </MenuItem>
+      <MenuItem icon={<Moon />} onSelect={() => setNight(night === '1' ? '0' : '1')}>
+        {night === '1' ? 'Nachtmodus ausschalten' : 'Nachtmodus'}
       </MenuItem>
       <MenuSeparator />
       <MenuItem
@@ -1242,7 +1309,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         <div className="relative min-w-0 flex-1">
           <div
             ref={containerRef}
-            className="pdf-container absolute inset-0 overflow-auto"
+            className={cn('pdf-container absolute inset-0 overflow-auto', night === '1' && 'pdf-night')}
             tabIndex={0}
             onContextMenu={onPagesContextMenu}
           >

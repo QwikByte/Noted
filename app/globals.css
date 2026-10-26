@@ -1172,6 +1172,18 @@ html.dragging * {
   /* Seiten bleiben weiß (Folien und Skripte sind so gestaltet), nur etwas gedämpft */
   filter: brightness(0.92);
 }
+/* Nachtmodus (⋮ im Viewer): Seiten dunkel, Schrift hell – die Farben bleiben durch die Drehung des Farbtons erkennbar.
+   Die Markierungen liegen außerhalb des Seitenbilds und werden nicht mit umgekehrt */
+.pdf-night .pdfViewer .page {
+  filter: none;
+}
+.pdf-night .pdfViewer .page .canvasWrapper {
+  filter: invert(1) hue-rotate(180deg);
+}
+.pdf-night .pdf-annotation {
+  background: color-mix(in srgb, var(--hl) 45%, transparent);
+  mix-blend-mode: screen;
+}
 /* Markierungen (Anmerkungen) wie mit einem Textmarker – ohne Mausereignisse, damit Text auswählbar bleibt */
 .pdf-annotation-layer {
   position: absolute;
