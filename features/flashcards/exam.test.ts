@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { blankEvent } from '@/features/calendar/event'
 import type { CalendarEvent } from '@/features/calendar/types'
-import { EXAM_REVIEW_DAYS, examDue, examNewPerDay, examsByDeck, nextExam } from './exam'
+import { EXAM_REVIEW_DAYS, examDue, examNewPerDay, examReviewsPerDay, examsByDeck, nextExam } from './exam'
 import { DAY, schedule, startOfDay } from './srs'
 import { deckCounts, reviewKey, stateMap } from './study'
 import type { Card, CardReview, DeckExam, SrsState } from './types'
@@ -103,8 +103,8 @@ describe('Wiederholungen vor der Klausur', () => {
     }))
     const reviews: CardReview[] = cards.map((c) => ({ cardId: c.id, side: 0, ...learned(10, 20) }))
     const states = stateMap(reviews)
-    const deck = { newPerDay: 20, exams: [exam('2026-10-15')] }
-    expect(deckCounts({ newPerDay: 20 }, cards, states, NOW)).toMatchObject({ review: 0, due: 0 })
+    const deck = { newPerDay: 20, reviewPerDay: 9999, exams: [exam('2026-10-15')] }
+    expect(deckCounts({ newPerDay: 20, reviewPerDay: 9999 }, cards, states, NOW)).toMatchObject({ review: 0, due: 0 })
     // Ausgesetzte Karten bleiben auch vor der Klausur draußen
     expect(deckCounts(deck, cards, states, NOW)).toMatchObject({ review: 2, due: 2 })
     expect(deckCounts(deck, cards, states, day('2026-10-15') + 8 * 3_600_000)).toMatchObject({ review: 0, due: 0 })
@@ -118,6 +118,47 @@ describe('Vorschlag für neue Karten', () => {
     expect(examNewPerDay(95, 6, exam('2026-10-24'), NOW)).toBe(11)
     expect(examNewPerDay(30, 0, exam('2026-10-15'), NOW)).toBe(30)
     expect(examNewPerDay(0, 4, exam('2026-10-24'), NOW)).toBe(0)
+  })
+})
+
+describe('Vorschlag für Wiederholungen', () => {
+  it('richtet sich nach dem engsten Rest bis zur Klausur – meist den Tagen mit den vorgezogenen Wiederholungen', () => {
+    const dues = [
+      ...Array<number>(50).fill(NOW - DAY),
+      ...Array<number>(10).fill(day('2026-10-21')),
+      ...Array<number>(10).fill(day('2026-10-22') + 9 * 3_600_000),
+      ...Array<number>(10).fill(day('2026-10-23')),
+      // Am Klausurtag und danach zählt nichts
+      ...Array<number>(5).fill(day('2026-10-24')),
+      ...Array<number>(3).fill(day('2026-10-30')),
+    ]
+    // 10 Tage bis zur Klausur: im Schnitt 8 pro Tag, in den letzten drei Tagen aber je 10
+    expect(examReviewsPerDay(dues, 0, exam('2026-10-24'), NOW)).toBe(10)
+    // Heute schon 40 wiederholt: (40 + 80) / 10
+    expect(examReviewsPerDay(dues, 40, exam('2026-10-24'), NOW)).toBe(12)
+    expect(examReviewsPerDay([], 0, exam('2026-10-24'), NOW)).toBe(0)
+  })
+
+  it('meldet, wenn das Tageslimit vor der Klausur nicht reicht', () => {
+    const cards: Card[] = Array.from({ length: 40 }, (_, i) => ({
+      id: `c${i}`,
+      deckId: 'd1',
+      noteId: null,
+      type: 'basic',
+      front: `c${i}`,
+      back: '',
+      options: [],
+      occlusion: null,
+      position: i,
+      suspended: false,
+      createdAt: 0,
+      updatedAt: 0,
+    }))
+    const states = stateMap(cards.map((c) => ({ cardId: c.id, side: 0, ...learned(10, 20) })))
+    // Klausur morgen: alles kommt heute dran, das Limit lässt aber nur 10 zu
+    const deck = { newPerDay: 20, reviewPerDay: 10, exams: [exam('2026-10-15')] }
+    expect(deckCounts(deck, cards, states, NOW)).toMatchObject({ review: 10, reviewWaiting: 30, examReviewsPerDay: 40 })
+    expect(deckCounts({ ...deck, exams: [] }, cards, states, NOW)).toMatchObject({ review: 0, examReviewsPerDay: 0 })
   })
 })
 

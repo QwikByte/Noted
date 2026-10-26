@@ -11,12 +11,12 @@ import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
 import { DEFAULT_LEARNING_STEPS, DEFAULT_NEW_PER_DAY, DEFAULT_RELEARNING_STEPS, DEFAULT_RETENTION, LEECH_LAPSES } from '../srs'
-import { MAX_LEECH_LAPSES, MAX_NEW_PER_DAY } from '../limits'
+import { MAX_LEECH_LAPSES, MAX_NEW_PER_DAY, MAX_REVIEW_PER_DAY } from '../limits'
 import { formatSteps, parseSteps } from '../steps'
 import type { AnkiImportResult, Deck, DeckImportResult, LeechAction } from '../types'
 
 /**
- * Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit, „Antwort eintippen“ und Wiederholungsplan ändern – unter
+ * Neuen Stapel anlegen oder Name, Beschreibung, Tageslimits, „Antwort eintippen“ und Wiederholungsplan ändern – unter
  * „Erweitert“ Lernschritte und Problemkarten.
  */
 export function DeckSettingsDialog({
@@ -32,6 +32,10 @@ export function DeckSettingsDialog({
   const [name, setName] = useState(deck?.name ?? '')
   const [description, setDescription] = useState(deck?.description ?? '')
   const [limit, setLimit] = useState(String(deck?.newPerDay ?? DEFAULT_NEW_PER_DAY))
+  // Leer = ohne Grenze
+  const [reviewLimit, setReviewLimit] = useState(
+    deck && deck.reviewPerDay < MAX_REVIEW_PER_DAY ? String(deck.reviewPerDay) : '',
+  )
   const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
   const [scheduler, setScheduler] = useState<Deck['scheduler']>(deck?.scheduler ?? 'sm2')
   // Eigene FSRS-Parameter gelten für alle Stapel des Kontos
@@ -50,6 +54,10 @@ export function DeckSettingsDialog({
     if (!name.trim()) return setError('Bitte gib einen Namen ein.')
     if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > MAX_NEW_PER_DAY) {
       return setError(`Das Tageslimit muss zwischen 0 und ${MAX_NEW_PER_DAY} liegen.`)
+    }
+    const reviewPerDay = reviewLimit.trim() ? Number(reviewLimit) : MAX_REVIEW_PER_DAY
+    if (!Number.isInteger(reviewPerDay) || reviewPerDay < 0 || reviewPerDay > MAX_REVIEW_PER_DAY) {
+      return setError(`Das Tageslimit für Wiederholungen muss zwischen 0 und ${MAX_REVIEW_PER_DAY} liegen – leer heißt ohne Grenze.`)
     }
     const percent = Number(retention)
     if (scheduler === 'fsrs' && (!Number.isInteger(percent) || percent < 70 || percent > 99)) {
@@ -73,6 +81,7 @@ export function DeckSettingsDialog({
         name: name.trim(),
         description,
         newPerDay,
+        reviewPerDay,
         typeAnswer,
         scheduler,
         ...(scheduler === 'fsrs' ? { retention: percent / 100 } : {}),
@@ -120,9 +129,26 @@ export function DeckSettingsDialog({
           {(id) => <AutoTextarea id={id} value={description} onChange={(e) => setDescription(e.target.value)} minRows={2} />}
         </Field>
         {/* w-32! hier und bei der Behaltensrate – cn führt Klassen nicht zusammen, sonst gewinnt w-full von Input */}
-        <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
-          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32!" />}
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
+            {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32!" />}
+          </Field>
+          <Field label="Wiederholungen pro Tag" hint="Leer: ohne Grenze. Was darüber hinaus fällig ist, kommt an den nächsten Tagen dran.">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={MAX_REVIEW_PER_DAY}
+                value={reviewLimit}
+                onChange={(e) => setReviewLimit(e.target.value)}
+                placeholder="ohne Grenze"
+                className="w-32!"
+              />
+            )}
+          </Field>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
             label="Wiederholungsplan"

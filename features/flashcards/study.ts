@@ -1,7 +1,8 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
 import { clozeCount, clozeTexts } from './cloze'
-import { daysUntil, examDue, nextExam } from './exam'
+import { daysUntil, examDue, examReviewsPerDay, nextExam } from './exam'
+import { MAX_REVIEW_PER_DAY } from './limits'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
 /** Abgefragte Seite: 0 = Vorderseite, 1 = Rückseite (beidseitig), bei Lückentexten die Nummer der Lücke */
@@ -141,8 +142,10 @@ export type DeckCounts = {
   newToday: number
   /** In der Lernphase und heute fällig */
   learning: number
-  /** Gelernt und heute fällig */
+  /** Gelernt und heute fällig – höchstens so viele, wie das Tageslimit für Wiederholungen noch erlaubt */
   review: number
+  /** Fällige Wiederholungen, die das Tageslimit auf morgen verschiebt */
+  reviewWaiting: number
   /** Alles, was heute im Lernmodus drankommt */
   due: number
   /** Heute schon abgefragt */
@@ -151,16 +154,18 @@ export type DeckCounts = {
   introducedToday: number
   /** Morgen fällig (ohne neue Karten) */
   dueTomorrow: number
+  /** Vor einer Klausur: so viele Wiederholungen pro Tag braucht es, damit bis dahin jede fällige drankommt (sonst 0) */
+  examReviewsPerDay: number
 }
 
 type Plan = { fresh: StudyItem[]; learning: StudyItem[]; review: StudyItem[]; counts: DeckCounts }
 
-type PlannedDeck = Pick<Deck, 'newPerDay' | 'exams'>
+type PlannedDeck = Pick<Deck, 'newPerDay' | 'reviewPerDay' | 'exams'>
 
 /**
  * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
- * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen nicht dran.
- * Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts).
+ * die Tageslimits für neue Karten und Wiederholungen zählen trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen
+ * nicht dran. Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts).
  */
 function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
   const today = startOfDay(now)
@@ -174,8 +179,11 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   let newTotal = 0
   let introducedToday = 0
   let reviewedToday = 0
+  // Für das Tageslimit zählen wie bei Anki nur Wiederholungen – nicht, was heute neu dazukam und noch in der Lernphase ist
+  let reviewsToday = 0
   let dueTomorrow = 0
   const candidates: StudyItem[] = []
+  const examDues: number[] = []
 
   // Geschwister zurückstellen (wie „bury siblings“ bei Anki): Seiten derselben Karte verraten sich sonst gegenseitig –
   // bei Lücke 2 steht Lücke 1 schon ausgefüllt im Satz. Nicht am Tag vor der Klausur, da muss alles drankommen.
@@ -184,7 +192,11 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   for (const card of [...cards].sort(byPosition)) {
     const counted = !card.suspended && (!inScope || inScope(card))
     const sides = sidesOf(card).map((side) => ({ side, state: states.get(reviewKey(card.id, side)) }))
-    for (const { state } of sides) if (state && state.introducedAt >= today) introducedToday++
+    for (const { state } of sides) {
+      if (!state) continue
+      if (state.introducedAt >= today) introducedToday++
+      else if (state.reviewedAt >= today && state.phase !== 'learning') reviewsToday++
+    }
     if (!counted) continue
     // Heute schon eine Seite gelernt: keine weitere Wiederholung und keine neue Seite dieser Karte mehr
     const studiedToday = bury && sides.some(({ state }) => state && state.reviewedAt >= today)
@@ -206,6 +218,7 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
       }
       if (state.reviewedAt >= today) reviewedToday++
       const due = exam ? examDue(state, reviewKey(card.id, side), exam, now) : state.due
+      if (exam && state.phase === 'review') examDues.push(due)
       if (due <= eod) {
         if (state.phase === 'review') dueReviews.push({ item: { card, side, kind: 'review' }, due })
         else {
@@ -226,6 +239,11 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   const due = (item: StudyItem) => states.get(itemKey(item))?.due ?? 0
   review.sort((a, b) => due(a) - due(b))
   learning.sort((a, b) => due(a) - due(b))
+  // Die am längsten überfälligen zuerst – der Rest wartet bis morgen
+  const reviewWaiting =
+    deck.reviewPerDay < MAX_REVIEW_PER_DAY ? Math.max(0, review.length - Math.max(0, deck.reviewPerDay - reviewsToday)) : 0
+  review.length -= reviewWaiting
+  dueTomorrow += reviewWaiting
   return {
     fresh,
     learning,
@@ -236,10 +254,12 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
       newToday,
       learning: learning.length,
       review: review.length,
+      reviewWaiting,
       due: newToday + learning.length + review.length,
       reviewedToday,
       introducedToday,
       dueTomorrow,
+      examReviewsPerDay: exam ? examReviewsPerDay(examDues, reviewsToday, exam, now) : 0,
     },
   }
 }

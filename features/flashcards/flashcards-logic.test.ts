@@ -208,7 +208,7 @@ describe('Leichtigkeit', () => {
 })
 
 describe('Lernsitzung', () => {
-  const deck = { id: 'd1', newPerDay: 3 }
+  const deck = { id: 'd1', newPerDay: 3, reviewPerDay: 9999 }
 
   it('zeigt fällige Wiederholungen und neue Karten bis zum Tageslimit', () => {
     const cards = Array.from({ length: 6 }, (_, i) => card(`c${i}`))
@@ -246,13 +246,59 @@ describe('Lernsitzung', () => {
     expect(fresh.remaining()).toEqual({ new: 3, learning: 0, review: 0 })
   })
 
+  it('hält das Tageslimit für Wiederholungen ein – die am längsten überfälligen zuerst, der Rest wartet bis morgen', () => {
+    const at = (cardId: string, patch: Partial<SrsState>): CardReview => ({
+      cardId,
+      side: 0,
+      phase: 'review',
+      step: 0,
+      interval: 10,
+      ease: 2.5,
+      reps: 5,
+      lapses: 0,
+      due: NOW + 5 * DAY,
+      reviewedAt: NOW - 10 * DAY,
+      introducedAt: NOW - 60 * DAY,
+      ...patch,
+    })
+    const cards = Array.from({ length: 323 }, (_, i) => card(`c${i + 1}`))
+    const reviews: CardReview[] = [
+      // 300 fällige Wiederholungen, c300 am längsten überfällig
+      ...Array.from({ length: 300 }, (_, i) => at(`c${i + 1}`, { due: NOW - (i + 1) * 60 * MINUTE })),
+      // Heute schon wiederholt: 20 gewusst, eine vergessen – zählen fürs Limit
+      ...Array.from({ length: 20 }, (_, i) => at(`c${i + 301}`, { reviewedAt: NOW - 60 * MINUTE })),
+      at('c321', { phase: 'relearning', step: 1, due: NOW + 10 * MINUTE, reviewedAt: NOW - 5 * MINUTE }),
+      // Lernphase zählt nicht – weder von gestern noch heute neu
+      at('c322', { phase: 'learning', step: 1, interval: 0, due: NOW + 10 * MINUTE, reviewedAt: NOW - 5 * MINUTE, introducedAt: NOW - DAY }),
+      at('c323', { phase: 'learning', step: 1, interval: 0, due: NOW + 10 * MINUTE, reviewedAt: NOW - 5 * MINUTE, introducedAt: NOW - 5 * MINUTE }),
+    ]
+    const limited = { id: 'd1', newPerDay: 0, reviewPerDay: 100 }
+    const counts = deckCounts(limited, cards, stateMap(reviews), NOW)
+    expect(counts).toMatchObject({ review: 79, reviewWaiting: 221, learning: 3, due: 82, dueTomorrow: 221 })
+    const session = new LearnSession([limited], cards, stateMap(reviews), NOW)
+    expect(session.remaining()).toEqual({ new: 0, learning: 3, review: 79 })
+    const first: string[] = []
+    for (let item = session.next(NOW); item && first.length < 79; item = session.next(NOW)) first.push(item.card.id)
+    expect(first).toEqual(Array.from({ length: 79 }, (_, i) => `c${300 - i}`))
+    // Ohne Grenze (Standard) kommt alles dran
+    expect(deckCounts({ ...limited, reviewPerDay: 9999 }, cards, stateMap(reviews), NOW)).toMatchObject({
+      review: 300,
+      reviewWaiting: 0,
+    })
+    // Limit schon ausgeschöpft
+    expect(deckCounts({ ...limited, reviewPerDay: 15 }, cards, stateMap(reviews), NOW)).toMatchObject({
+      review: 0,
+      reviewWaiting: 300,
+    })
+  })
+
   it('nimmt eine ausgesetzte Karte mit allen Seiten aus der Sitzung – auch aus der Lernphase', () => {
     const cards = [card('c1', { type: 'reversed' }), card('c2'), card('c3')]
     const reviews: CardReview[] = [
       { cardId: 'c1', side: 0, ...run([4], NOW - 5 * DAY) },
       { cardId: 'c1', side: 1, ...run([4], NOW - 6 * DAY) },
     ]
-    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, stateMap(reviews), NOW)
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], cards, stateMap(reviews), NOW)
     // Von c1 kommt nur eine Seite heute (Geschwister), dazu die neuen c2 und c3
     expect(session.remaining()).toEqual({ new: 2, learning: 0, review: 1 })
     // c2 vergessen: kommt in der Lernphase wieder
@@ -279,7 +325,7 @@ describe('Lernsitzung', () => {
   })
 
   describe('Geschwister einer Karte', () => {
-    const plan = { id: 'd1', newPerDay: 20 }
+    const plan = { id: 'd1', newPerDay: 20, reviewPerDay: 9999 }
     const ids = (session: LearnSession) => {
       const seen: string[] = []
       for (let item = session.next(NOW); item; item = session.next(NOW)) seen.push(`${item.card.id}:${item.side}`)
@@ -333,7 +379,7 @@ describe('Lernsitzung', () => {
 
   it('wiederholt Karten in der Lernphase innerhalb der Sitzung', () => {
     const cards = [card('c1'), card('c2')]
-    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], cards, new Map(), NOW)
     const first = session.next(NOW)!
     expect(first.card.id).toBe('c1')
     const state = schedule(null, 1, NOW)
@@ -348,7 +394,7 @@ describe('Lernsitzung', () => {
 
   it('Rückgängig: die Karte kommt sofort wieder, die angezeigte danach – die Lernphase ist wie vorher', () => {
     const cards = [card('c1'), card('c2'), card('c3')]
-    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], cards, new Map(), NOW)
     const before = session.remaining()
     const first = session.next(NOW)!
     session.answered(first, schedule(null, 1, NOW), NOW)
@@ -366,7 +412,7 @@ describe('Lernsitzung', () => {
   })
 
   it('Rückgängig nach „Nochmal“ bei der letzten Karte: sie kommt nur einmal wieder', () => {
-    const session = new LearnSession([{ id: 'd1', newPerDay: 20 }], [card('c1')], new Map(), NOW)
+    const session = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], [card('c1')], new Map(), NOW)
     const first = session.next(NOW)!
     session.answered(first, schedule(null, 1, NOW), NOW)
     // Sonst ist nichts mehr übrig – die wieder eingereihte Seite wird gleich angezeigt
@@ -380,10 +426,10 @@ describe('Lernsitzung', () => {
 
   it('fragt bei beidseitigen Karten die Rückseite erst ab einem späteren Tag ab', () => {
     const cards = [card('c1', { type: 'reversed' })]
-    const fresh = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, new Map(), NOW)
+    const fresh = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], cards, new Map(), NOW)
     expect(fresh.size).toBe(1)
     const reviews: CardReview[] = [{ cardId: 'c1', side: 0, ...schedule(null, 4, NOW - 2 * DAY) }]
-    const later = new LearnSession([{ id: 'd1', newPerDay: 20 }], cards, stateMap(reviews), NOW)
+    const later = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], cards, stateMap(reviews), NOW)
     const item = later.next(NOW)!
     expect(reviewKey(item.card.id, item.side)).toBe('c1:1')
   })
@@ -598,11 +644,11 @@ describe('Karten in Notizen erkennen', () => {
     const cloze = card('c1', { type: 'cloze', front: '==a== ==b== ==c==', back: '' })
     expect(sidesOf(cloze)).toEqual([0, 1, 2])
     expect(sidesOf(card('c2', { type: 'cloze', front: 'ohne Lücke' }))).toEqual([])
-    const fresh = new LearnSession([{ id: 'd1', newPerDay: 20 }], [cloze], new Map(), NOW)
+    const fresh = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], [cloze], new Map(), NOW)
     expect(fresh.size).toBe(1)
     // Gestern Lücke 1 gelernt: heute kommt Lücke 2 dazu, Lücke 3 erst morgen
     const reviews: CardReview[] = [{ cardId: 'c1', side: 0, ...schedule(null, 4, NOW - 2 * DAY) }]
-    const later = new LearnSession([{ id: 'd1', newPerDay: 20 }], [cloze], stateMap(reviews), NOW)
+    const later = new LearnSession([{ id: 'd1', newPerDay: 20, reviewPerDay: 9999 }], [cloze], stateMap(reviews), NOW)
     const items: number[] = []
     for (let item = later.next(NOW); item; item = later.next(NOW)) items.push(item.side)
     expect(items).toEqual([1])

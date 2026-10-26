@@ -45,7 +45,7 @@ import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
 import { daysUntil, examNewPerDay, nextExam } from '../exam'
 import { cardMatches } from '../browse'
-import { MAX_NEW_PER_DAY } from '../limits'
+import { MAX_NEW_PER_DAY, MAX_REVIEW_PER_DAY } from '../limits'
 import { longDate } from '@/features/calendar/dates'
 import { byPosition, deckCounts, isProblemCard, type DeckCounts } from '../study'
 import type { Deck, DeckExam } from '../types'
@@ -218,6 +218,12 @@ export function DeckView({ id }: { id: string }) {
               <span className="font-medium text-accent-text tabular-nums">{counts.newToday}</span> neu ·{' '}
               <span className="font-medium text-warning tabular-nums">{counts.learning}</span> lernend ·{' '}
               <span className="font-medium text-success tabular-nums">{counts.review}</span> Wiederholungen
+              {counts.reviewWaiting > 0 ? (
+                <span title="Mehr Wiederholungen erlaubt das Tageslimit des Stapels heute nicht – sie kommen morgen dran.">
+                  {' '}
+                  · <span className="tabular-nums">{counts.reviewWaiting}</span> warten
+                </span>
+              ) : null}
             </p>
             <p>
               Morgen fällig: {counts.dueTomorrow} · heute gelernt: {counts.reviewedToday}
@@ -400,6 +406,12 @@ function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts;
   const days = daysUntil(exam, now)
   const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now))
   const short = counts.newTotal > 0 && perDay > deck.newPerDay
+  const reviewsPerDay = Math.min(MAX_REVIEW_PER_DAY, counts.examReviewsPerDay)
+  const reviewsShort = deck.reviewPerDay < MAX_REVIEW_PER_DAY && reviewsPerDay > deck.reviewPerDay
+  const apply = (input: Partial<Pick<Deck, 'newPerDay' | 'reviewPerDay'>>, message: string) =>
+    void updateDeck(qc, deck.id, input)
+      .then(() => toast.success(message))
+      .catch((err: unknown) => toast.error(errorMessage(err)))
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3 text-sm" data-testid="exam-plan">
       <CalendarClock className="size-4 shrink-0 text-accent-text" />
@@ -411,17 +423,21 @@ function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts;
           : short
             ? ` Um alle ${counts.newTotal} neuen Karten rechtzeitig einmal zu lernen, sind ${perDay} pro Tag nötig (Tageslimit: ${deck.newPerDay}).`
             : ` Mit ${deck.newPerDay} neuen Karten pro Tag lernst du alle ${counts.newTotal} neuen rechtzeitig.`}
+        {reviewsShort
+          ? ` Damit bis dahin jede fällige Wiederholung drankommt, sind ${reviewsPerDay} Wiederholungen pro Tag nötig (Tageslimit: ${deck.reviewPerDay}).`
+          : null}
       </p>
       {short ? (
+        <Button size="sm" onClick={() => apply({ newPerDay: perDay }, `Tageslimit: ${perDay} neue Karten.`)}>
+          {perDay} pro Tag übernehmen
+        </Button>
+      ) : null}
+      {reviewsShort ? (
         <Button
           size="sm"
-          onClick={() =>
-            void updateDeck(qc, deck.id, { newPerDay: perDay })
-              .then(() => toast.success(`Tageslimit: ${perDay} neue Karten.`))
-              .catch((err: unknown) => toast.error(errorMessage(err)))
-          }
+          onClick={() => apply({ reviewPerDay: reviewsPerDay }, `Tageslimit: ${reviewsPerDay} Wiederholungen.`)}
         >
-          {perDay} pro Tag übernehmen
+          {reviewsPerDay} Wiederholungen pro Tag übernehmen
         </Button>
       ) : null}
     </div>

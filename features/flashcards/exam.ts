@@ -59,3 +59,29 @@ export function examNewPerDay(newLeft: number, introducedToday: number, exam: De
   if (newLeft === 0) return 0
   return Math.ceil((newLeft + introducedToday) / Math.max(1, daysUntil(exam, now)))
 }
+
+/**
+ * Vorschlag für das Tageslimit an Wiederholungen: so viele pro Tag, dass bis zum Vortag der Klausur jede Seite
+ * drankommt, die bis dahin fällig ist (`dues`, schon mit `examDue`). `reviewsToday` = heute schon wiederholte Seiten.
+ * Was an einem Tag fällig wird, lässt sich erst ab diesem Tag lernen – den Ausschlag gibt der engste Rest bis zur
+ * Klausur, meist die letzten Tage mit den vorgezogenen Wiederholungen.
+ */
+export function examReviewsPerDay(dues: number[], reviewsToday: number, exam: DeckExam, now: number): number {
+  const days = Math.max(1, daysUntil(exam, now))
+  const end = dayStart(exam.date)
+  const today = startOfDay(now)
+  const load = new Array<number>(days).fill(0)
+  for (const due of dues) {
+    if (due >= end) continue
+    const day = Math.round((startOfDay(due) - today) / 86_400_000)
+    load[Math.min(days - 1, Math.max(0, day))]++
+  }
+  load[0] += reviewsToday
+  let need = 0
+  let rest = 0
+  for (let day = days - 1; day >= 0; day--) {
+    rest += load[day]
+    need = Math.max(need, Math.ceil(rest / (days - day)))
+  }
+  return need
+}

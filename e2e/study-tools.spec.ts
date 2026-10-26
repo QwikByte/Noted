@@ -305,6 +305,54 @@ test('Stapel-Optionen: eigene Lernschritte, und eine Problemkarte wird beim Erre
   expect((await flashcards(page)).cards.find((c: { id: string }) => c.id === neu.id).suspended).toBe(false)
 })
 
+test('Stapel-Optionen: Tageslimit für Wiederholungen – die übrigen warten bis morgen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Limit E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const cards = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: ['Eins', 'Zwei', 'Drei'].map((front) => ({ type: 'basic', front, back: 'x' })) },
+    'cards',
+  )
+  // Alle drei gelernt und heute fällig – „Drei“ am längsten
+  const saved = await page.evaluate(
+    async ({ ids, now }) => {
+      const me = await (await fetch('/api/auth/me')).json()
+      const day = 86_400_000
+      const reviews = ids.map((id, i) => ({ cardId: id, side: 0, phase: 'review', step: 0, interval: 3, ease: 2.5, reps: 3, lapses: 0, due: now - (i + 1) * day, reviewedAt: now - 5 * day, introducedAt: now - 10 * day }))
+      const r = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-noted-request': '1', 'x-noted-user': String(me.user.id) },
+        body: JSON.stringify({ reviews }),
+      })
+      return (await r.json()).saved
+    },
+    { ids: cards.map((c) => c.id), now: Date.now() },
+  )
+  expect(saved).toBe(3)
+
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('Wiederholungen pro Tag')).toHaveValue('')
+  await dialog.getByLabel('Wiederholungen pro Tag').fill('2')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect((await flashcards(page)).decks.find((d: { id: string }) => d.id === deck.id).reviewPerDay).toBe(2)
+  await expect(page.getByText('2 Wiederholungen · 1 warten')).toBeVisible()
+
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  for (const front of ['Drei', 'Zwei']) {
+    await expect(studyCard).toContainText(front)
+    await page.keyboard.press('Space')
+    await page.getByTestId('rate-3').click()
+  }
+  await expect(page.getByTestId('study-done')).toContainText('1 fällige Wiederholung wartet wegen des Tageslimits bis morgen.')
+})
+
 test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')

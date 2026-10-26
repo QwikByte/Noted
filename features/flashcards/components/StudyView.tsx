@@ -937,6 +937,7 @@ function Finished({
   )
   const dueTomorrow = counts.reduce((s, c) => s + c.dueTomorrow, 0)
   const newLeft = counts.reduce((s, c) => s + c.newTotal, 0)
+  const reviewWaiting = counts.reduce((s, c) => s + c.reviewWaiting, 0)
 
   if (session instanceof PracticeSession) {
     const items = allItems(cards)
@@ -986,6 +987,12 @@ function Finished({
         {newLeft > 0 ? (
           <p className="mt-2 text-sm text-faint">
             Noch {newLeft} neue {newLeft === 1 ? 'Karte' : 'Karten'} – das Tageslimit lässt sich im Stapel einstellen.
+          </p>
+        ) : null}
+        {reviewWaiting > 0 ? (
+          <p className="mt-2 text-sm text-faint">
+            {reviewWaiting} fällige {reviewWaiting === 1 ? 'Wiederholung wartet' : 'Wiederholungen warten'} wegen des
+            Tageslimits bis morgen.
           </p>
         ) : null}
       </div>
