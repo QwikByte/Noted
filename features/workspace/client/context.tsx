@@ -38,6 +38,8 @@ export type AppActions = {
   openMove: (target: MoveTarget, opts?: { onMoved?: () => void }) => void
   openNewFolder: (parentId: string | null) => void
   openRenameFolder: (folder: Folder) => void
+  /** Tag in allen Notizen umbenennen bzw. mit einem anderen zusammenführen */
+  openRenameTag: (tag: string) => void
   deleteFolder: (folder: Folder) => void
   /** In den Papierkorb (mit „Rückgängig“) – `true`, wenn es geklappt hat */
   trashNotes: (notes: Pick<NoteSummary, 'id' | 'title'>[]) => Promise<boolean>

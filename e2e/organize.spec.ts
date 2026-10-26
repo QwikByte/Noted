@@ -412,6 +412,40 @@ test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) =>
   await expect(preview).toContainText('Aus Versehen überschrieben')
 })
 
+test('Tags umbenennen: in der Seitenleiste zusammenführen, die offene Notiz zeigt den neuen Tag', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  for (const [title, content] of [
+    ['Tag alt E2E', '# Ableitungen\n\nSiehe #e2e-alt und #E2E-alt/kettenregel'],
+    ['Tag neu E2E', 'Schon da: #e2e-neu'],
+  ]) {
+    const n = (await (await page.request.post('/api/notes', { headers, data: { title, content } })).json()).note
+    cleanup.unshift(`/api/notes/${n.id}?permanent=1`)
+    if (title === 'Tag alt E2E') await page.goto(`/?n=${n.id}`)
+  }
+  const editor = page.locator('.cm-content')
+  await expect(editor).toContainText('#e2e-alt und')
+
+  const sidebar = page.getByRole('complementary')
+  // Name des Links: Tag und Anzahl der Notizen
+  await sidebar.getByRole('link', { name: /^e2e-alt\s*1$/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Umbenennen …' }).click()
+  const dialog = page.getByRole('dialog', { name: '#e2e-alt umbenennen' })
+  await dialog.getByLabel('Neuer Name').fill('E2E-neu')
+  await expect(dialog).toContainText('#e2e-neu gibt es schon (1 Notiz)')
+  await shot(page, '93-rename-tag')
+  await dialog.getByRole('button', { name: 'Zusammenführen' }).click()
+  await expect(page.getByText('#e2e-alt in 1 Notiz mit #e2e-neu zusammengeführt.')).toBeVisible()
+
+  // Die offene Notiz übernimmt den neuen Stand, der Rest des Unter-Tags bleibt
+  await expect(editor).toContainText('Siehe #E2E-neu und #E2E-neu/kettenregel')
+  await expect(sidebar.getByRole('link', { name: /^e2e-alt\s*\d/ })).toHaveCount(0)
+  await sidebar.getByRole('link', { name: /^e2e-neu\s*2$/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '#e2e-neu' })).toBeVisible()
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+  await expect.poll(async () => (await titles()).sort()).toEqual(['Tag alt E2E', 'Tag neu E2E'])
+})
+
 test('Graph: verlinkte Notizen sehen und per Klick öffnen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)

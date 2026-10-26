@@ -448,6 +448,7 @@ export function FolderView({ id }: { id: string }) {
 }
 
 export function TagView({ tag }: { tag: string }) {
+  const app = useApp()
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
   const [sortOrder, setSortOrder] = useNoteOrder('tag')
@@ -468,6 +469,19 @@ export function TagView({ tag }: { tag: string }) {
             <>
               {items.length > 1 ? <SortMenu order={sortOrder} onChange={setSortOrder} /> : null}
               <SelectButton selection={selection} />
+              {items.length > 0 ? (
+                <Menu
+                  trigger={(p) => (
+                    <Button size="icon-sm" aria-label="Tag-Aktionen" {...p}>
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  )}
+                >
+                  <MenuItem icon={<Pencil />} onSelect={() => app.openRenameTag(tag)}>
+                    Umbenennen …
+                  </MenuItem>
+                </Menu>
+              ) : null}
             </>
           }
         />

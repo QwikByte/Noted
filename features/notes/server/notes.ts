@@ -267,7 +267,7 @@ export function deleteFolder(userId: number, id: string): { trashedNotes: number
 // ---------------------------------------------------------------------------
 
 /** Tags, Links und Suchindex aus dem Text der Notiz (bei formatiertem Text ohne HTML, siehe noteText) */
-function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; text: string }) {
+export function indexNote(db: Database.Database, note: { id: string; user_id: number; title: string; text: string }) {
   db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(note.id)
   unindexNote(db, note.id)
   const insTag = db.prepare('INSERT OR IGNORE INTO note_tags (note_id, tag) VALUES (?, ?)')

@@ -9,6 +9,7 @@ import {
   Hash,
   Home,
   Layers,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -24,7 +25,7 @@ import { useDueTotal } from '@/features/flashcards/components/CardsView'
 import { Logo } from '@/shared/ui/logo'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
-import { useContextMenu } from '@/shared/ui/menu'
+import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { CreateMenuItems, OpenViewItems, isEmptySpot } from '@/features/notes/components/ItemMenus'
 import { useTags } from '@/features/notes/client/queries'
 import { usePref } from '@/shared/client/prefs'
@@ -163,7 +164,18 @@ export function Sidebar({ currentFolderId }: { currentFolderId: string | null })
                   <NavLink
                     key={t.tag}
                     to={{ kind: 'tag', tag: t.tag }}
-                    onContextMenu={(e) => openContextMenu(e, <OpenViewItems view={{ kind: 'tag', tag: t.tag }} />)}
+                    onContextMenu={(e) =>
+                      openContextMenu(
+                        e,
+                        <>
+                          <OpenViewItems view={{ kind: 'tag', tag: t.tag }} />
+                          <MenuSeparator />
+                          <MenuItem icon={<Pencil />} onSelect={() => app.openRenameTag(t.tag)}>
+                            Umbenennen …
+                          </MenuItem>
+                        </>,
+                      )
+                    }
                     aria-current={view.kind === 'tag' && view.tag === t.tag ? 'page' : undefined}
                     className={cn(
                       'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs transition-colors',

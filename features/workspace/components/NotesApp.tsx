@@ -14,6 +14,7 @@ import {
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
 import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
+import { RenameTagDialog } from '@/features/notes/components/RenameTagDialog'
 import { Dashboard } from './Dashboard'
 import { TrashView } from '@/features/notes/components/TrashView'
 import { FilesView } from '@/features/attachments/components/FilesView'
@@ -115,6 +116,7 @@ export default function NotesApp() {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<{ target: MoveTarget; onMoved?: () => void } | null>(null)
   const [folderPrompt, setFolderPrompt] = useState<{ parentId: string | null } | { folder: Folder } | null>(null)
+  const [tagRename, setTagRename] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<NoteSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -320,6 +322,7 @@ export default function NotesApp() {
       openMove: (target, opts) => setMoveTarget({ target, onMoved: opts?.onMoved }),
       openNewFolder: (parentId) => setFolderPrompt({ parentId }),
       openRenameFolder: (folder) => setFolderPrompt({ folder }),
+      openRenameTag: setTagRename,
       deleteFolder: setDeleteTarget,
       trashNotes,
       pinNotes,
@@ -532,6 +535,7 @@ export default function NotesApp() {
         <DragLayer />
         <VaultDialogs />
         <MoveDialog target={moveTarget?.target ?? null} onMoved={moveTarget?.onMoved} onClose={() => setMoveTarget(null)} />
+        {tagRename ? <RenameTagDialog key={tagRename} tag={tagRename} onClose={() => setTagRename(null)} /> : null}
         <PromptDialog
           open={!!folderPrompt}
           title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}
