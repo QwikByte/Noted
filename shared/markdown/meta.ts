@@ -164,10 +164,25 @@ export function findHeadingLine(content: string, heading: string): number | null
   return findHeadings(content).find((h) => headingKey(h.raw) === key || headingKey(h.text) === key)?.line ?? null
 }
 
-const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
+/** #tag im Text: am Zeilenanfang oder nach Leerraum */
+export const INLINE_TAG_RE = /(^|\s)#([\p{L}\p{N}_\-/]+)/gu
 
-function normalizeTag(tag: string): string | null {
-  const t = tag.trim().replace(/^#+/, '').replace(/\/+$/, '').toLowerCase()
+/**
+ * Eingegebener Tag ohne „#“ vorn und „/“ am Ende, Schreibweise wie eingegeben. Als Schleife: ein regulärer Ausdruck wie
+ * /\/+$/ braucht bei langen Eingaben aus vielen „/“ quadratisch viel Zeit.
+ */
+export function trimTag(tag: string): string {
+  const t = tag.trim()
+  let start = 0
+  let end = t.length
+  while (start < end && t[start] === '#') start++
+  while (end > start && t[end - 1] === '/') end--
+  return t.slice(start, end)
+}
+
+/** Tag in Vergleichsform – klein, ohne „#“ und „/“ am Ende; null, wenn es kein gültiger Tag ist (z. B. nur Ziffern) */
+export function normalizeTag(tag: string): string | null {
+  const t = trimTag(tag).toLowerCase()
   if (!t || !/^[\p{L}\p{N}_\-/]+$/u.test(t)) return null
   if (/^[\d/]+$/.test(t)) return null // rein numerisch ist kein Tag
   return t
@@ -228,6 +243,10 @@ export function findWikiLinks(content: string): WikiLink[] {
   return links
 }
 
+/** Endungen, bei denen ein Link ([[…]] ohne „!“) auf einen Anhang zeigt – sonst ist es eine Notiz wie [[Kapitel 3.1]] */
+export const ATTACHMENT_EXT =
+  /\.(pdf|png|jpe?g|gif|webp|avif|bmp|svg|heic|heif|mp3|m4a|wav|ogg|flac|mp4|webm|mov|mkv|txt|csv|json|zip|docx?|xlsx?|pptx?|odt|ods|odp|epub)$/i
+
 /** Hat das Linkziel eine Dateiendung, die keine Notiz ist (z. B. Bild)? */
 export function isFileTarget(target: string): boolean {
   const m = /\.([a-z0-9]{1,10})$/i.exec(target)
@@ -272,4 +291,20 @@ export function makeExcerpt(content: string, max = 160): string {
   // Für einen Auszug genügt der Anfang – begrenzt zugleich die Rechenzeit
   const text = plainInline(stripCode((fm ? fm.body : content).slice(0, 4000)).replace(LINE_PREFIX_RE, ''))
   return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text
+}
+
+/**
+ * Lesbarer Text einer Markdown-Notiz, z. B. zum Zählen der Wörter: ohne Frontmatter, Code, Kommentare und
+ * Einbettungen, Links als ihr Text. Links auf Dateien zählen nur mit eigener Beschriftung ([[skript.pdf|Skript]]).
+ */
+export function markdownPlainText(content: string): string {
+  const fm = splitFrontmatter(content)
+  const body = stripCode(fm ? fm.body : content).replace(WIKILINK_RE, (_m, embed: string, inner: string) => {
+    if (embed) return ' '
+    const { target, heading, alias } = parseWikiTarget(inner)
+    if (alias) return alias
+    if (ATTACHMENT_EXT.test(target)) return ' '
+    return heading ? `${target} ${heading}` : target
+  })
+  return plainInline(body.replace(LINE_PREFIX_RE, ''))
 }

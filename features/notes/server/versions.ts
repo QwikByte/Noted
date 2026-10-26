@@ -60,6 +60,12 @@ export function snapshotIfDue(
       .get(note.id, note.user_id) as { t: number | null }
     if (now - (last.t ?? note.created_at) < EDIT_SNAPSHOT_INTERVAL) return false
   }
+  saveSnapshot(db, note, reason, now)
+  return true
+}
+
+/** Stand sofort sichern – auch beim Bearbeiten, z. B. bevor der Server viele Notizen auf einmal ändert */
+export function saveSnapshot(db: Database.Database, note: CurrentNote, reason: NoteVersionReason, now = Date.now()) {
   db.prepare(
     `INSERT INTO note_versions (note_id, user_id, version, title, title_enc, format, content, reason, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -69,7 +75,6 @@ export function snapshotIfDue(
        SELECT id FROM note_versions WHERE note_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?
      ))`,
   ).run(note.id, note.user_id, now - VERSION_MAX_AGE, note.id, note.user_id, MAX_VERSIONS_PER_NOTE)
-  return true
 }
 
 const VERSION_GONE = 'Dieser Stand ist nicht mehr vorhanden.'

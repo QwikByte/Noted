@@ -32,6 +32,7 @@ const DATA_ROUTES = [
   // Verpacktes Schlüsselmaterial des Tresors – damit Entsperren auch offline geht
   /^\/api\/vault$/,
   /^\/api\/attachments\/[0-9a-f-]{36}\/annotations$/,
+  /^\/api\/attachments\/[0-9a-f-]{36}\/references$/,
 ]
 const FILE_ROUTES = [/^\/api\/files\//, /^\/api\/attachments\/[0-9a-f-]{36}$/]
 
@@ -142,6 +143,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request, DATA_CACHE).catch(offlineJson))
     return
   }
+
+  // Downloads nicht noch einmal ablegen – die Datei liegt dort schon unter ihrer Adresse, falls sie geöffnet wurde
+  if (url.searchParams.get('download') === '1') return
 
   // Anhänge (Bilder usw.) – keine Teilbereiche (Range) cachen. Offline und nicht im Cache: 503 mit Kennzeichen, damit
   // die App sagen kann, dass die Datei erst einmal mit Verbindung geöffnet werden muss

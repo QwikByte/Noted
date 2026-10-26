@@ -13,8 +13,8 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
 }
 
-async function createNote(page: Page, title: string, content: string) {
-  const res = await page.request.post('/api/notes', { headers: await apiHeaders(page), data: { title, content } })
+async function createNote(page: Page, title: string, content: string, format = 'markdown') {
+  const res = await page.request.post('/api/notes', { headers: await apiHeaders(page), data: { title, content, format } })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { note: { id: string } }).note.id
 }
@@ -68,6 +68,70 @@ test('Notiz liegt als Blatt auf dem Tisch – im dunklen Design hell, im hellen 
   expect(light.borderWidth).toBe('1px')
   expect(light.border).not.toBe('rgba(0, 0, 0, 0)')
   expect(light.desk).not.toBe(light.bg)
+})
+
+test('Wortzahl: eingeschaltet zählt die Kopfzeile beim Tippen mit, mit Markierung deren Wörter', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Wortzahl', '')
+  await page.goto(`/?n=${id}`)
+  await expect(page.locator('.note-paper .cm-content')).toBeVisible()
+  // Standardmäßig aus: Für bestehende Nutzer ändert sich nichts
+  await expect(page.getByTestId('word-count')).toHaveCount(0)
+
+  await page.goto('/settings')
+  await page.getByRole('switch', { name: /^Wortzahl anzeigen/ }).click()
+  await page.goto(`/?n=${id}`)
+  await page.locator('.note-paper .cm-content').click()
+  await page.keyboard.type('Eins zwei E-Mail [Link](https://example.org/a/b) fünf')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+
+  await page.keyboard.press('Shift+Home')
+  await expect(page.getByTestId('word-count')).toHaveText('5 von 5 Wörtern')
+  await page.keyboard.press('End')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.locator('.markdown-body')).toContainText('fünf')
+  await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+})
+
+test('Sprache: lang im Frontmatter gilt für Editor und Lesemodus, sonst die Standardsprache', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Englische Mitschrift', '---\nlang: en\n---\nThe quick brown fox')
+  const plain = await createNote(page, 'Ohne Sprache', 'Ein Satz')
+  await page.goto(`/?n=${id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  const editor = page.locator('.note-paper .cm-content')
+  await expect(editor).toHaveAttribute('lang', 'en')
+
+  // Über ⋮ → Informationen umstellen: schreibt lang ins Frontmatter, der Editor folgt ohne Neuladen
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Informationen' }).click()
+  await page.getByRole('dialog').getByLabel('Sprache der Notiz').selectOption('fr')
+  await page.keyboard.press('Escape')
+  await expect(editor).toHaveAttribute('lang', 'fr')
+  await expect(editor).toContainText('lang: fr')
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.locator('.note-paper .markdown-body').first()).toHaveAttribute('lang', 'fr')
+
+  // Standardsprache für Notizen ohne Angabe
+  await page.goto(`/?n=${plain}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(editor).toHaveAttribute('lang', 'de')
+  await page.goto('/settings')
+  await page.getByLabel('Sprache der Notizen').selectOption('other')
+  await page.getByLabel('Sprachkürzel').fill('pt_BR')
+  await expect(page.getByText('Kein gültiges Sprachkürzel.')).toBeVisible()
+  await page.getByLabel('Sprachkürzel').fill('pt-BR')
+  await page.goto(`/?n=${plain}`)
+  await expect(editor).toHaveAttribute('lang', 'pt-BR')
+  const rich = await createNote(page, 'Formatiert', '<p>Olá</p>', 'richtext')
+  await page.goto(`/?n=${rich}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(page.getByTestId('rich-editor')).toHaveAttribute('lang', 'pt-BR')
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.getByTestId('rich-view')).toHaveAttribute('lang', 'pt-BR')
+  await page.evaluate(() => localStorage.removeItem('noted:lang'))
 })
 
 test('Menüs der Werkzeugleiste werden nicht abgeschnitten – auch auf dem Handy', async ({ browser }) => {

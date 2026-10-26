@@ -1,21 +1,18 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronDown,
   ChevronRight,
   Copy,
   Dumbbell,
   FileArchive,
-  FileText,
   GraduationCap,
   Layers,
   Loader2,
   MoreVertical,
-  Pause,
-  Pencil,
-  Play,
   Plus,
   Printer,
   RotateCcw,
@@ -27,60 +24,36 @@ import {
 import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { usePrintShortcut } from '@/shared/ui/print-view'
-import { CardMarkdown } from './CardMarkdown'
+import { CardRow } from './CardRow'
+import { useCardActions } from './CardActions'
+import { PracticeMenu } from './PracticeMenu'
 import { DeckPrint } from './DeckPrint'
-import { OcclusionThumb } from './Occlusion'
 import { Legend, ProgressBar, statusCounts } from './common'
 import { useNow } from '@/shared/client/now'
 import { DeckSettingsDialog, ImportCardsDialog } from './DeckDialogs'
 import { Button } from '@/shared/ui/button'
-import { Badge } from '@/shared/ui/badge'
 import { Menu, MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import { ConfirmModal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
-import {
-  CARD_TYPE_LABELS,
-  deleteCard,
-  deleteDeck,
-  resetCardProgress,
-  resetDeckProgress,
-  updateCard,
-  updateDeck,
-  useFlashcards,
-} from '../client/flashcards'
+import { SelectButton } from '@/shared/ui/selection-bar'
+import { useListSelection } from '@/shared/client/list-selection'
+import { deleteDeck, resetDeckProgress, updateDeck, useFlashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import { copyText } from '@/shared/client/clipboard'
 import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
-import { daysUntil, examDue, examNewPerDay, nextExam } from '../exam'
-import { maskName } from '../occlusion'
+import { daysUntil, examNewPerDay, nextExam } from '../exam'
+import { cardMatches } from '../browse'
 import { MAX_NEW_PER_DAY } from '../limits'
 import { longDate } from '@/features/calendar/dates'
-import { LEECH_LAPSES, endOfDay, formatInterval } from '../srs'
-import { byPosition, cardLapses, deckCounts, isProblemCard, reviewKey, sidesOf, type DeckCounts, type StateMap } from '../study'
-import type { Card, Deck, DeckExam } from '../types'
+import { LEECH_LAPSES } from '../srs'
+import { byPosition, deckCounts, isProblemCard, type DeckCounts } from '../study'
+import type { Deck, DeckExam } from '../types'
 
 const PAGE = 100
 
 type CardFilter = 'all' | 'problem' | 'suspended'
-
-/** Nächste Abfrage der Karte – vor einer Klausur wie im Lernmodus vorgezogen */
-function dueLabel(
-  card: Card,
-  states: StateMap,
-  now: number,
-  exam: DeckExam | null,
-): { text: string; tone: 'neutral' | 'marker' } {
-  let earliest = Infinity
-  for (const side of sidesOf(card)) {
-    const s = states.get(reviewKey(card.id, side))
-    if (!s) return { text: 'Neu', tone: 'neutral' }
-    earliest = Math.min(earliest, exam ? examDue(s, reviewKey(card.id, side), exam, now) : s.due)
-  }
-  if (earliest <= endOfDay(now)) return { text: 'Heute fällig', tone: 'marker' }
-  return { text: `in ${formatInterval(earliest - now)}`, tone: 'neutral' }
-}
 
 export function DeckView({ id }: { id: string }) {
   const app = useApp()
@@ -93,7 +66,6 @@ export function DeckView({ id }: { id: string }) {
   const [filter, setFilter] = useState<CardFilter>('all')
   const [limit, setLimit] = useState(PAGE)
   const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | 'print' | null>(null)
-  const [toDelete, setToDelete] = useState<Card | null>(null)
   const [busy, setBusy] = useState(false)
   const openContextMenu = useContextMenu()
 
@@ -110,14 +82,16 @@ export function DeckView({ id }: { id: string }) {
     (filter === 'problem' && problems.size === 0) || (filter === 'suspended' && suspended === 0) ? 'all' : filter
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
     const pool =
       shownFilter === 'problem' ? cards.filter((c) => problems.has(c.id)) : shownFilter === 'suspended' ? cards.filter((c) => c.suspended) : cards
-    if (!q) return pool
-    const texts = (c: Card) => [c.front, c.back, ...c.options.map((o) => o.text), ...(c.occlusion?.masks.map((m) => m.label) ?? [])]
-    return pool.filter((c) => texts(c).some((t) => t.toLowerCase().includes(q)))
+    return pool.filter((c) => cardMatches(c, query))
   }, [cards, query, shownFilter, problems])
   usePrintShortcut(cards.length > 0 ? () => setDialog('print') : null)
+  // Mehrfachauswahl wie in Notizlisten – über alle Karten der Liste, nicht nur die angezeigten
+  const order = useMemo(() => filtered.map((c) => c.id), [filtered])
+  const listRoot = useRef<HTMLDivElement>(null)
+  const selection = useListSelection({ order, resetKey: `${id}:${query}:${shownFilter}`, root: listRoot })
+  const cardList = useCardActions(selection)
 
   if (!deck || !data || !counts) {
     return (
@@ -135,15 +109,6 @@ export function DeckView({ id }: { id: string }) {
   }
 
   const scope = `deck:${deck.id}` as const
-
-  async function cardAction(action: () => Promise<unknown>, done: string) {
-    try {
-      await action()
-      toast.success(done)
-    } catch (err) {
-      toast.error(errorMessage(err))
-    }
-  }
 
   async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true)
@@ -265,9 +230,16 @@ export function DeckView({ id }: { id: string }) {
             >
               <GraduationCap className="size-4" /> Lernen
             </Button>
-            <Button className="max-sm:flex-1" onClick={() => app.go({ kind: 'study', scope, mode: 'practice' })} disabled={cards.length === 0}>
-              <Dumbbell className="size-4" /> Üben
-            </Button>
+            <PracticeMenu
+              scope={scope}
+              cards={cards}
+              states={data.states}
+              trigger={(p) => (
+                <Button className="max-sm:flex-1" disabled={cards.length === 0} {...p}>
+                  <Dumbbell className="size-4" /> Üben <ChevronDown className="size-3.5" />
+                </Button>
+              )}
+            />
           </div>
         </div>
         {cards.length > 0 ? (
@@ -294,6 +266,7 @@ export function DeckView({ id }: { id: string }) {
             className="h-9 w-full rounded-md border border-border bg-elevated pr-3 pl-9 text-sm outline-none placeholder:text-faint focus:border-accent focus:ring-3 focus:ring-accent/20"
           />
         </div>
+        <SelectButton selection={selection} />
         <Button variant="primary" size="sm" onClick={() => app.openCardEditor({ deckId: deck.id })} data-testid="add-card">
           <Plus className="size-4" /> Karte
         </Button>
@@ -353,129 +326,34 @@ export function DeckView({ id }: { id: string }) {
           </div>
         </div>
       ) : (
-        <ul className="space-y-2" data-testid="card-list">
-          {filtered.slice(0, limit).map((card) => {
-            const due = dueLabel(card, data.states, now, exam)
-            const noteTitle = card.noteId ? noteTitles.get(card.noteId) : undefined
-            const problem = problems.has(card.id)
-            const learned = sidesOf(card).some((side) => data.states.has(reviewKey(card.id, side)))
-            const toggleSuspended = () =>
-              void cardAction(
-                () => updateCard(qc, card.id, { suspended: !card.suspended }),
-                card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.',
-              )
-            const relearn = () => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.')
-            // Dieselben Einträge im Menü „⋮“ und beim Rechtsklick – Aussetzen und Neu lernen für jede Karte
-            const cardItems = (
-              <>
-                <MenuItem icon={<Pencil />} onSelect={() => app.openCardEditor({ card })}>
-                  Karte bearbeiten …
-                </MenuItem>
-                {noteTitle ? (
-                  <MenuItem icon={<FileText />} onSelect={() => app.go({ kind: 'note', id: card.noteId! })}>
-                    Zur Notiz
-                  </MenuItem>
-                ) : null}
-                <MenuItem icon={card.suspended ? <Play /> : <Pause />} onSelect={toggleSuspended}>
-                  {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
-                </MenuItem>
-                {learned ? (
-                  <MenuItem icon={<RotateCcw />} onSelect={relearn}>
-                    Neu lernen
-                  </MenuItem>
-                ) : null}
-                <MenuSeparator />
-                <MenuItem icon={<Trash2 />} danger onSelect={() => setToDelete(card)}>
-                  Karte löschen …
-                </MenuItem>
-              </>
-            )
-            return (
-              <li
+        <div ref={listRoot}>
+          {cardList.bar}
+          <ul className="space-y-2" data-testid="card-list">
+            {filtered.slice(0, limit).map((card) => (
+              <CardRow
                 key={card.id}
-                className="group rounded-xl border border-border bg-elevated p-3 sm:p-4"
-                onContextMenu={(e) => openContextMenu(e, cardItems, { text: true, copy: true })}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <CardMarkdown text={card.front} className="line-clamp-4 font-medium" />
-                    {card.type === 'occlusion' && card.occlusion ? <OcclusionThumb occlusion={card.occlusion} /> : null}
-                    <CardMarkdown
-                      text={
-                        card.type === 'mc'
-                          ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ')
-                          : card.type === 'occlusion' && card.occlusion
-                            ? card.occlusion.masks.map((_, i) => maskName(card.occlusion!, i)).join(' · ')
-                            : card.back
-                      }
-                      className="mt-1 line-clamp-2 text-sm text-muted"
-                    />
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <Badge>{CARD_TYPE_LABELS[card.type]}</Badge>
-                      {card.suspended ? <Badge>Ausgesetzt</Badge> : <Badge tone={due.tone}>{due.text}</Badge>}
-                      {problem ? (
-                        <Badge tone="warning">
-                          <AlertTriangle className="size-3" /> Problemkarte · {cardLapses(card, data.states)}× vergessen
-                        </Badge>
-                      ) : null}
-                      {noteTitle ? (
-                        <button
-                          type="button"
-                          onClick={() => app.go({ kind: 'note', id: card.noteId! })}
-                          className="inline-flex max-w-56 items-center gap-1 truncate text-xs text-muted hover:text-fg"
-                        >
-                          <FileText className="size-3 shrink-0" />
-                          <span className="truncate">{noteTitle}</span>
-                        </button>
-                      ) : null}
-                    </div>
-                    {problem || card.suspended ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        <Button size="sm" variant="subtle" onClick={toggleSuspended}>
-                          {card.suspended ? <Play className="size-4" /> : <Pause className="size-4" />}
-                          {card.suspended ? 'Fortsetzen' : 'Aussetzen'}
-                        </Button>
-                        {learned ? (
-                          <Button
-                            size="sm"
-                            variant="subtle"
-                            onClick={relearn}
-                            title="Lernstand dieser Karte zurücksetzen, z. B. nach dem Überarbeiten"
-                          >
-                            <RotateCcw className="size-4" /> Neu lernen
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 gap-0.5">
-                    <Button variant="ghost" size="icon-sm" onClick={() => app.openCardEditor({ card })} aria-label="Karte bearbeiten" title="Bearbeiten">
-                      <Pencil className="size-4" />
-                    </Button>
-                    {/* Auch ohne Rechtsklick erreichbar, z. B. auf dem Handy */}
-                    <Menu
-                      trigger={(p) => (
-                        <Button variant="ghost" size="icon-sm" aria-label="Weitere Aktionen" title="Weitere Aktionen" {...p}>
-                          <MoreVertical className="size-4" />
-                        </Button>
-                      )}
-                    >
-                      {cardItems}
-                    </Menu>
-                  </div>
-                </div>
+                card={card}
+                states={data.states}
+                now={now}
+                exam={exam}
+                noteTitle={card.noteId ? noteTitles.get(card.noteId) : undefined}
+                problem={problems.has(card.id)}
+                actions={cardList.rowActions}
+                selection={selection}
+                listOrder={order}
+                selectionMenu={cardList.menu}
+              />
+            ))}
+            {filtered.length === 0 ? <li className="py-6 text-center text-sm text-muted">Keine Karte passt zur Suche.</li> : null}
+            {filtered.length > limit ? (
+              <li className="text-center">
+                <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
+                  Weitere {Math.min(PAGE, filtered.length - limit)} anzeigen
+                </Button>
               </li>
-            )
-          })}
-          {filtered.length === 0 ? <li className="py-6 text-center text-sm text-muted">Keine Karte passt zur Suche.</li> : null}
-          {filtered.length > limit ? (
-            <li className="text-center">
-              <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
-                Weitere {Math.min(PAGE, filtered.length - limit)} anzeigen
-              </Button>
-            </li>
-          ) : null}
-        </ul>
+            ) : null}
+          </ul>
+        </div>
       )}
 
       {dialog === 'settings' ? <DeckSettingsDialog deck={deck} onClose={() => setDialog(null)} /> : null}
@@ -507,27 +385,7 @@ export function DeckView({ id }: { id: string }) {
           }, 'Stapel gelöscht.')
         }
       />
-      <ConfirmModal
-        open={!!toDelete}
-        onClose={() => setToDelete(null)}
-        title="Karte löschen?"
-        description="Die Karte und ihr Lernstand werden endgültig gelöscht."
-        confirmLabel="Löschen"
-        danger
-        loading={busy}
-        onConfirm={async () => {
-          if (!toDelete) return
-          setBusy(true)
-          try {
-            await deleteCard(qc, toDelete.id)
-          } catch (err) {
-            toast.error(errorMessage(err))
-          } finally {
-            setBusy(false)
-          }
-          setToDelete(null)
-        }}
-      />
+      {cardList.dialogs}
     </Page>
   )
 }

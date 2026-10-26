@@ -16,3 +16,5 @@ export const MAX_MASK_LABEL = 200
 export const MAX_NEW_PER_DAY = 9999
 /** Längste gezählte Antwortzeit pro Karte – wer länger braucht, war meist abgelenkt */
 export const MAX_ANSWER_MS = 120_000
+/** Höchstens so viele Karten auf einmal in einer Sammelaktion (verschieben, aussetzen, löschen …) */
+export const MAX_BATCH_CARDS = 5000

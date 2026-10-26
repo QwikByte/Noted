@@ -45,6 +45,46 @@ export const DEFAULT_RETENTION = 0.9
 const clampEase = (e: number) => Math.min(MAX_EASE, Math.max(MIN_EASE, Math.round(e * 100) / 100))
 const clampInterval = (d: number) => Math.min(MAX_INTERVAL, Math.max(1, Math.round(d)))
 
+/** Fester Hash eines Textes (FNV-1a, 32 Bit) – für Verteilungen, die für jede Kartenseite gleich bleiben */
+export function fnv1a(text: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return h >>> 0
+}
+
+// Streuung der Abstände wie bei Anki (rslib/src/scheduler/states/fuzz.rs): 1 Tag plus ein Anteil der Tage in jedem
+// Bereich – unter 2,5 Tagen gar nicht
+const FUZZ_RANGES = [
+  { start: 2.5, end: 7, factor: 0.15 },
+  { start: 7, end: 20, factor: 0.1 },
+  { start: 20, end: Infinity, factor: 0.05 },
+]
+
+function fuzzDelta(days: number): number {
+  if (days < 2.5) return 0
+  return FUZZ_RANGES.reduce((delta, r) => delta + r.factor * Math.max(0, Math.min(days, r.end) - r.start), 1)
+}
+
+/**
+ * Abstand in ganzen Tagen, mindestens `min`, höchstens MAX_INTERVAL. Mit `seed` (0 bis unter 1) liegt er irgendwo im
+ * Bereich um `days` – so laufen Karten, die gemeinsam gelernt wurden, mit der Zeit auseinander, statt für immer am
+ * selben Tag fällig zu sein. Ohne `seed` genau gerundet.
+ */
+export function fuzzInterval(days: number, seed: number | null, min = 1): number {
+  const lo = Math.min(Math.max(1, min), MAX_INTERVAL)
+  const d = Math.min(MAX_INTERVAL, Math.max(lo, days))
+  if (seed === null) return Math.round(d)
+  const delta = fuzzDelta(d)
+  const clamp = (n: number) => Math.min(MAX_INTERVAL, Math.max(lo, n))
+  const lower = clamp(Math.round(d - delta))
+  let upper = clamp(Math.round(d + delta))
+  if (upper === lower && upper > 2 && upper < MAX_INTERVAL) upper = lower + 1
+  return Math.floor(lower + seed * (1 + upper - lower))
+}
+
+/** Streuung für eine Bewertung: fest je Kartenseite und Wiederholung, damit Knopf und Bewertung denselben Tag ergeben */
+const fuzzSeed = (key: string | undefined, reps: number) => (key ? fnv1a(`${key}:${reps}`) / 2 ** 32 : null)
+
 /**
  * Wiederholungsplan eines Stapels: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate – `weights`: auf den eigenen
  * Lernverlauf optimierte Gewichte (sonst die Standardwerte)
@@ -72,8 +112,12 @@ function calendarDays(from: number, to: number): number {
   return Math.round((startOfDay(to) - startOfDay(from)) / DAY)
 }
 
-/** Neuer Lernstand nach einer Bewertung. `prev` = null bei einer neuen Karte. */
-export function schedule(prev: SrsState | null, rating: Rating, now: number, plan: Plan = SM2): SrsState {
+/**
+ * Neuer Lernstand nach einer Bewertung. `prev` = null bei einer neuen Karte. Mit `key` (Kartenseite, siehe itemKey)
+ * werden Abstände ab 2,5 Tagen leicht gestreut.
+ */
+export function schedule(prev: SrsState | null, rating: Rating, now: number, plan: Plan = SM2, key?: string): SrsState {
+  const seed = fuzzSeed(key, prev?.reps ?? 0)
   const s: SrsState = prev
     ? { ...prev }
     : {
@@ -110,26 +154,28 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
       s.due = now + RELEARNING_STEPS[0] * MINUTE
       return s
     }
+    // Jeder Abstand mit Untergrenze – gestreut bleibt so Schwer ≤ Gut < Einfach
+    const fuzz = (days: number, min = 1) => fuzzInterval(days, seed, min)
     let hard: number, good: number, easy: number
     if (plan.kind === 'fsrs') {
       // Wie in der Referenz von FSRS: Schwer ≤ Gut < Einfach
-      hard = Math.min(fsrsDays(2), fsrsDays(3))
-      good = Math.min(MAX_INTERVAL, Math.max(fsrsDays(3), hard + 1))
-      easy = Math.min(MAX_INTERVAL, Math.max(fsrsDays(4), good + 1))
+      hard = fuzz(Math.min(fsrsDays(2), fsrsDays(3)))
+      good = fuzz(fsrsDays(3), hard + 1)
+      easy = fuzz(fsrsDays(4), good + 1)
     } else if (prev && prev.due - now > DAY) {
       // Vorgezogen (vor einer Klausur): Der Abstand wächst nur um die tatsächlich vergangene Zeit, bei „Gut“ und
       // „Einfach“ wird er aber nicht kürzer als bisher – wie bei Anki
       const elapsed = (now - prev.reviewedAt) / DAY
-      hard = clampInterval(Math.max((s.interval * HARD_FACTOR) / 2, elapsed * HARD_FACTOR))
-      good = Math.min(MAX_INTERVAL, Math.max(hard + 1, s.interval, Math.round(elapsed * s.ease)))
+      hard = fuzz(Math.max((s.interval * HARD_FACTOR) / 2, elapsed * HARD_FACTOR))
+      good = fuzz(Math.max(s.interval, Math.round(elapsed * s.ease)), hard + 1)
       const easyBonus = (1 + EASY_BONUS) / 2
-      easy = Math.min(MAX_INTERVAL, Math.max(good + 1, Math.round(Math.max(s.interval, elapsed * s.ease) * easyBonus)))
+      easy = fuzz(Math.round(Math.max(s.interval, elapsed * s.ease) * easyBonus), good + 1)
     } else {
       // Zu spät wiederholte Karten wurden trotzdem gewusst – das zählt teilweise mit
       const overdue = Math.max(0, (now - (prev?.due ?? now)) / DAY)
-      hard = Math.min(MAX_INTERVAL, Math.max(s.interval + 1, Math.round((s.interval + overdue / 4) * HARD_FACTOR)))
-      good = Math.min(MAX_INTERVAL, Math.max(hard + 1, Math.round((s.interval + overdue / 2) * s.ease)))
-      easy = Math.min(MAX_INTERVAL, Math.max(good + 1, Math.round((s.interval + overdue) * s.ease * EASY_BONUS)))
+      hard = fuzz(Math.round((s.interval + overdue / 4) * HARD_FACTOR), s.interval + 1)
+      good = fuzz(Math.round((s.interval + overdue / 2) * s.ease), hard + 1)
+      easy = fuzz(Math.round((s.interval + overdue) * s.ease * EASY_BONUS), good + 1)
     }
     if (rating === 2) {
       s.interval = hard
@@ -150,10 +196,13 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
   const graduate = (days: number) => {
     s.phase = 'review'
     s.step = 0
-    s.interval = clampInterval(days)
+    s.interval = days
     s.due = now + s.interval * DAY
     return s
   }
+  // Abstand beim Abschluss mit „Gut“ – „Einfach“ liegt auch gestreut darüber
+  const graduateGood = () =>
+    fuzzInterval(plan.kind === 'fsrs' ? fsrsDays(3) : s.phase === 'relearning' ? s.interval : GRADUATING_INTERVAL, seed)
   switch (rating) {
     case 1:
       s.step = 0
@@ -171,18 +220,18 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
         s.due = now + steps[s.step] * MINUTE
         return s
       }
-      if (plan.kind === 'fsrs') return graduate(fsrsDays(3))
-      return graduate(s.phase === 'relearning' ? s.interval : GRADUATING_INTERVAL)
-    default:
-      if (plan.kind === 'fsrs') return graduate(Math.max(fsrsDays(4), fsrsDays(3) + 1))
-      return graduate(s.phase === 'relearning' ? s.interval + 1 : EASY_INTERVAL)
+      return graduate(graduateGood())
+    default: {
+      const easy = plan.kind === 'fsrs' ? fsrsDays(4) : s.phase === 'relearning' ? s.interval + 1 : EASY_INTERVAL
+      return graduate(fuzzInterval(easy, seed, graduateGood() + 1))
+    }
   }
 }
 
-/** Abstand bis zur nächsten Abfrage für jede Bewertung (für die Beschriftung der Knöpfe). */
-export function previewIntervals(prev: SrsState | null, now: number, plan: Plan = SM2): Record<Rating, number> {
+/** Abstand bis zur nächsten Abfrage für jede Bewertung (für die Beschriftung der Knöpfe) – `key` wie bei schedule */
+export function previewIntervals(prev: SrsState | null, now: number, plan: Plan = SM2, key?: string): Record<Rating, number> {
   const out = {} as Record<Rating, number>
-  for (const { rating } of RATINGS) out[rating] = schedule(prev, rating, now, plan).due - now
+  for (const { rating } of RATINGS) out[rating] = schedule(prev, rating, now, plan, key).due - now
   return out
 }
 

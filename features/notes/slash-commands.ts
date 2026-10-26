@@ -1,6 +1,7 @@
 // Befehle mit „/“ im Editor: welche es gibt, wann das Menü aufgeht und wie Weitertippen filtert. Rein – ohne Editor,
 // Browser oder React –, damit der Markdown-Editor und der formatierte Text dieselben Regeln nutzen.
 import { isProseAt } from './markdown-context'
+import { isTableRow } from './markdown-table'
 import { fuzzyScore } from './tree'
 
 type SlashCommand = {
@@ -74,7 +75,7 @@ export function markdownSlashAt(doc: string, pos: number): { from: number; query
   if (!m) return null
   const from = lineStart + m.offset
   const head = line.slice(0, m.offset)
-  if (line.trimStart().startsWith('|') || head.lastIndexOf('[[') > head.lastIndexOf(']]')) return null
+  if (isTableRow(line) || head.lastIndexOf('[[') > head.lastIndexOf(']]')) return null
   return isProseAt(doc, from) ? { from, query: m.query } : null
 }
 

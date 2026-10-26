@@ -4,7 +4,7 @@ import { cardStatus, type CardStatus } from '../srs'
 import { reviewKey, sidesOf, type StateMap } from '../study'
 import type { Card } from '../types'
 
-const STATUS_LABELS: Record<CardStatus, string> = {
+export const STATUS_LABELS: Record<CardStatus, string> = {
   new: 'Neu',
   learning: 'Lernend',
   young: 'Gelernt',

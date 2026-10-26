@@ -4,8 +4,7 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '@/shared/client/api'
 import { sync, type Draft } from './sync'
 import type { Folder, Note, NoteSummary, NoteVersion, NoteVersionWithContent, TagCount, TrashedNote } from '../types'
-import { extractTags, makeExcerpt } from '@/shared/markdown/meta'
-import { noteText } from '../format'
+import { createDraftMerger } from '../merge-drafts'
 import { useRevealRequest, useVaultState, vault, type Reveal } from '@/features/vault/client/vault'
 import { VaultError } from '@/features/vault/crypto'
 
@@ -15,7 +14,7 @@ export const keys = {
   folders: ['folders'] as const,
   tags: ['tags'] as const,
   trash: ['trash'] as const,
-  search: (q: string) => ['search', q] as const,
+  search: (q: string, folder?: string) => ['search', q, folder ?? null] as const,
   backlinks: (id: string) => ['backlinks', id] as const,
   versions: (id: string) => ['versions', id] as const,
   version: (id: string, versionId: number) => ['versions', id, versionId] as const,
@@ -85,6 +84,10 @@ export function useDrafts(): Draft[] {
 }
 const EMPTY: Draft[] = []
 
+// Ein Ergebnis für alle useNotes() – beim Tippen rechnet nicht jede Stelle, die die Liste braucht, für sich
+const mergeDrafts = createDraftMerger()
+const NO_NOTES: NoteSummary[] = []
+
 /**
  * Notizliste vom Server, ergänzt um lokale (noch nicht synchronisierte) Änderungen – Tresor-Notizen nur entsperrt,
  * mit entschlüsseltem Titel.
@@ -93,53 +96,11 @@ export function useNotes() {
   const query = useServerNotes()
   const drafts = useDrafts()
   const state = useVaultState()
-  const merged = useMemo(() => mergeDrafts(query.data ?? [], drafts), [query.data, drafts])
+  const merged = useMemo(() => mergeDrafts(query.data ?? NO_NOTES, drafts), [query.data, drafts])
   const reveals = useMemo(() => titleReveals(merged), [merged])
   useRevealRequest(reveals)
   const notes = useMemo(() => revealNotes(merged, state), [merged, state])
   return { ...query, notes }
-}
-
-function mergeDrafts(server: NoteSummary[], drafts: Draft[]): NoteSummary[] {
-  if (drafts.length === 0) return server
-  const byId = new Map(drafts.map((d) => [d.id, d]))
-  const result = server.map((n) => {
-    const d = byId.get(n.id)
-    if (!d) return n
-    byId.delete(n.id)
-    const format = d.format ?? n.format
-    // Im Tresor ist der Inhalt ein Umschlag: kein Auszug, keine Tags
-    const text = d.content !== undefined && !n.vault ? noteText(format, d.content) : null
-    return {
-      ...n,
-      title: d.title ?? n.title,
-      titleEnc: d.titleEnc ?? n.titleEnc,
-      folderId: d.folderId !== undefined ? d.folderId : n.folderId,
-      format,
-      updatedAt: Math.max(n.updatedAt, d.updatedAt),
-      ...(text !== null ? { excerpt: makeExcerpt(text), tags: extractTags(text) } : {}),
-    }
-  })
-  for (const d of byId.values()) {
-    if (!d.isNew) continue
-    const format = d.format ?? 'markdown'
-    const text = d.vault ? '' : noteText(format, d.content ?? '')
-    result.unshift({
-      id: d.id,
-      title: d.vault ? d.id : (d.title ?? 'Unbenannt'),
-      folderId: d.folderId ?? null,
-      format,
-      pinned: false,
-      version: 0,
-      createdAt: d.updatedAt,
-      updatedAt: d.updatedAt,
-      tags: extractTags(text),
-      excerpt: makeExcerpt(text),
-      vault: !!d.vault,
-      titleEnc: d.titleEnc ?? null,
-    })
-  }
-  return result
 }
 
 export function useNote(id: string | null, enabled = true) {

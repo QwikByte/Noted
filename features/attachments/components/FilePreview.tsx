@@ -1,7 +1,7 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { File, FileAudio, FileText, FileVideo } from 'lucide-react'
-import { usePdfPreview } from '../client/preview'
+import { useFilePreview } from '../client/preview'
 import type { Attachment } from '../types'
 
 function FileIcon({ mime }: { mime: string }) {
@@ -19,24 +19,25 @@ export function FilePreview({ file }: { file: Attachment }) {
 }
 
 function ImagePreview({ file }: { file: Attachment }) {
-  const [failed, setFailed] = useState(false)
-  // Manche Formate zeigt nicht jeder Browser an (HEIC z. B. Safari, aber nicht Chrome) – dann bleibt es beim Symbol
-  if (failed) return <FileIcon mime={file.mime} />
+  const ref = useRef<HTMLSpanElement>(null)
+  // Verkleinert und im Browser aufbewahrt. Formate, die der Browser nicht lesen kann (HEIC z. B. in Chrome), und
+  // offline nie gesehene Bilder bleiben beim Symbol
+  const url = useFilePreview(ref, file)
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`/api/attachments/${file.id}`}
-      alt={file.filename}
-      loading="lazy"
-      className="size-full object-cover"
-      onError={() => setFailed(true)}
-    />
+    <span ref={ref} className="flex size-full items-center justify-center">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={file.filename} className="size-full animate-fade-in object-cover" />
+      ) : (
+        <FileIcon mime={file.mime} />
+      )}
+    </span>
   )
 }
 
 function PdfPreview({ file }: { file: Attachment }) {
   const ref = useRef<HTMLSpanElement>(null)
-  const url = usePdfPreview(ref, file)
+  const url = useFilePreview(ref, file)
   return (
     <span ref={ref} className="flex size-full items-center justify-center">
       {url ? (

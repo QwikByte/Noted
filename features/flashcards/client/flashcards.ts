@@ -7,8 +7,10 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/client/api'
+import { useNow } from '@/shared/client/now'
 import { deviceTimeZone, useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
+import { startOfDay } from '../srs'
 import { movedSides, reviewKey, sidesOf, stateMap, type Side, type StateMap } from '../study'
 import type {
   AnkiImportResult,
@@ -16,6 +18,8 @@ import type {
   CardOption,
   CardReview,
   CardType,
+  CardBatchAction,
+  CardBatchResult,
   CardUpdateResult,
   Deck,
   DeckImportResult,
@@ -81,6 +85,7 @@ export class ReviewQueue {
   private forgotten = new Map<string, number>()
   private listeners = new Set<() => void>()
   private snapshot: CardReview[] = []
+  private logSnapshot: ReviewLogEntry[] = []
   private undoSnapshot: ReviewUndo[] = []
   private timer: ReturnType<typeof setTimeout> | undefined
   private flushing = false
@@ -115,11 +120,15 @@ export class ReviewQueue {
   /** Alle lokal bekannten Bewertungen (gesendet und ungesendet) */
   getSnapshot = () => this.snapshot
 
+  /** Noch nicht gesendete Einträge fürs Bewertungsprotokoll – z. B. für „Heute vergessen“, bevor der Server sie kennt */
+  getLog = () => this.logSnapshot
+
   /** Alle lokal bekannten Rücknahmen, die die Daten vom Server womöglich noch nicht enthalten (für `applyUndos`) */
   getUndoSnapshot = () => this.undoSnapshot
 
   private emit() {
     this.snapshot = [...this.acked.values(), ...this.pending.values()]
+    this.logSnapshot = [...this.log.values()]
     this.undoSnapshot = [...this.undone.values(), ...this.undoing.values()]
     for (const fn of this.listeners) fn()
   }
@@ -449,6 +458,32 @@ export function useFlashcards() {
   return { ...query, data }
 }
 
+const NO_LOG: ReviewLogEntry[] = []
+
+/**
+ * Kartenseiten (reviewKey), die heute mit „Nochmal“ bewertet wurden – vom Server und die noch nicht gesendeten dieses
+ * Geräts. `offline`: Der Server war nicht erreichbar, es zählen nur die lokalen.
+ */
+export function useAgainToday(enabled = true) {
+  const query = useQuery({
+    queryKey: ['again-today'],
+    queryFn: () =>
+      api<{ sides: { cardId: string; side: Side }[] }>(`/api/stats/again?tz=${encodeURIComponent(deviceTimeZone())}`),
+    enabled,
+    staleTime: 0,
+    retry: false,
+  })
+  const log = useSyncExternalStore(reviewQueue.subscribe, reviewQueue.getLog, () => NO_LOG)
+  // Nach Mitternacht beginnt ein neuer Tag
+  const today = startOfDay(useNow())
+  const keys = useMemo(() => {
+    const set = new Set((query.data?.sides ?? []).map((s) => reviewKey(s.cardId, s.side)))
+    for (const e of log) if (e.rating === 1 && e.reviewedAt >= today) set.add(reviewKey(e.cardId, e.side))
+    return set
+  }, [query.data, log, today])
+  return { keys, loading: enabled && query.isPending && !query.isError, offline: query.isError }
+}
+
 // ---------------------------------------------------------------------------
 // Änderungen (nur online)
 // ---------------------------------------------------------------------------
@@ -574,6 +609,24 @@ export async function importDeckPackage(qc: QueryClient, file: File, deckId: str
   const result = await api<DeckImportResult>('/api/decks/import', { method: 'POST', form })
   await qc.invalidateQueries({ queryKey: flashcardsKey })
   return result
+}
+
+/**
+ * Mehrere Karten auf einmal verschieben (`deckId`), aussetzen, fortsetzen, neu lernen oder löschen. Liefert die IDs,
+ * die der Server geändert hat.
+ */
+export async function batchCards(qc: QueryClient, action: CardBatchAction, ids: string[], deckId?: string): Promise<string[]> {
+  const res = await api<CardBatchResult>('/api/cards/batch', { method: 'POST', body: { action, ids, deckId } })
+  const done = new Set(res.ids)
+  // Gelöscht oder neu zu lernen: auch noch nicht gesendete Bewertungen verwerfen
+  if (action === 'delete' || action === 'reset') reviewQueue.drop(done)
+  const changed = new Map(res.cards.map((c) => [c.id, c]))
+  patch(qc, (d) => ({
+    ...d,
+    cards: d.cards.flatMap((c) => (action === 'delete' && done.has(c.id) ? [] : [changed.get(c.id) ?? c])),
+    reviews: action === 'delete' || action === 'reset' ? d.reviews.filter((r) => !done.has(r.cardId)) : d.reviews,
+  }))
+  return res.ids
 }
 
 export async function deleteCard(qc: QueryClient, id: string) {

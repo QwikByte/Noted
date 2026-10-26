@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_SELECTION, clickSelect, pruneSelection, selectAll, type NoteSelection } from './selection'
+import { EMPTY_SELECTION, clickSelect, pruneSelection, selectAll, type ListSelection } from './list-selection'
 
 const order = ['a', 'b', 'c', 'd', 'e']
-const ids = (sel: NoteSelection) => [...sel.ids].sort()
+const ids = (sel: ListSelection) => [...sel.ids].sort()
 
 describe('Mehrfachauswahl', () => {
   it('schaltet einzelne Notizen um und merkt sich den Anker', () => {

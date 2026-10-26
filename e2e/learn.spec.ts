@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { apiHeaders, makePdf } from './helpers'
+import { apiHeaders, makePdf, trackRequests } from './helpers'
 
 // Karteikarten (aus einer Notiz erstellen, lernen mit Wiederholungsplan, Multiple Choice, offline bewerten)
 // und der eingebaute PDF-Viewer neben der Notiz (Seitenlinks, Suche, Zitat in die Notiz).
@@ -36,6 +36,7 @@ test.afterEach(() => {
 })
 
 test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context }) => {
+  const network = trackRequests(page)
   await login(page)
   const headers = await apiHeaders(page)
   const res = await page.request.post('/api/notes', {
@@ -99,7 +100,8 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
       await page.keyboard.press('Space')
       await expect(page.getByTestId('study-answer')).toBeVisible()
     }
-    await expect(page.getByTestId('rate-4')).toContainText('4 Tage')
+    // „Einfach“ plant 4 Tage, je Karte leicht gestreut (3–5 Tage), damit gemeinsam gelernte Karten auseinanderlaufen
+    await expect(page.getByTestId('rate-4')).toContainText(/(?<!\d)[345] Tage/)
     await page.getByTestId('rate-4').click()
   }
   await expect(page.getByTestId('study-done')).toContainText('Geschafft!')
@@ -119,6 +121,8 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
   await page.getByRole('menuitem', { name: 'Lernstand zurücksetzen …' }).click()
   await dialog.getByRole('button', { name: 'Zurücksetzen' }).click()
   await expect(page.getByText('Lernstand zurückgesetzt.')).toBeVisible()
+  // Erst offline gehen, wenn die App im Hintergrund fertig nachgeladen hat
+  await network.idle()
   await context.setOffline(true)
   await page.getByTestId('deck-learn').click()
   // Erst tippen, wenn die Lernansicht da ist – sonst geht die Leertaste je nach Auslastung ins Leere
@@ -137,6 +141,61 @@ test('Karteikarten aus einer Notiz erstellen und lernen', async ({ page, context
     .poll(async () => (await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))).reviews.length, { timeout: 15_000 })
     .toBe(1)
   await expect.poll(pendingReviews).toBe(0)
+})
+
+test('Notiz und Karten abgleichen: neue Antwort übernehmen, Lernstand bleibt, verwaiste Karte lösen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const post = async (url: string, data: unknown) => (await page.request.post(url, { headers, data })).json()
+  const content = 'Was ist ein Körper?::Menge mit + und ·\nWas ist ein Modul?::Vektorraum über einem Ring\n'
+  const note = (await post('/api/notes', { title: 'Abgleich Algebra', content })).note as { id: string }
+  const deck = (await post('/api/decks', { name: 'Abgleich Algebra' })).deck as { id: string }
+  const [field, module] = (
+    await post(`/api/decks/${deck.id}/cards`, {
+      cards: [
+        { type: 'basic', front: 'Was ist ein Körper?', back: 'Menge mit + und ·', noteId: note.id },
+        { type: 'basic', front: 'Was ist ein Modul?', back: 'Vektorraum über einem Ring', noteId: note.id },
+      ],
+    })
+  ).cards as { id: string }[]
+  // Lernstand der ersten Karte: in 10 Tagen wieder dran
+  const now = Date.now()
+  const state = { phase: 'review', step: 0, interval: 10, ease: 2.5, reps: 3, lapses: 0, reviewedAt: now, introducedAt: now }
+  await post('/api/reviews', { reviews: [{ cardId: field.id, side: 0, ...state, due: now + 10 * 86_400_000 }] })
+  // In der Notiz: Antwort präzisiert, Modul gestrichen
+  const precise = 'Kommutativer Ring, in dem jedes Element außer 0 invertierbar ist'
+  await page.request.put(`/api/notes/${note.id}`, { headers, data: { content: `Was ist ein Körper?::${precise}\n` } })
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.getByRole('button', { name: '2 Karten veraltet – abgleichen' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Karteikarten aus Notiz' })
+  const changed = dialog.getByTestId('cards-changed')
+  await expect(changed.getByTestId('card-before')).toContainText('Menge mit + und ·')
+  await expect(changed.getByTestId('card-after')).toContainText(precise)
+  await expect(changed).toContainText('Antwort geändert')
+  await expect(changed.getByRole('checkbox', { name: '„Was ist ein Körper?“ aktualisieren' })).toBeChecked()
+  const orphaned = dialog.getByTestId('cards-orphaned')
+  await expect(orphaned).toContainText('Was ist ein Modul?')
+  // Nichts ist für verwaiste Karten vorausgewählt
+  const action = orphaned.getByLabel('„Was ist ein Modul?“: was tun?')
+  await expect(action).toHaveValue('keep')
+  await action.selectOption('unlink')
+  await shot(page, '33-cards-sync')
+  await dialog.getByTestId('create-from-note').click()
+  await expect(page.getByText('Karten abgeglichen: 1 aktualisiert, 1 von der Notiz gelöst.')).toBeVisible()
+  await expect(page.getByText('1 Karteikarte aus dieser Notiz')).toBeVisible()
+  await expect(page.getByRole('button', { name: /veraltet – abgleichen/ })).toHaveCount(0)
+
+  // Auf dem Server: neue Antwort, Lernstand unverändert, Modul ohne Notiz
+  const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const cards = data.cards as { id: string; back: string; noteId: string | null }[]
+  expect(cards.find((c) => c.id === field.id)).toMatchObject({ back: precise, noteId: note.id })
+  expect(cards.find((c) => c.id === module.id)).toMatchObject({ noteId: null })
+  expect(data.reviews.find((r: { cardId: string }) => r.cardId === field.id)).toMatchObject({ interval: 10, reps: 3 })
+
+  await page.request.delete(`/api/decks/${deck.id}`, { headers })
+  await page.request.delete(`/api/notes/${note.id}?permanent=1`, { headers })
 })
 
 test('PDF neben der Notiz lesen, verlinken und zitieren', async ({ page }) => {
@@ -397,4 +456,83 @@ test('PDF-Viewer mit der Tastatur: suchen, blättern, zoomen und markieren', asy
   await page.keyboard.press('Control+f')
   await expect(page.locator('.cm-search')).toBeVisible()
   await expect(input).toHaveCount(0)
+})
+
+test.describe('Handy', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+
+  test('Bewerten per Wischen: links „Nochmal“, rechts „Gut“ – vor dem Aufdecken und knapp darunter nichts', async ({ page }) => {
+    await login(page)
+    const headers = await apiHeaders(page)
+    const deck = (await (await page.request.post('/api/decks', { headers, data: { name: 'Wischen E2E' } })).json()).deck
+    const cards = (
+      await (
+        await page.request.post(`/api/decks/${deck.id}/cards`, {
+          headers,
+          data: {
+            cards: [
+              { type: 'basic', front: 'Hauptstadt von Frankreich?', back: 'Paris' },
+              { type: 'basic', front: 'Hauptstadt von Italien?', back: 'Rom' },
+            ],
+          },
+        })
+      ).json()
+    ).cards as { id: string; front: string }[]
+    await page.goto(`/?s=${encodeURIComponent(`deck:${deck.id}`)}`)
+    const card = page.getByTestId('study-card')
+    await expect(card).toBeVisible()
+
+    const cdp = await page.context().newCDPSession(page)
+    const box = (await card.boundingBox())!
+    const y = box.y + 40
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y }] })
+    const swipe = async (from: number, to: number) => {
+      await touch('touchStart', from)
+      for (let i = 1; i <= 4; i++) await touch('touchMove', from + ((to - from) * i) / 4)
+      await touch('touchEnd')
+    }
+    const frontOf = async () => {
+      const text = (await card.locator('.markdown-body').first().innerText()).trim()
+      return cards.find((c) => c.front === text)!
+    }
+
+    // Vor dem Aufdecken bewertet ein Wisch nichts
+    await swipe(80, 340)
+    await expect(page.getByTestId('reveal')).toBeVisible()
+    // Aufdecken per Klick: Ein Tippen direkt nach einem Wisch hielte in Chrome nur dessen Nachlauf an
+    const reveal = page.getByTestId('reveal')
+    await reveal.click()
+    await expect(page.getByTestId('study-answer')).toBeVisible()
+
+    // Während des Wischens: Beschriftung, die Karte folgt dem Finger
+    await touch('touchStart', 300)
+    await touch('touchMove', 250)
+    await touch('touchMove', 100)
+    await expect(page.getByTestId('swipe-label')).toHaveText('Nochmal')
+    await shot(page, '34-swipe')
+    // Zurück unter die Schwelle und loslassen: schnappt zurück, nichts bewertet
+    await touch('touchMove', 270)
+    await touch('touchEnd')
+    await expect(page.getByTestId('swipe-label')).toHaveCount(0)
+    await expect(page.getByTestId('study-answer')).toBeVisible()
+
+    const first = await frontOf()
+    await swipe(330, 60)
+    await expect(page.getByTestId('study-answer')).toHaveCount(0)
+    const second = await frontOf()
+    expect(second.id).not.toBe(first.id)
+    await reveal.click()
+    await swipe(60, 330)
+
+    // Nochmal: erster Lernschritt, Gut: der nächste
+    await expect
+      .poll(async () => {
+        const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+        const step = (id: string) => data.reviews.find((r: { cardId: string }) => r.cardId === id)?.step
+        return [step(first.id), step(second.id)]
+      })
+      .toEqual([0, 1])
+    await page.request.delete(`/api/decks/${deck.id}`, { headers })
+  })
 })

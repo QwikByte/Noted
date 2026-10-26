@@ -25,7 +25,7 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { reviewQueue, updateCard, useFlashcards, type Flashcards } from '../client/flashcards'
+import { reviewQueue, updateCard, useAgainToday, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
 import { LEECH_LAPSES, SM2, formatInterval, previewIntervals, RATINGS, schedule, type Plan, type Rating } from '../srs'
@@ -34,17 +34,23 @@ import {
   PracticeSession,
   allItems,
   deckCounts,
+  filterItems,
   isCorrectSelection,
   isProblemCard,
   itemKey,
   shuffle,
   type ItemKind,
+  type StudyFilter,
   type StudyItem,
 } from '../study'
 import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
 import { clozeAnswer, clozeCount, clozeQuestion, clozeText } from '../cloze'
 import { reviewLogEntry } from '../stats'
 import { OcclusionImage } from './Occlusion'
+import { FILTER_LABELS } from './PracticeMenu'
+import { useSwipe } from '../client/swipe'
+import type { SwipeDirection } from '../swipe'
+import { usePref } from '@/shared/client/prefs'
 import type { Card, Deck, SrsState } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
@@ -78,17 +84,30 @@ function resolveScope(data: Flashcards, scope: StudyScope, noteTitle: (id: strin
   }
 }
 
-export function StudyView({ scope, mode }: { scope: StudyScope; mode: StudyMode }) {
+export function StudyView({ scope, mode, filter }: { scope: StudyScope; mode: StudyMode; filter?: StudyFilter }) {
   const app = useApp()
   const { data, isLoading, error } = useFlashcards()
   const { notes } = useNotes()
   const titleOf = useCallback((id: string) => notes.find((n) => n.id === id)?.title, [notes])
+  const practiceFilter = mode === 'practice' ? filter : undefined
+  // „Heute vergessen“ braucht das Protokoll vom Server – ohne Verbindung nur die Bewertungen dieses Geräts
+  const again = useAgainToday(practiceFilter === 'again-today')
   // Sitzung einmalig aus dem Stand beim Öffnen aufbauen – spätere Änderungen (z. B. gesendete Bewertungen)
   // sollen die laufende Reihenfolge nicht durcheinanderbringen
-  const [snapshot, setSnapshot] = useState<{ data: Flashcards; scope: Scope } | null>(null)
-  if (!snapshot && data) {
+  const [snapshot, setSnapshot] = useState<{ data: Flashcards; scope: Scope; items?: StudyItem[] } | null>(null)
+  if (!snapshot && data && !again.loading) {
     const resolved = resolveScope(data, scope, titleOf)
-    if (resolved) setSnapshot({ data, scope: resolved })
+    if (resolved) {
+      setSnapshot(
+        practiceFilter
+          ? {
+              data,
+              scope: { ...resolved, title: `${resolved.title} · ${FILTER_LABELS[practiceFilter]}` },
+              items: filterItems(practiceFilter, resolved.cards, data.states, { again: again.keys }),
+            }
+          : { data, scope: resolved },
+      )
+    }
   }
 
   if (!snapshot) {
@@ -105,7 +124,16 @@ export function StudyView({ scope, mode }: { scope: StudyScope; mode: StudyMode 
       </div>
     )
   }
-  return <StudySession key={`${scope}:${mode}`} mode={mode} scope={scope} snapshot={snapshot} live={data ?? snapshot.data} />
+  return (
+    <StudySession
+      key={`${scope}:${mode}:${practiceFilter ?? ''}`}
+      mode={mode}
+      scope={scope}
+      snapshot={snapshot}
+      live={data ?? snapshot.data}
+      notice={practiceFilter === 'again-today' && again.offline ? 'Offline – es zählen nur die Bewertungen dieses Geräts.' : undefined}
+    />
+  )
 }
 
 function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
@@ -139,11 +167,15 @@ function StudySession({
   scope,
   snapshot,
   live,
+  notice,
 }: {
   mode: StudyMode
   scope: StudyScope
-  snapshot: { data: Flashcards; scope: Scope }
+  /** `items`: Seiten einer eigenen Übung, sonst alle Karten des Bereichs */
+  snapshot: { data: Flashcards; scope: Scope; items?: StudyItem[] }
   live: Flashcards
+  /** Hinweis über der Karte, z. B. dass offline nur lokale Bewertungen zählen */
+  notice?: string
 }) {
   const app = useApp()
   const qc = useQueryClient()
@@ -156,7 +188,7 @@ function StudySession({
     (items?: StudyItem[]): LearnSession | PracticeSession =>
       mode === 'learn'
         ? new LearnSession(snapshot.scope.decks, snapshot.scope.pool, snapshot.data.states, Date.now(), inScope(snapshot.scope))
-        : new PracticeSession(items ?? allItems(snapshot.scope.cards)),
+        : new PracticeSession(items ?? snapshot.items ?? allItems(snapshot.scope.cards)),
     [mode, snapshot],
   )
   const [init] = useState(() => {
@@ -213,7 +245,7 @@ function StudySession({
     [scheduler, retention, weights],
   )
   const intervals = useMemo(
-    () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan) : null),
+    () => (current && mode === 'learn' ? previewIntervals(state, shownAt, plan, itemKey(current)) : null),
     [current, state, mode, shownAt, plan],
   )
   const isCloze = card?.type === 'cloze'
@@ -254,7 +286,7 @@ function StudySession({
     (rating: Rating) => {
       if (!current || !(session instanceof LearnSession)) return
       const now = Date.now()
-      const next = schedule(state, rating, now, plan)
+      const next = schedule(state, rating, now, plan, itemKey(current))
       if (next.lapses >= LEECH_LAPSES && !isProblemCard(current.card, live.states)) {
         toast.show(
           `${next.lapses}-mal vergessen – überarbeite oder teile die Karte (im Stapel unter „Problemkarten“).`,
@@ -352,6 +384,26 @@ function StudySession({
 
   // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
   const bottomBar = useReservedSpace<HTMLDivElement>('--bottom-bar-height')
+
+  // Wischen nach dem Aufdecken (Handy): links „Nochmal“ bzw. „Nicht gewusst“, rechts „Gut“ bzw. „Gewusst“ – nach einer
+  // eingetippten Antwort rechts die vorausgewählte Bewertung, nach einer Multiple-Choice-Antwort wie die Knöpfe
+  const [swipeGrading] = usePref<'1' | '0'>('noted:swipeGrading', '1')
+  const swipeAction = (direction: SwipeDirection): { label: string; good: boolean; run: () => void } | null => {
+    if (!revealed || (isMc && !answer.checked)) return null
+    if (mode === 'learn') {
+      if (!intervals) return null
+      if (isMc && correct === false) return { label: 'Weiter', good: false, run: () => rate(1) }
+      // Eine richtige Multiple-Choice-Antwort kennt kein „Nochmal“
+      if (direction === 'left') return isMc ? null : { label: 'Nochmal', good: false, run: () => rate(1) }
+      return typedWrong ? { label: 'Nochmal', good: false, run: () => rate(1) } : { label: 'Gut', good: true, run: () => rate(3) }
+    }
+    if (isMc) return { label: 'Weiter', good: !!correct, run: () => practiceAnswer(!!correct) }
+    const ok = direction === 'right' && !typedWrong
+    return ok
+      ? { label: 'Gewusst', good: true, run: () => practiceAnswer(true) }
+      : { label: 'Nicht gewusst', good: false, run: () => practiceAnswer(false) }
+  }
+  const swipe = useSwipe(swipeGrading === '1', swipeAction)
 
   // Tastatur: Leertaste/Enter = aufdecken bzw. „Gut“, 1–4 = Bewertung, bei Multiple Choice 1–9 = Antwort wählen,
   // Z oder Strg/⌘+Z = letzte Bewertung zurücknehmen
@@ -485,6 +537,11 @@ function StudySession({
           <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
         </div>
       </header>
+      {notice ? (
+        <p className="border-b border-border bg-warning-soft px-4 py-1.5 text-center text-xs text-warning" role="status">
+          {notice}
+        </p>
+      ) : null}
 
       {!current || !card ? (
         <Finished
@@ -499,12 +556,36 @@ function StudySession({
         />
       ) : (
         <>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
+          {/* Waagerecht nie scrollbar – auch nicht, solange die Karte beim Wischen zur Seite rückt */}
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+            <div className="relative mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
+              {/* Was das Loslassen auslöst – steht still, während die Karte dem Finger folgt */}
+              {swipe.preview ? (
+                <span
+                  aria-hidden
+                  data-testid="swipe-label"
+                  className={cn(
+                    'pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-full px-3 py-1 text-sm font-semibold shadow-sm sm:top-6',
+                    !swipe.armed
+                      ? 'bg-subtle text-muted'
+                      : swipe.preview.good
+                        ? 'bg-success text-bg'
+                        : 'bg-danger text-bg',
+                  )}
+                >
+                  {swipe.preview.label}
+                </span>
+              ) : null}
               {/* Karteikarte: Frage über dem roten Kopfstrich, darunter Antwortfeld (leer liniert bis zum Aufdecken) */}
               <div
-                className="index-card"
+                className={cn(
+                  'index-card',
+                  swipeGrading === '1' && 'touch-pan-y touch-pinch-zoom',
+                  !swipe.dragging && 'transition-transform duration-200 motion-reduce:transition-none',
+                )}
+                style={swipe.offset ? { transform: `translateX(${swipe.offset}px) rotate(${swipe.offset / 40}deg)` } : undefined}
                 data-testid="study-card"
+                {...swipe.handlers}
                 onContextMenu={(e) =>
                   openContextMenu(
                     e,

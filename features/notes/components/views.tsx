@@ -31,14 +31,19 @@ import { cn } from '@/shared/ui/cn'
 import { api, NetworkError } from '@/shared/client/api'
 import { keys, useFolders, useNotes } from '../client/queries'
 import { startDrag, useDraggedIds, useDropTarget } from '../client/drag'
-import { NoteSelectionContext, useNoteSelection, useNoteSelectionContext } from '../client/selection'
-import { folderPath, sortByName } from '../tree'
+import { NoteSelectionContext, useNoteSelectionContext } from '../client/selection'
+import { useListSelection } from '@/shared/client/list-selection'
+import { descendantFolderIds, folderPath, sortByName, sortNotes } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
-import { parseSearch } from '@/shared/lib/search-query'
+import { parseSearch, positiveQuery } from '@/shared/lib/search-query'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
 import { FolderMenuItems, NoteMenuItems } from './ItemMenus'
-import { NoteSelectionBar, NoteSelectionMenuItems, SelectButton, SelectionCheckbox } from './SelectionBar'
+import { NoteSelectionBar, NoteSelectionMenuItems } from './SelectionBar'
+import { SelectButton, SelectionCheckbox } from '@/shared/ui/selection-bar'
+import { SortMenu, useNoteOrder } from './SortMenu'
+import { FolderOptions } from './dialogs'
+import { Select } from '@/shared/ui/input'
 import { NavLink } from '@/features/workspace/components/NavLink'
 import { useVaultInfo, useVaultState } from '@/features/vault/client/vault'
 import { requestVault } from '@/features/vault/client/vault-ui'
@@ -55,14 +60,25 @@ function NoteList({ order = [], children }: { order?: readonly string[]; childre
   )
 }
 
-function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult; folders: Folder[]; snippet?: string }) {
-  const { notes } = useNotes()
+function NoteCard({
+  note,
+  summary = 'excerpt' in note ? note : undefined,
+  folders,
+  snippet,
+  find,
+}: {
+  note: NoteSummary | SearchResult
+  /** Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste (vom Elternteil, nicht je Karte) */
+  summary?: NoteSummary
+  folders: Folder[]
+  snippet?: string
+  /** Suchwörter: Die Notiz öffnet an der ersten Fundstelle */
+  find?: string
+}) {
   const openContextMenu = useContextMenu()
   const selection = useNoteSelectionContext()
   const listOrder = useContext(ListOrderContext)
   const dragged = useDraggedIds().includes(note.id)
-  // Suchtreffer haben nicht alle Felder – für die Aktionen die Notiz aus der Liste
-  const summary = notes.find((n) => n.id === note.id)
   const path = folderPath(folders, note.folderId)
   const tags = 'tags' in note ? note.tags : []
   const selecting = !!selection?.active
@@ -100,7 +116,8 @@ function NoteCard({ note, folders, snippet }: { note: NoteSummary | SearchResult
     >
       {selecting ? <SelectionCheckbox title={note.title} checked={selected} onToggle={toggle} className="pt-3.5 pl-4" /> : null}
       <NavLink
-        to={{ kind: 'note', id: note.id }}
+        // Suchwörter nicht für Tresor-Notizen in die Adresse (Browserverlauf)
+        to={{ kind: 'note', id: note.id, find: summary?.vault ? undefined : find }}
         // Im Auswahlmodus sind die Checkboxen die Tab-Stopps
         tabIndex={selecting ? -1 : undefined}
         onClick={(e) => {
@@ -172,7 +189,7 @@ export function HomeNotes() {
   // Beide Abschnitte bilden eine Auswahl – eine Notiz in beiden ist über ihre ID in beiden markiert
   const order = [...new Set([...pinnedOrder, ...recentOrder])]
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: 'home', root })
+  const selection = useListSelection({ order, resetKey: 'home', root })
 
   const quick = [
     { id: 'lecture', label: 'Vorlesung', icon: <GraduationCap className="size-4.5" /> },
@@ -263,12 +280,17 @@ export function FolderView({ id }: { id: string }) {
   const dragged = useDraggedIds()
   const folder = folders.find((f) => f.id === id)
   const path = folderPath(folders, id)
+  const [sortOrder, setSortOrder] = useNoteOrder('folder')
+  // Unterordner bleiben alphabetisch, nur die Notizen folgen der gewählten Reihenfolge
   const children = sortByName(folders.filter((f) => f.parentId === id))
-  const items = sortByName(notes.filter((n) => n.folderId === id))
+  const items = sortNotes(
+    notes.filter((n) => n.folderId === id),
+    sortOrder,
+  )
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
   // Nur die Notizen sind auswählbar, nicht die Karten der Unterordner
-  const selection = useNoteSelection({ order, resetKey: `folder:${id}`, root })
+  const selection = useListSelection({ order, resetKey: `folder:${id}`, root })
 
   // Gesperrt sind nur der Wurzelordner des Tresors und dessen Name zu sehen (Unterordner fehlen in der Liste)
   const lockedVault =
@@ -337,6 +359,7 @@ export function FolderView({ id }: { id: string }) {
           }
           actions={
             <>
+              {items.length > 1 ? <SortMenu order={sortOrder} onChange={setSortOrder} /> : null}
               <SelectButton selection={selection} />
               <Button variant="primary" size="sm" onClick={() => app.openNewNote({ folderId: id })} className="max-sm:hidden">
                 <Plus className="size-4" /> Notiz
@@ -427,21 +450,42 @@ export function FolderView({ id }: { id: string }) {
 }
 
 export function TagView({ tag }: { tag: string }) {
+  const app = useApp()
   const { notes } = useNotes()
   const { data: folders = [] } = useFolders()
-  const items = notes
-    .filter((n) => n.tags.some((t) => t === tag || t.startsWith(tag + '/')))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+  const [sortOrder, setSortOrder] = useNoteOrder('tag')
+  const items = sortNotes(
+    notes.filter((n) => n.tags.some((t) => t === tag || t.startsWith(tag + '/'))),
+    sortOrder,
+  )
   const order = items.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: `tag:${tag}`, root })
+  const selection = useListSelection({ order, resetKey: `tag:${tag}`, root })
   return (
     <Page>
       <div ref={root}>
         <PageHeader
           title={`#${tag}`}
           subtitle={`${items.length} ${items.length === 1 ? 'Notiz' : 'Notizen'}`}
-          actions={<SelectButton selection={selection} />}
+          actions={
+            <>
+              {items.length > 1 ? <SortMenu order={sortOrder} onChange={setSortOrder} /> : null}
+              <SelectButton selection={selection} />
+              {items.length > 0 ? (
+                <Menu
+                  trigger={(p) => (
+                    <Button size="icon-sm" aria-label="Tag-Aktionen" {...p}>
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  )}
+                >
+                  <MenuItem icon={<Pencil />} onSelect={() => app.openRenameTag(tag)}>
+                    Umbenennen …
+                  </MenuItem>
+                </Menu>
+              ) : null}
+            </>
+          }
         />
         {items.length === 0 ? (
           <EmptyState icon={<Hash />} title="Keine Notizen mit diesem Tag" />
@@ -501,13 +545,16 @@ function FileHit({ hit, terms }: { hit: FileSearchResult; terms: string[] }) {
   )
 }
 
-export function SearchView({ initialQuery }: { initialQuery: string }) {
+export function SearchView({ initialQuery, folder }: { initialQuery: string; folder?: string }) {
   const app = useApp()
   const [query, setQuery] = useState(initialQuery)
   const [debounced, setDebounced] = useState(initialQuery)
   const { notes } = useNotes()
+  const notesById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes])
   const { data: folders = [] } = useFolders()
   const { data: vaultInfo } = useVaultInfo()
+  // Im Tresor wird nicht gesucht – seine Ordner stehen nicht zur Wahl
+  const vaultFolders = useMemo(() => new Set(folders.filter((f) => f.vault).map((f) => f.id)), [folders])
 
   const [prevInitial, setPrevInitial] = useState(initialQuery)
   if (prevInitial !== initialQuery) {
@@ -517,54 +564,94 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
   useEffect(() => {
     const t = setTimeout(() => {
       setDebounced(query.trim())
-      if (query !== initialQuery) app.go({ kind: 'search', q: query }, { replace: true })
+      if (query !== initialQuery) app.go({ kind: 'search', q: query, folder }, { replace: true })
     }, 250)
     return () => clearTimeout(t)
-  }, [query, initialQuery, app])
+  }, [query, initialQuery, folder, app])
 
+  const parsed = useMemo(() => parseSearch(debounced), [debounced])
+  // Nur Ausschlüsse („-klausur“): FTS5 braucht mindestens ein Wort, sonst wären es alle Notizen außer …
+  const onlyExcluded =
+    parsed.terms.length + parsed.phrases.length + parsed.tags.length === 0 &&
+    parsed.excluded.length + parsed.excludedTags.length > 0
   const search = useQuery({
-    queryKey: keys.search(debounced),
-    queryFn: () => api<SearchResponse>(`/api/search?q=${encodeURIComponent(debounced)}`),
-    enabled: debounced.length > 0,
+    queryKey: keys.search(debounced, folder),
+    queryFn: () =>
+      api<SearchResponse>(
+        `/api/search?q=${encodeURIComponent(debounced)}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`,
+      ),
+    enabled: debounced.length > 0 && !onlyExcluded,
     staleTime: 5_000,
   })
   const results = search.data?.results ?? []
   const files = search.data?.files ?? []
-  // Dieselben Wörter wie auf dem Server (ohne #tags) – der PDF-Viewer hebt sie hervor
-  const fileTerms = useMemo(() => parseSearch(debounced).terms, [debounced])
+  // Dieselben Wörter und Phrasen wie auf dem Server (ohne Ausschlüsse und #tags) – der PDF-Viewer hebt sie hervor,
+  // Notizen öffnen an der Fundstelle
+  const fileTerms = useMemo(() => [...parsed.terms, ...parsed.phrases], [parsed])
+  const find = positiveQuery(debounced) || undefined
 
   // Offline: zumindest Titel und Auszüge lokal durchsuchen – wie online ohne den Tresor
   const offlineResults = useMemo(() => {
     if (!(search.error instanceof NetworkError) || !debounced) return null
-    const q = debounced.toLowerCase()
-    return notes.filter((n) => !n.vault && (n.title.toLowerCase().includes(q) || n.excerpt.toLowerCase().includes(q)))
-  }, [search.error, debounced, notes])
+    const inFolder = folder ? descendantFolderIds(folders, folder) : null
+    const hasTag = (n: NoteSummary, tag: string) => n.tags.some((t) => t === tag || t.startsWith(tag + '/'))
+    return notes.filter((n) => {
+      if (n.vault || (inFolder && !(n.folderId && inFolder.has(n.folderId)))) return false
+      const text = `${n.title}\n${n.excerpt}`.toLowerCase()
+      return (
+        fileTerms.every((t) => text.includes(t.toLowerCase())) &&
+        !parsed.excluded.some((t) => text.includes(t.toLowerCase())) &&
+        parsed.tags.every((t) => hasTag(n, t)) &&
+        !parsed.excludedTags.some((t) => hasTag(n, t))
+      )
+    })
+  }, [search.error, debounced, notes, folder, folders, fileTerms, parsed])
 
   // Auswählbar sind die Notiz-Treffer (auch offline), nicht die Treffer in Dateien
   const order = (offlineResults ?? (debounced ? results : [])).map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: `search:${debounced}`, root })
+  const selection = useListSelection({ order, resetKey: `search:${debounced}`, root })
 
   return (
     <Page>
       <div ref={root}>
-        <div className="relative mb-6">
-          <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-faint" />
-          <input
-            autoFocus
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Notizen durchsuchen …"
-            className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
-            aria-label="Suchbegriff"
-          />
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-faint" />
+            <input
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Notizen durchsuchen …"
+              className="h-13 w-full rounded-xl border border-border-strong/70 bg-elevated pr-4 pl-12 text-base outline-none focus:border-accent focus:ring-3 focus:ring-accent/20"
+              aria-label="Suchbegriff"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-muted sm:w-56">
+            In
+            <Select
+              value={folder ?? ''}
+              onChange={(e) => app.go({ kind: 'search', q: query, folder: e.target.value || undefined }, { replace: true })}
+              aria-label="Suchen in"
+              className="h-13 flex-1 rounded-xl"
+            >
+              <option value="">Alle Ordner</option>
+              <FolderOptions exclude={vaultFolders} />
+            </Select>
+          </label>
         </div>
         {!debounced ? (
           <EmptyState
             icon={<Search />}
             title="Volltextsuche"
-            text={`Durchsucht Notizen sowie PDFs und Textdateien. Mit #tag filterst du Notizen nach Tags.${vaultInfo ? ' Notizen im Tresor werden nicht durchsucht.' : ''}`}
+            text={`Durchsucht Notizen sowie PDFs und Textdateien. „Satz von Bayes“ in Anführungszeichen sucht genau diese Wortfolge, -wort schließt ein Wort aus, #tag filtert nach Tags (-#tag schließt aus), und „In“ beschränkt die Suche auf einen Ordner samt Unterordnern.${vaultInfo ? ' Notizen im Tresor werden nicht durchsucht.' : ''}`}
+          />
+        ) : onlyExcluded ? (
+          <EmptyState
+            icon={<Search />}
+            title="Gib mindestens ein Suchwort ein"
+            text="Mit -wort schließt du Wörter nur aus. Ergänze ein Wort, eine „Phrase“ oder einen #tag, nach dem gesucht wird."
           />
         ) : offlineResults ? (
           <NoteSelectionContext.Provider value={selection}>
@@ -577,7 +664,7 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
             <NoteSelectionBar selection={selection} />
             <NoteList order={order}>
               {offlineResults.map((n) => (
-                <NoteCard key={n.id} note={n} folders={folders} />
+                <NoteCard key={n.id} note={n} folders={folders} find={find} />
               ))}
             </NoteList>
           </NoteSelectionContext.Provider>
@@ -586,7 +673,11 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
             <Loader2 className="size-6 animate-spin" />
           </div>
         ) : results.length === 0 && files.length === 0 ? (
-          <EmptyState icon={<Search />} title="Nichts gefunden" />
+          <EmptyState
+            icon={<Search />}
+            title="Nichts gefunden"
+            text={folder ? 'Gesucht wurde nur in diesem Ordner und seinen Unterordnern – Dateien nicht.' : undefined}
+          />
         ) : (
           <>
             {results.length > 0 ? (
@@ -600,10 +691,22 @@ export function SearchView({ initialQuery }: { initialQuery: string }) {
                 <NoteSelectionBar selection={selection} />
                 <NoteList order={order}>
                   {results.map((r) => (
-                    <NoteCard key={r.id} note={r} folders={folders} snippet={snippetHtml(r.snippet)} />
+                    <NoteCard
+                      key={r.id}
+                      note={r}
+                      summary={notesById.get(r.id)}
+                      folders={folders}
+                      snippet={snippetHtml(r.snippet)}
+                      find={find}
+                    />
                   ))}
                 </NoteList>
               </NoteSelectionContext.Provider>
+            ) : null}
+            {folder ? (
+              <p className="mt-6 text-sm text-faint" data-testid="search-files-hidden">
+                Dateien gehören keinem Ordner fest an und werden mit Ordnerfilter nicht durchsucht.
+              </p>
             ) : null}
             {files.length > 0 ? (
               <section className={cn(results.length > 0 && 'mt-8')} aria-labelledby="search-files" data-testid="search-files">

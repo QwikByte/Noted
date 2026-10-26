@@ -20,6 +20,8 @@ import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
 import { getFsrsParams } from './fsrs-params'
 import type {
   Card,
+  CardBatchAction,
+  CardBatchResult,
   CardOption,
   CardReview,
   CardType,
@@ -493,6 +495,50 @@ export function resetCardProgress(userId: number, id: string): Card {
 export function deleteCard(userId: number, id: string) {
   getCardRow(userId, id)
   getDb().prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').run(id, userId)
+}
+
+/**
+ * Mehrere Karten auf einmal (Kartenbrowser), in einer Transaktion. Fremde und unbekannte IDs werden übersprungen.
+ * Verschieben behält den Lernstand und hängt die Karten in ihrer Reihenfolge hinten an den Zielstapel an.
+ */
+export function batchCards(userId: number, action: CardBatchAction, ids: string[], deckId?: string): CardBatchResult {
+  const db = getDb()
+  if (action === 'move') {
+    if (!deckId) throw badRequest('In welchen Stapel?')
+    getDeckRow(userId, deckId)
+  }
+  return db.transaction(() => {
+    const found = new Set(
+      (
+        db
+          .prepare('SELECT id FROM cards WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))')
+          .all(userId, JSON.stringify(ids)) as { id: string }[]
+      ).map((r) => r.id),
+    )
+    const matched = [...new Set(ids)].filter((id) => found.has(id))
+    const now = Date.now()
+    if (action === 'delete') {
+      const del = db.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?')
+      for (const id of matched) del.run(id, userId)
+      return { ids: matched, cards: [] }
+    }
+    if (action === 'move') {
+      let position = nextPosition(deckId!)
+      const move = db.prepare('UPDATE cards SET deck_id = ?, position = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+      for (const id of matched) move.run(deckId, position++, now, id, userId)
+    } else if (action === 'reset') {
+      const clear = db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND user_id = ?')
+      const resume = db.prepare('UPDATE cards SET suspended = 0, updated_at = ? WHERE id = ? AND user_id = ?')
+      for (const id of matched) {
+        clear.run(id, userId)
+        resume.run(now, id, userId)
+      }
+    } else {
+      const set = db.prepare('UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+      for (const id of matched) set.run(action === 'suspend' ? 1 : 0, now, id, userId)
+    }
+    return { ids: matched, cards: matched.map((id) => toCard(getCardRow(userId, id))) }
+  })()
 }
 
 // ---------------------------------------------------------------------------

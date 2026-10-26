@@ -60,6 +60,12 @@ export type Card = {
   updatedAt: number
 }
 
+/** Sammelaktion im Kartenbrowser: in einen Stapel verschieben, aussetzen, fortsetzen, neu lernen, löschen */
+export type CardBatchAction = 'move' | 'suspend' | 'resume' | 'reset' | 'delete'
+
+/** Geänderte Karten (beim Löschen keine) – fremde und unbekannte IDs sind übersprungen */
+export type CardBatchResult = { ids: string[]; cards: Card[] }
+
 /**
  * Antwort beim Bearbeiten einer Karte. `sideMap[Seite]` = bisherige Seite (null = neu): Der Lernstand wandert mit
  * seiner Lücke bzw. Fläche, auch wenn sich deren Reihenfolge ändert.

@@ -22,6 +22,8 @@ type Props = {
   onCreateCard: () => void
   autoFocus?: boolean
   spellcheck?: boolean
+  /** Sprache des Textes (BCP-47) – wirkt sofort */
+  lang?: string
   /** Menü mit Befehlen nach „/“ */
   slashCommands?: boolean
   /** Über dem Text, z. B. das Titelfeld */
@@ -32,6 +34,15 @@ function droppedFiles(event: ClipboardEvent | DragEvent): File[] {
   const list = 'clipboardData' in event ? event.clipboardData?.files : event.dataTransfer?.files
   return Array.from(list ?? [])
 }
+
+const attributes = (props: Props) => ({
+  class: 'markdown-body rich-text',
+  'aria-label': 'Notiztext',
+  'aria-multiline': 'true',
+  spellcheck: String(props.spellcheck !== false),
+  lang: props.lang ?? 'de',
+  'data-testid': 'rich-editor',
+})
 
 export default function RichTextEditor(props: Props) {
   const latest = useRef(props)
@@ -47,14 +58,7 @@ export default function RichTextEditor(props: Props) {
     immediatelyRender: false,
     autofocus: props.autoFocus ? 'end' : false,
     editorProps: {
-      attributes: {
-        class: 'markdown-body rich-text',
-        'aria-label': 'Notiztext',
-        'aria-multiline': 'true',
-        spellcheck: String(props.spellcheck !== false),
-        lang: 'de',
-        'data-testid': 'rich-editor',
-      },
+      attributes: attributes(props),
       handleKeyDown: (_view, event) => {
         // Offenes Menü „/“: Pfeiltasten wählen, Enter fügt ein, Esc schließt – Tab rückt weiter ein
         const slash = slashRef.current
@@ -100,6 +104,13 @@ export default function RichTextEditor(props: Props) {
       latest.current.onChange(e.isEmpty ? '' : e.getHTML())
     },
   })
+
+  // Andere Standardsprache in den Einstellungen: ohne neuen Editor übernehmen
+  const { lang } = props
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    editor.setOptions({ editorProps: { ...editor.options.editorProps, attributes: attributes(latest.current) } })
+  }, [editor, lang])
 
   const slash = useRichSlash(editor, { enabled: props.slashCommands !== false, onUpload: props.onUpload })
   useEffect(() => {

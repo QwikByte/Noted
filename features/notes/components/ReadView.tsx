@@ -5,7 +5,15 @@ import { sanitize } from '@/shared/markdown/sanitize'
 import { attachmentFromUrl } from '../rich-html'
 
 /** Formatierter Text – bereinigt, Links auf PDFs öffnen im eingebauten Viewer */
-export function RichTextView({ html, onOpenPdf }: { html: string; onOpenPdf: (file: string, page?: number) => void }) {
+export function RichTextView({
+  html,
+  lang,
+  onOpenPdf,
+}: {
+  html: string
+  lang?: string
+  onOpenPdf: (file: string, page?: number) => void
+}) {
   const clean = useMemo(() => sanitize(html), [html])
 
   function onClick(e: React.MouseEvent) {
@@ -18,14 +26,20 @@ export function RichTextView({ html, onOpenPdf }: { html: string; onOpenPdf: (fi
   }
 
   return (
-    <div className="markdown-body rich-text" onClick={onClick} data-testid="rich-view" dangerouslySetInnerHTML={{ __html: clean }} />
+    <div
+      className="markdown-body rich-text"
+      lang={lang}
+      onClick={onClick}
+      data-testid="rich-view"
+      dangerouslySetInnerHTML={{ __html: clean }}
+    />
   )
 }
 
 /** Einfacher Text – genau so, wie er geschrieben wurde */
-export function PlainTextView({ text }: { text: string }) {
+export function PlainTextView({ text, lang }: { text: string; lang?: string }) {
   return (
-    <div className="plain-text" data-testid="plain-view">
+    <div className="plain-text" lang={lang} data-testid="plain-view">
       {text}
     </div>
   )

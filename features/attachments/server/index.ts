@@ -140,8 +140,8 @@ export function searchIndexInfo(userId: number): Map<string, SearchIndexInfo> {
 
 /** Volltextsuche in den Anhängen – ein Treffer je Seite, Markierung im Ausschnitt wie bei Notizen */
 export function searchAttachments(userId: number, query: string, limit = 20): FileSearchResult[] {
-  const { terms } = parseSearch(query)
-  if (terms.length === 0) return []
+  const match = buildFtsQuery(parseSearch(query))
+  if (!match) return []
   try {
     return getDb()
       .prepare(
@@ -151,7 +151,7 @@ export function searchAttachments(userId: number, query: string, limit = 20): Fi
          WHERE attachments_fts MATCH ? AND f.user_id = ? AND a.user_id = ?
          ORDER BY bm25(attachments_fts) LIMIT ?`,
       )
-      .all(buildFtsQuery(terms), userId, userId, limit) as FileSearchResult[]
+      .all(match, userId, userId, limit) as FileSearchResult[]
   } catch (err) {
     console.warn('[noted] Suchanfrage in Dateien fehlgeschlagen', err)
     return []

@@ -8,8 +8,11 @@ import {
   headingKey,
   linkFolders,
   makeExcerpt,
+  markdownPlainText,
+  normalizeTag,
   splitFrontmatter,
   stripCode,
+  trimTag,
 } from './meta'
 
 describe('Frontmatter', () => {
@@ -90,15 +93,43 @@ describe('Hilfsfunktionen', () => {
       'Titel fett und Alias Hinweis',
     )
   })
+
+  it('liefert den lesbaren Text ohne Frontmatter, Code, Kommentare und Einbettungen', () => {
+    const md = [
+      '---',
+      'tags: [mathe]',
+      '---',
+      '## Titel',
+      '- **fett** und [Skript](https://example.org/a/b/c)',
+      '[[Analysis|Ana]] [[Physik]] [[Physik#Wärme]] [[Kapitel 3.1]]',
+      '![[bild.png]] [[skript.pdf]] [[skript.pdf|Skript]] ![[Notiz]]',
+      '`inline` %%geheim%%',
+      '```js',
+      'const x = 1',
+      '```',
+      '> [!note] Hinweis',
+    ].join('\n')
+    expect(markdownPlainText(md)).toBe('Titel fett und Skript Ana Physik Physik Wärme Kapitel 3.1 Skript Hinweis')
+  })
 })
 
 describe('Laufzeit bei böswilligen Eingaben', () => {
+  it('kürzt eingegebene Tags in linearer Zeit – auch aus vielen „/“', () => {
+    expect(trimTag(' ##Mathe/Analysis// ')).toBe('Mathe/Analysis')
+    expect(normalizeTag('#Mathe/')).toBe('mathe')
+    const t = Date.now()
+    expect(normalizeTag('/'.repeat(200_000) + 'x')).toBe('/'.repeat(200_000) + 'x')
+    expect(trimTag('#'.repeat(200_000) + '/'.repeat(200_000))).toBe('')
+    expect(Date.now() - t).toBeLessThan(1000)
+  })
+
   it('verarbeitet 2 MB große Notizen in linearer Zeit', () => {
     for (const s of ['\n'.repeat(2_000_000), '[['.repeat(1_000_000), '[('.repeat(1_000_000), '```\n'.repeat(500_000)]) {
       const t = Date.now()
       extractTags(s)
       extractLinks(s)
       makeExcerpt(s)
+      markdownPlainText(s)
       findHeadings(s)
       expect(Date.now() - t).toBeLessThan(3000)
     }

@@ -16,9 +16,11 @@ import * as password from '@/app/api/account/password/route'
 import * as versions from '@/app/api/notes/[id]/versions/route'
 import * as version from '@/app/api/notes/[id]/versions/[versionId]/route'
 import * as restoreVersion from '@/app/api/notes/[id]/versions/[versionId]/restore/route'
+import * as decks from '@/app/api/decks/route'
+import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import { getDb } from '@/shared/server/db'
 import { MAX_VERSIONS_PER_NOTE, VERSION_MAX_AGE, purgeVersions } from './server/versions'
-import { reindexLinkPaths } from './server/notes'
+import { purgeTrash, reindexLinkPaths } from './server/notes'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -258,6 +260,54 @@ describe('Suche und Tags', () => {
     expect(t.data.tags).toEqual(expect.arrayContaining([{ tag: 'mathe/la', count: 1 }]))
   })
 
+  it('sucht Phrasen, schließt Wörter und Tags aus und filtert nach Ordner samt Unterordnern', async () => {
+    const titles = async (q: string, folder?: string) => {
+      const r = await call(search.GET, '/', { cookie: token, query: folder ? { q, folder } : { q } })
+      expect(r.status).toBe(200)
+      return (r.data.results as { title: string }[]).map((n) => n.title).sort()
+    }
+    const ana = await newFolder('Suche Analysis')
+    const sub = await newFolder('Suche Übungen', ana.id)
+    const phy = await newFolder('Suche Physik')
+    await newNote('Bayes korrekt', 'Der Satz von Bayes verknüpft bedingte Wahrscheinlichkeiten. #stochastik', ana.id)
+    await newNote('Bayes vertauscht', 'Von Bayes stammt ein Satz über Wahrscheinlichkeiten. #stochastik/alt', sub.id)
+    await newNote('Ableitung Physik', 'Die Ableitung in der Physikvorlesung', phy.id)
+
+    expect(await titles('"Satz von Bayes"')).toEqual(['Bayes korrekt'])
+    expect(await titles('"Satz von Bay"')).toEqual(['Bayes korrekt'])
+    expect(await titles('satz bayes')).toEqual(['Bayes korrekt', 'Bayes vertauscht'])
+    expect(await titles('wahrscheinlich -bedingt')).toEqual(['Bayes vertauscht'])
+    expect(await titles('ableitung -physik')).not.toContain('Ableitung Physik')
+    expect(await titles('#stochastik -#stochastik/alt')).toEqual(['Bayes korrekt'])
+    // Nur Tags mit Ausschluss: ohne Volltext gefiltert
+    expect(await titles('#stochastik -bedingt')).toEqual(['Bayes vertauscht'])
+    // Nur Ausschlüsse liefern nichts
+    expect(await titles('-bedingt')).toEqual([])
+
+    expect(await titles('bayes', ana.id)).toEqual(['Bayes korrekt', 'Bayes vertauscht'])
+    expect(await titles('bayes', sub.id)).toEqual(['Bayes vertauscht'])
+    expect(await titles('bayes', phy.id)).toEqual([])
+    const withFolder = await call(search.GET, '/', { cookie: token, query: { q: 'bayes', folder: ana.id } })
+    expect(withFolder.data.files).toEqual([])
+    expect((await call(search.GET, '/', { cookie: token, query: { q: 'bayes', folder: 'kein-ordner' } })).status).toBe(400)
+  })
+
+  it('macht aus Sonderzeichen keine FTS-Syntax und keinen Fehler', async () => {
+    await newNote('Sonderzeichen', 'Klammer (rund) und Stern')
+    const warn = vi.spyOn(console, 'warn')
+    try {
+      for (const q of ['"', '-', '"a" OR b', 'NEAR(', '*', 'klammer (', '-"', 'a AND', '^stern', 'stern:']) {
+        const r = await call(search.GET, '/', { cookie: token, query: { q } })
+        expect(r.status).toBe(200)
+      }
+      expect(warn).not.toHaveBeenCalled()
+      const r = await call(search.GET, '/', { cookie: token, query: { q: 'klammer (' } })
+      expect(r.data.results.map((n: { title: string }) => n.title)).toContain('Sonderzeichen')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('zeigt Notizen anderer Benutzer nie an', async () => {
     const created = await call(users.POST, '/api/admin/users', {
       cookie: token,
@@ -273,6 +323,10 @@ describe('Suche und Tags', () => {
     expect(list.data.notes).toEqual([])
     const s = await call(search.GET, '/', { cookie: other, query: { q: 'Eigenwerte' } })
     expect(s.data.results).toEqual([])
+    // Auch nicht über die Ordner-ID eines anderen Kontos
+    const myFolder = (await call(folders.GET, '/', { cookie: token })).data.folders[0].id as string
+    const viaFolder = await call(search.GET, '/', { cookie: other, query: { q: 'Eigenwerte', folder: myFolder } })
+    expect(viaFolder.data.results).toEqual([])
     const mine = await call(notes.GET, '/', { cookie: token })
     const foreignAccess = await call(note.GET, '/', { cookie: other, params: { id: mine.data.notes[0].id } })
     expect(foreignAccess.status).toBe(404)
@@ -312,6 +366,40 @@ describe('Papierkorb', () => {
     const r = await call(trash.DELETE, '/', { method: 'DELETE', cookie: token })
     expect(r.data.deleted).toBeGreaterThanOrEqual(1)
     expect((await call(trash.GET, '/', { cookie: token })).data.notes).toEqual([])
+  })
+
+  it('Karten aus endgültig gelöschten Notizen bleiben, verweisen aber nicht mehr auf sie', async () => {
+    const deck = (await call(decks.POST, '/', { cookie: token, body: { name: 'Aus gelöschten Notizen' } })).data.deck
+    const [single, emptied, purged, kept] = await Promise.all(
+      ['Einzeln gelöscht', 'Papierkorb geleert', 'Abgelaufen', 'Bleibt im Papierkorb'].map((t) => newNote(t)),
+    )
+    const cards = (
+      await call(deckCards.POST, '/', {
+        cookie: token,
+        params: { id: deck.id },
+        body: { cards: [single, emptied, purged, kept].map((n) => ({ type: 'basic', front: n.title, back: 'x', noteId: n.id })) },
+      })
+    ).data.cards as { id: string; noteId: string | null }[]
+    const noteOf = (cardId: string) =>
+      (getDb().prepare('SELECT note_id AS noteId FROM cards WHERE id = ?').get(cardId) as { noteId: string | null }).noteId
+
+    for (const n of [single, emptied, purged, kept]) {
+      await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: n.id } })
+    }
+    // Im Papierkorb bleibt die Verknüpfung – die Notiz lässt sich wiederherstellen
+    expect(noteOf(cards[0].id)).toBe(single.id)
+
+    await call(note.DELETE, '/', { method: 'DELETE', cookie: token, params: { id: single.id }, query: { permanent: '1' } })
+    expect(noteOf(cards[0].id)).toBeNull()
+
+    getDb().prepare('UPDATE notes SET deleted_at = ? WHERE id = ?').run(Date.now() - 400 * 86_400_000, purged.id)
+    purgeTrash()
+    expect(noteOf(cards[2].id)).toBeNull()
+    expect(noteOf(cards[1].id)).toBe(emptied.id)
+
+    await call(trash.DELETE, '/', { method: 'DELETE', cookie: token })
+    expect([cards[1].id, cards[3].id].map(noteOf)).toEqual([null, null])
+    expect(getDb().prepare('SELECT COUNT(*) AS n FROM cards WHERE deck_id = ?').get(deck.id)).toEqual({ n: 4 })
   })
 })
 

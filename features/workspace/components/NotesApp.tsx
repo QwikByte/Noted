@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
@@ -14,6 +14,7 @@ import {
 import { Sidebar } from './Sidebar'
 import { NoteView } from '@/features/notes/components/NoteView'
 import { FolderView, TagView, SearchView } from '@/features/notes/components/views'
+import { RenameTagDialog } from '@/features/notes/components/RenameTagDialog'
 import { Dashboard } from './Dashboard'
 import { TrashView } from '@/features/notes/components/TrashView'
 import { FilesView } from '@/features/attachments/components/FilesView'
@@ -21,6 +22,7 @@ import { NewNoteDialog, MoveDialog, PromptDialog } from '@/features/notes/compon
 import { QuickSwitcher } from '@/features/notes/components/QuickSwitcher'
 import { DragLayer } from '@/features/notes/components/DragLayer'
 import { CardsView } from '@/features/flashcards/components/CardsView'
+import { CardBrowser } from '@/features/flashcards/components/CardBrowser'
 import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
@@ -55,6 +57,7 @@ import { notesLabel, postNoteBatch } from '@/features/notes/client/bulk'
 import { useDefaultNoteFormat } from '@/features/notes/client/default-format'
 import { linkKey } from '@/shared/markdown/meta'
 import { resolveLinkTarget } from '@/features/notes/link-resolve'
+import { createTitleIndexer, newestFirst } from '@/features/notes/title-index'
 import { folderPath } from '@/features/notes/tree'
 import { LazyPdfPanel } from '@/features/pdf/components/LazyPdfPanel'
 import { prewarmPdfViewer } from '@/features/pdf/client/prewarm'
@@ -72,6 +75,8 @@ import {
 import { requestVault } from '@/features/vault/client/vault-ui'
 import { VaultDialogs } from '@/features/vault/components/VaultDialogs'
 import type { Folder, Note, NoteSummary } from '@/features/notes/types'
+
+const titleIndexOf = createTitleIndexer<NoteSummary>()
 
 // React Flow für den Graphen erst bei Bedarf (der PDF-Viewer lädt sich selbst nach, siehe LazyPdfPanel)
 const GraphView = dynamic(() => import('@/features/graph/components/GraphView'), { ssr: false })
@@ -115,6 +120,7 @@ export default function NotesApp() {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<{ target: MoveTarget; onMoved?: () => void } | null>(null)
   const [folderPrompt, setFolderPrompt] = useState<{ parentId: string | null } | { folder: Folder } | null>(null)
+  const [tagRename, setTagRename] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<NoteSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -154,19 +160,12 @@ export default function NotesApp() {
     }
   }, [qc, toast])
 
-  // Tresor-Notizen getrennt: Nur Links aus dem Tresor finden sie (dort gehen sie bei Namensgleichheit vor). Je Titel
-  // alle Notizen, die zuletzt bearbeitete zuerst – Titel sind nur je Ordner eindeutig
-  const titleIndex = useMemo(() => {
-    const plain = new Map<string, NoteSummary[]>()
-    const inVault = new Map<string, NoteSummary[]>()
-    for (const n of [...notes].sort((a, b) => b.updatedAt - a.updatedAt)) {
-      const index = n.vault ? inVault : plain
-      const key = linkKey(n.title)
-      const list = index.get(key)
-      if (list) list.push(n)
-      else index.set(key, [n])
-    }
-    return { plain, inVault }
+  // Je Titel alle Notizen – Titel sind nur je Ordner eindeutig. Bleibt beim Tippen derselbe (siehe title-index.ts)
+  const titleIndex = useMemo(() => titleIndexOf(notes), [notes])
+  // Für Gleichstände die aktuelle Bearbeitungszeit, ohne dass sich resolveTitle bei jeder Taste ändert
+  const latestNotes = useRef(notes)
+  useEffect(() => {
+    latestNotes.current = notes
   }, [notes])
 
   const folderNames = useMemo(
@@ -181,8 +180,11 @@ export default function NotesApp() {
   const resolveTitle = useCallback<AppActions['resolveTitle']>(
     (target, opts) => {
       const key = linkKey(target)
+      let updated: Map<string, number> | null = null
+      const updatedAt = (id: string) =>
+        (updated ??= new Map(latestNotes.current.map((n) => [n.id, n.updatedAt]))).get(id) ?? 0
       const pick = (list: NoteSummary[] | undefined) =>
-        list ? resolveLinkTarget(target, list, foldersOf, opts?.fromFolderId) : null
+        list ? resolveLinkTarget(target, newestFirst(list, updatedAt), foldersOf, opts?.fromFolderId) : null
       return (opts?.vault ? pick(titleIndex.inVault.get(key)) : null) ?? pick(titleIndex.plain.get(key))
     },
     [titleIndex, foldersOf],
@@ -320,6 +322,7 @@ export default function NotesApp() {
       openMove: (target, opts) => setMoveTarget({ target, onMoved: opts?.onMoved }),
       openNewFolder: (parentId) => setFolderPrompt({ parentId }),
       openRenameFolder: (folder) => setFolderPrompt({ folder }),
+      openRenameTag: setTagRename,
       deleteFolder: setDeleteTarget,
       trashNotes,
       pinNotes,
@@ -385,7 +388,15 @@ export default function NotesApp() {
   let main: React.ReactNode
   switch (view.kind) {
     case 'note':
-      main = <NoteView key={view.id} id={view.id} heading={view.heading} onOpenSidebar={() => setSidebarOpen(true)} />
+      main = (
+        <NoteView
+          key={view.id}
+          id={view.id}
+          heading={view.heading}
+          find={view.find}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      )
       break
     case 'folder':
       main = <FolderView id={view.id} />
@@ -394,7 +405,7 @@ export default function NotesApp() {
       main = <TagView tag={view.tag} />
       break
     case 'search':
-      main = <SearchView initialQuery={view.q} />
+      main = <SearchView initialQuery={view.q} folder={view.folder} />
       break
     case 'trash':
       main = <TrashView />
@@ -405,6 +416,9 @@ export default function NotesApp() {
     case 'cards':
       main = <CardsView />
       break
+    case 'browse':
+      main = <CardBrowser initialQuery={view.q ?? ''} />
+      break
     case 'calendar':
       main = <CalendarView />
       break
@@ -412,7 +426,9 @@ export default function NotesApp() {
       main = <DeckView key={view.id} id={view.id} />
       break
     case 'study':
-      main = <StudyView key={`${view.scope}:${view.mode}`} scope={view.scope} mode={view.mode} />
+      main = (
+        <StudyView key={`${view.scope}:${view.mode}:${view.filter ?? ''}`} scope={view.scope} mode={view.mode} filter={view.filter} />
+      )
       break
     case 'quiz':
       main = <QuizView key={view.id} id={view.id} />
@@ -522,6 +538,7 @@ export default function NotesApp() {
         <DragLayer />
         <VaultDialogs />
         <MoveDialog target={moveTarget?.target ?? null} onMoved={moveTarget?.onMoved} onClose={() => setMoveTarget(null)} />
+        {tagRename ? <RenameTagDialog key={tagRename} tag={tagRename} onClose={() => setTagRename(null)} /> : null}
         <PromptDialog
           open={!!folderPrompt}
           title={folderPrompt && 'folder' in folderPrompt ? 'Ordner umbenennen' : 'Neuer Ordner'}

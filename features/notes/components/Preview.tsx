@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { QueryClientContext } from '@tanstack/react-query'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
 import type { ResolvedNote } from '@/shared/markdown/syntax'
@@ -8,26 +9,44 @@ import { isDarkMode } from '@/shared/client/prefs'
 import { Properties } from './Properties'
 import { cn } from '@/shared/ui/cn'
 import { EmbedContext, MAX_EMBED_DEPTH, MAX_EMBEDS } from '../client/embeds'
+import { attachmentsQuery } from '@/features/attachments/client/queries'
+import { renderPdfPageImages } from '@/features/attachments/client/preview'
 
 let mermaidCounter = 0
+/**
+ * Gerenderte Diagramme je Thema und Quelltext: Die Vorschau ersetzt beim Tippen ihr ganzes HTML – unveränderte
+ * Diagramme kommen dann aus dem Speicher, statt neu gerendert zu werden
+ */
+const mermaidCache = new Map<string, string>()
+const MERMAID_CACHE_SIZE = 50
+
+const mermaidSource = (block: HTMLElement) => block.querySelector('.mermaid-source')?.textContent ?? ''
 
 async function renderMermaid(root: HTMLElement) {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>('.mermaid-block:not([data-rendered])'))
   if (blocks.length === 0) return
-  const { default: mermaid } = await import('mermaid')
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    // Auf dem Blatt einer Notiz ist es auch im Dark Mode hell
-    theme: isDarkMode() && !root.closest('.note-paper') ? 'dark' : 'neutral',
-    fontFamily: 'inherit',
+  // Auf dem Blatt einer Notiz ist es auch im Dark Mode hell
+  const theme = isDarkMode() && !root.closest('.note-paper') ? 'dark' : 'neutral'
+  const missing = blocks.filter((block) => {
+    const svg = mermaidCache.get(`${theme}\u0000${mermaidSource(block)}`)
+    if (svg === undefined) return true
+    block.setAttribute('data-rendered', '1')
+    block.innerHTML = svg
+    return false
   })
-  for (const block of blocks) {
+  if (missing.length === 0) return
+  const { default: mermaid } = await import('mermaid')
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme, fontFamily: 'inherit' })
+  for (const block of missing) {
     block.setAttribute('data-rendered', '1')
     try {
-      const source = block.querySelector('.mermaid-source')?.textContent ?? ''
+      const source = mermaidSource(block)
       const { svg } = await mermaid.render(`mermaid-${++mermaidCounter}`, source)
       block.innerHTML = svg
+      mermaidCache.set(`${theme}\u0000${source}`, svg)
+      // Das älteste zuerst vergessen
+      const oldest = mermaidCache.keys().next().value
+      if (mermaidCache.size > MERMAID_CACHE_SIZE && oldest !== undefined) mermaidCache.delete(oldest)
     } catch (err) {
       const msg = document.createElement('div')
       msg.className = 'mermaid-error'
@@ -76,6 +95,7 @@ export function Preview({
   embeds,
   onRendered,
   className,
+  lang,
 }: PreviewLinks & {
   content: string
   onToggleTask?: (line: number, checked: boolean) => void
@@ -93,6 +113,8 @@ export function Preview({
    */
   onRendered?: () => void
   className?: string
+  /** Sprache des Inhalts (BCP-47), z. B. aus `lang:` im Frontmatter – für Vorlesen und Silbentrennung */
+  lang?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const { chain, Embed } = useContext(EmbedContext)
@@ -157,20 +179,27 @@ export function Preview({
   // Nacheinander rendern: Läuft der Effekt doppelt (Strict Mode), meldet nur der noch gültige Durchlauf – und erst,
   // wenn auch der vorige fertig ist
   const queue = useRef<Promise<void>>(Promise.resolve())
+  // Seitenbilder eingebetteter PDFs brauchen die Dateiliste – in geteilten Notizen (ohne Anmeldung) bleibt die Karte
+  const queryClient = useContext(QueryClientContext)
+  const pdfPages = !plainNoteLinks && queryClient ? queryClient : null
   useEffect(() => {
     const root = ref.current
     if (!root) return
     let valid = true
     // Die Einbettungen dieses Inhalts sind schon erfasst (Layout-Effekt oben)
     const embedsReady = embedsSettled.current?.ready ?? Promise.resolve()
-    queue.current = queue.current.then(() => renderMermaid(root)).catch(() => {})
+    const pages = pdfPages ? renderPdfPageImages(root, () => pdfPages.ensureQueryData(attachmentsQuery)).catch(() => {}) : null
+    queue.current = queue.current
+      .then(() => renderMermaid(root))
+      .then(() => pages ?? undefined)
+      .catch(() => {})
     void Promise.all([queue.current, embedsReady]).then(() => {
       if (valid) latestOnRendered.current?.()
     })
     return () => {
       valid = false
     }
-  }, [rendered.html])
+  }, [rendered.html, pdfPages])
 
   function onClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement
@@ -209,7 +238,7 @@ export function Preview({
   }
 
   return (
-    <div className={cn('markdown-body', className)} onClick={onClick}>
+    <div className={cn('markdown-body', className)} lang={lang} onClick={onClick}>
       {rendered.properties || rendered.propertiesError ? (
         <Properties data={rendered.properties} error={rendered.propertiesError} onOpenTag={onOpenTag} />
       ) : null}

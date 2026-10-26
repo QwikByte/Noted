@@ -161,6 +161,52 @@ test('Markdown: Befehle mit „/“ einfügen, filtern und schließen', async ({
   expect(saved).toContain('## Kapitel')
 })
 
+
+test('Tabellen: Tab springt von Zelle zu Zelle, richtet aus und legt Zeilen an; Kontextmenü für Spalten', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Tabelle mit Tab', 'Vorher\n\n')
+  await page.goto(`/?n=${id}`)
+  const editor = page.locator('.cm-content')
+  const menu = page.locator('.cm-tooltip-autocomplete')
+  const lines = () => page.locator('.cm-line').allInnerTexts()
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.type('/tabelle')
+  await expect(menu.getByRole('option').first()).toContainText('Tabelle')
+  await settle(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('a')
+  await page.keyboard.press('Tab')
+  await page.keyboard.type('b')
+  await page.keyboard.press('Tab')
+  await page.keyboard.type('c')
+  await expect
+    .poll(lines)
+    .toEqual(
+      expect.arrayContaining([
+        '| Spalte 1 | Spalte 2 |',
+        '| -------- | -------- |',
+        expect.stringMatching(/^\| a +\| b +\|$/),
+        expect.stringMatching(/^\| c +\| +\|$/),
+      ]),
+    )
+  // Umschalt+Tab geht zurück in die vorige Zeile
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.type('2')
+  await expect.poll(lines).toContainEqual(expect.stringMatching(/^\| a +\| b2 +\|$/))
+
+  // Kontextmenü: Spalte rechts einfügen
+  await page.locator('.cm-line', { hasText: 'Spalte 1' }).click({ button: 'right', position: { x: 40, y: 8 } })
+  await page.getByRole('menuitem', { name: 'Spalte rechts einfügen' }).click()
+  await expect.poll(lines).toContainEqual('| Spalte 1 |     | Spalte 2 |')
+
+  // Lesemodus: zwei Datenzeilen mit drei Spalten
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  const table = page.locator('.markdown-body table')
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(table.locator('thead th')).toHaveCount(3)
+  await expect(table.locator('tbody tr').nth(1)).toContainText('c')
+})
 test('Formatierter Text: Befehle mit „/“, nicht in Code', async ({ page }) => {
   await login(page)
   const id = await createNote(page, 'Slash formatiert', '<p></p>', 'richtext')

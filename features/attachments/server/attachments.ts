@@ -6,12 +6,12 @@ import { getConfig } from '@/shared/server/config'
 import { ApiError, badRequest, notFound } from '@/shared/server/http'
 import { uuid } from '@/shared/server/crypto'
 import { sanitizeFilename, splitExtension, uniqueName } from '@/shared/lib/names'
-import { fileReferences } from '../references'
+import { filePageReferences, fileReferences } from '../references'
 import { filePath, userDir } from './files'
 import { isSearchable } from './extract'
 import { scheduleIndex, searchIndexInfo, unindexAttachment } from './index'
 import type { NoteFormat } from '@/features/notes/types'
-import type { Attachment, FileEntry } from '../types'
+import type { Attachment, FileEntry, FileReference } from '../types'
 
 type AttachmentRow = {
   id: string
@@ -111,6 +111,30 @@ export function listFiles(userId: number): FileEntry[] {
     noteIds: usage.get(a.filename.toLowerCase()) ?? [],
     ...(search.has(a.id) ? { search: search.get(a.id) } : {}),
   }))
+}
+
+/** Notizen (ohne Papierkorb und Tresor), die auf die Datei verweisen – mit den Seiten, die sie zitieren */
+export function attachmentReferences(userId: number, id: string): FileReference[] {
+  const key = getAttachment(userId, id).filename.toLowerCase()
+  const notes = getDb()
+    .prepare(
+      `SELECT id, title, folder_id AS folderId, format, content FROM notes
+       WHERE user_id = ? AND deleted_at IS NULL AND vault = 0`,
+    )
+    .all(userId) as { id: string; title: string; folderId: string | null; format: NoteFormat; content: string }[]
+  const refs: FileReference[] = []
+  for (const note of notes) {
+    const pages = filePageReferences(note.format, note.content).get(key)
+    if (!pages) continue
+    refs.push({
+      id: note.id,
+      title: note.title,
+      folderId: note.folderId,
+      pages: [...pages].filter((p) => p !== null).sort((a, b) => a - b),
+      whole: pages.has(null),
+    })
+  }
+  return refs.sort((a, b) => a.title.localeCompare(b.title, 'de', { numeric: true, sensitivity: 'base' }))
 }
 
 export function getAttachment(userId: number, id: string): Attachment {

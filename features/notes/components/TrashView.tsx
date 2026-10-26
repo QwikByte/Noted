@@ -13,9 +13,11 @@ import { cn } from '@/shared/ui/cn'
 import { api, errorMessage } from '@/shared/client/api'
 import { keys, useTrash } from '../client/queries'
 import { notesLabel, postNoteBatch } from '../client/bulk'
-import { useNoteSelection } from '../client/selection'
+import { useListSelection } from '@/shared/client/list-selection'
 import { formatRelative } from '@/shared/lib/format'
-import { SelectButton, SelectionBar, SelectionCheckbox, SelectionMenuItems, type SelectionAction } from './SelectionBar'
+import { SelectButton, SelectionBar, SelectionCheckbox, SelectionMenuItems, type SelectionAction } from '@/shared/ui/selection-bar'
+import { NOTES_NOUN } from './SelectionBar'
+import { MAX_BATCH_NOTES } from '../limits'
 import type { TrashedNote } from '../types'
 
 export function TrashView() {
@@ -30,7 +32,7 @@ export function TrashView() {
   const openContextMenu = useContextMenu()
   const order = notes.map((n) => n.id)
   const root = useRef<HTMLDivElement>(null)
-  const selection = useNoteSelection({ order, resetKey: 'trash', root })
+  const selection = useListSelection({ order, resetKey: 'trash', root })
   const selected = notes.filter((n) => selection.ids.has(n.id))
 
   async function refresh() {
@@ -113,7 +115,7 @@ export function TrashView() {
           <div className="rounded-xl border border-dashed border-border-strong px-6 py-12 text-center text-muted">Der Papierkorb ist leer.</div>
         ) : (
           <>
-            <SelectionBar selection={selection} actions={actions} />
+            <SelectionBar selection={selection} actions={actions} max={MAX_BATCH_NOTES} noun={NOTES_NOUN} />
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-elevated">
               {notes.map((n) => {
                 const checked = selection.ids.has(n.id)
@@ -135,7 +137,7 @@ export function TrashView() {
                       openContextMenu(
                         e,
                         checked && selection.ids.size >= 2 ? (
-                          <SelectionMenuItems selection={selection} actions={actions} />
+                          <SelectionMenuItems selection={selection} actions={actions} max={MAX_BATCH_NOTES} noun={NOTES_NOUN} />
                         ) : (
                           <>
                             <MenuItem icon={<RotateCcw />} onSelect={() => void restore([n])} disabled={busy}>

@@ -22,3 +22,9 @@ export type FileEntry = Attachment & { noteIds: string[]; search?: SearchIndexIn
 
 /** Treffer der Volltextsuche in einer Datei – page: Seite im PDF (Textdateien: 1) */
 export type FileSearchResult = { id: string; filename: string; mime: string; page: number; snippet: string }
+
+/**
+ * Notiz, die auf eine Datei verweist (Rückverweis im PDF-Viewer) – `pages`: zitierte Seiten (aufsteigend), `whole`:
+ * auch ohne Seite eingebettet oder verlinkt
+ */
+export type FileReference = { id: string; title: string; folderId: string | null; pages: number[]; whole: boolean }

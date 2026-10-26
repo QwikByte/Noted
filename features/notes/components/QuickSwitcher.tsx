@@ -36,6 +36,8 @@ export function QuickSwitcher({ open, onClose }: { open: boolean; onClose: () =>
   }, [open])
 
   const items: Item[] = useMemo(() => {
+    // Geschlossen nichts berechnen – die Notizliste ändert sich beim Tippen in einer Notiz mit jeder Taste
+    if (!open) return []
     const q = query.trim()
     const scored = notes
       .map((n) => {
@@ -55,7 +57,7 @@ export function QuickSwitcher({ open, onClose }: { open: boolean; onClose: () =>
       scored.push({ kind: 'search', query: q })
     }
     return scored
-  }, [query, notes, folders])
+  }, [open, query, notes, folders])
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' })

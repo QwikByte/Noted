@@ -45,6 +45,12 @@ type SavedListener = (note: Note, info: { linksUpdated: number; linksSkipped: nu
 
 const SAVE_DELAY = 900
 const RETRY_INTERVAL = 20_000
+/**
+ * Beim Tippen den lokalen Speicher erst nach so viel Ruhe schreiben, spätestens nach PERSIST_MAX_DELAY – jedes Schreiben
+ * serialisiert alle Entwürfe. Beim Verlassen der Seite und vor dem Senden wird sofort geschrieben.
+ */
+const PERSIST_DELAY = 500
+const PERSIST_MAX_DELAY = 2_000
 
 const SAVED: NoteSyncStatus = { state: 'saved' }
 
@@ -73,6 +79,9 @@ export class SyncStore {
   activeId: string | null = null
   /** Der lokale Speicher ist voll: Entwürfe liegen nur im Arbeitsspeicher, bis das Schreiben wieder klappt */
   private memoryOnly = false
+  private persistTimer: ReturnType<typeof setTimeout> | null = null
+  /** Seit wann ungeschriebene Änderungen anstehen (0 = keine) */
+  private persistSince = 0
 
   start(userId: number) {
     if (this.started) return
@@ -90,9 +99,13 @@ export class SyncStore {
     }
     this.emit()
     window.addEventListener('online', () => this.flushAll())
+    // Beim Schließen oder Wechseln des Tabs bleibt keine Eingabe nur im Arbeitsspeicher
+    window.addEventListener('pagehide', () => this.persistNow())
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.flushAll(true)
-      else this.flushAll()
+      if (document.visibilityState === 'hidden') {
+        this.persistNow()
+        this.flushAll(true)
+      } else this.flushAll()
     })
     this.retryTimer = setInterval(() => {
       if (this.drafts.size > 0) this.flushAll()
@@ -117,8 +130,15 @@ export class SyncStore {
     }
   }
 
+  /**
+   * Abonnenten benachrichtigen. Die Liste der Entwürfe ist nur neu, wenn sich ein Entwurf geändert hat – bei reinen
+   * Statuswechseln (Speichert … / Gespeichert) behält getDrafts() seine Identität, Notizlisten rendern nicht neu.
+   * Deshalb Entwürfe nie an Ort und Stelle ändern, sondern ersetzen.
+   */
   private emit() {
-    this.snapshot = [...this.drafts.values()]
+    const next = [...this.drafts.values()]
+    const same = next.length === this.snapshot.length && next.every((d, i) => d === this.snapshot[i])
+    if (!same) this.snapshot = next
     for (const fn of this.listeners) fn()
   }
 
@@ -145,7 +165,24 @@ export class SyncStore {
     return this.memoryOnly
   }
 
+  /** Beim Tippen: gebündelt schreiben (nach PERSIST_DELAY Ruhe, spätestens nach PERSIST_MAX_DELAY) */
+  private schedulePersist() {
+    const now = Date.now()
+    if (!this.persistSince) this.persistSince = now
+    if (this.persistTimer) clearTimeout(this.persistTimer)
+    const delay = Math.min(PERSIST_DELAY, this.persistSince + PERSIST_MAX_DELAY - now)
+    this.persistTimer = setTimeout(() => this.persist(), Math.max(0, delay))
+  }
+
+  /** Anstehende Änderungen sofort schreiben */
+  persistNow() {
+    if (this.persistTimer) this.persist()
+  }
+
   private persist() {
+    if (this.persistTimer) clearTimeout(this.persistTimer)
+    this.persistTimer = null
+    this.persistSince = 0
     if (!this.storageKey) return
     try {
       if (this.drafts.size === 0) localStorage.removeItem(this.storageKey)
@@ -209,7 +246,7 @@ export class SyncStore {
   updateMany(changes: { id: string; version: number; patch: DraftPatch }[], opts: { immediate?: boolean } = {}) {
     if (changes.length === 0) return
     for (const { id, version, patch } of changes) this.mergeDraft(id, version, patch)
-    this.persist()
+    this.schedulePersist()
     this.emit()
     for (const { id } of changes) this.schedule(id, opts.immediate ? 0 : SAVE_DELAY)
   }
@@ -260,6 +297,8 @@ export class SyncStore {
     }
     const draft = this.drafts.get(id)
     if (!draft) return
+    // Was gesendet wird, liegt vorher auch lokal
+    this.persistNow()
     this.inflight.add(id)
     this.setStatus(id, { state: 'saving' })
     this.emit()
@@ -308,10 +347,10 @@ export class SyncStore {
         this.setStatus(id, SAVED)
       } else if (current) {
         // Während des Speicherns wurde weitergeschrieben
-        current.isNew = false
-        current.baseVersion = note.version
-        delete current.overwrite
-        if (current.title !== undefined && current.title === draft.title) current.title = note.title
+        const next: Draft = { ...current, isNew: false, baseVersion: note.version }
+        delete next.overwrite
+        if (current.title !== undefined && current.title === draft.title) next.title = note.title
+        this.drafts.set(id, next)
         this.setStatus(id, { state: 'pending' })
         this.schedule(id, SAVE_DELAY)
       }
@@ -351,8 +390,7 @@ export class SyncStore {
     // Kopie einer Tresor-Notiz legt die Notizansicht verschlüsselt an (der Umschlag gehört zur alten ID)
     if (!draft || (mode === 'copy' && draft.vault)) return
     if (mode === 'mine' && serverNote) {
-      draft.baseVersion = serverNote.version
-      draft.overwrite = true
+      this.drafts.set(id, { ...draft, baseVersion: serverNote.version, overwrite: true })
       this.setStatus(id, { state: 'pending' })
       this.persist()
       this.emit()
@@ -421,6 +459,9 @@ export class SyncStore {
   clearAll() {
     for (const t of this.timers.values()) clearTimeout(t)
     this.timers.clear()
+    if (this.persistTimer) clearTimeout(this.persistTimer)
+    this.persistTimer = null
+    this.persistSince = 0
     this.drafts.clear()
     this.status.clear()
     if (this.storageKey) localStorage.removeItem(this.storageKey)

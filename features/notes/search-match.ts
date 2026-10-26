@@ -1,0 +1,98 @@
+// Fundstellen der Volltextsuche im Text einer Notiz – nach denselben Regeln wie SQLite FTS5 (unicode61,
+// remove_diacritics): Wortanfang, Groß-/Kleinschreibung und Akzente egal. „ubung“ findet also „Übungen“.
+
+export type TextMatch = { from: number; to: number }
+
+const MAX_MATCHES = 500
+const WORD_CHAR = /[\p{L}\p{N}]/u
+const MARKS = /\p{M}/gu
+
+/**
+ * Ein Zeichen ohne Akzente und klein – kann mehrere Zeichen ergeben (z. B. „İ“) oder keins (allein stehender Akzent).
+ * Leerraum wird ein Leerzeichen, damit Phrasen auch über Zeilenumbrüche passen.
+ */
+function fold(ch: string): string {
+  const code = ch.charCodeAt(0)
+  if (code < 0x80) {
+    if (code >= 65 && code <= 90) return String.fromCharCode(code + 32)
+    return code === 9 || code === 10 || code === 13 ? ' ' : ch
+  }
+  if (/\s/.test(ch)) return ' '
+  return ch.normalize('NFD').replace(MARKS, '').toLowerCase()
+}
+
+const foldText = (text: string) => Array.from(text, fold).join('')
+
+/**
+ * Text in Vergleichsform – je Zeichen mit seiner Stelle im Original, damit Treffer genau dort markiert werden, wo sie
+ * stehen (auch wenn ein Zeichen beim Vereinfachen kürzer oder länger wird)
+ */
+function folded(text: string): { norm: string; start: number[]; end: number[] } {
+  let norm = ''
+  const start: number[] = []
+  const end: number[] = []
+  let i = 0
+  let space = false
+  for (const ch of text) {
+    const f = fold(ch)
+    // Mehrfacher Leerraum zählt wie ein Leerzeichen
+    if (f === ' ' && space) {
+      end[end.length - 1] = i + ch.length
+      i += ch.length
+      continue
+    }
+    space = f === ' '
+    for (let k = 0; k < f.length; k++) {
+      start.push(i)
+      end.push(i + ch.length)
+    }
+    norm += f
+    i += ch.length
+  }
+  return { norm, start, end }
+}
+
+/** Ohne Satzzeichen am Rand – als Schleife, ein regulärer Ausdruck bräuchte bei langen Eingaben quadratisch viel Zeit */
+function trimNonWord(text: string): string {
+  const chars = Array.from(text)
+  let start = 0
+  let end = chars.length
+  while (start < end && !WORD_CHAR.test(chars[start])) start++
+  while (end > start && !WORD_CHAR.test(chars[end - 1])) end--
+  return chars.slice(start, end).join('')
+}
+
+/** Suchwörter in Vergleichsform – ohne Satzzeichen am Rand, die FTS5 ohnehin nicht mitsucht */
+function foldTerms(terms: string[]): string[] {
+  const out = new Set<string>()
+  for (const t of terms) {
+    const f = trimNonWord(foldText(t)).replace(/ +/g, ' ')
+    if (f) out.add(f)
+  }
+  return [...out]
+}
+
+/** Alle Stellen, an denen ein Wort mit einem der Suchwörter beginnt – sortiert, ohne Überlappung, höchstens 500 */
+export function findMatches(text: string, terms: string[]): TextMatch[] {
+  const words = foldTerms(terms)
+  if (words.length === 0 || !text) return []
+  const { norm, start, end } = folded(text)
+  const found: TextMatch[] = []
+  for (const word of words) {
+    for (let at = norm.indexOf(word); at >= 0; at = norm.indexOf(word, at + 1)) {
+      if (at > 0 && WORD_CHAR.test(norm[at - 1])) continue
+      found.push({ from: start[at], to: end[at + word.length - 1] })
+      // Je Wort genügt die Obergrenze – zusammen mit den anderen wird ohnehin gekürzt
+      if (found.length >= MAX_MATCHES * words.length) break
+    }
+  }
+  found.sort((a, b) => a.from - b.from || b.to - a.to)
+  const out: TextMatch[] = []
+  for (const m of found) {
+    const last = out[out.length - 1]
+    if (last && m.from < last.to) last.to = Math.max(last.to, m.to)
+    else out.push({ ...m })
+    if (out.length > MAX_MATCHES) break
+  }
+  return out.slice(0, MAX_MATCHES)
+}

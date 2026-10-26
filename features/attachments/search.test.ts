@@ -58,6 +58,10 @@ describe('Volltextsuche in Dateien', () => {
     expect((await search('WARMEKRAFT')).files).toHaveLength(1)
     expect((await search('#physik entropie')).files.map((f) => f.page)).toEqual([3])
     expect(await searchState(pdf.id)).toEqual({ state: 'done', pages: 3, reason: null })
+    // Phrasen und Ausschlüsse gelten auch in Dateien
+    expect((await search('"Entropie Wärmekraft"')).files.map((f) => f.page)).toEqual([3])
+    expect((await search('"Wärmekraftmaschine Entropie"')).files).toEqual([])
+    expect((await search('entropie -wärmekraft')).files).toEqual([])
   })
 
   it('durchsucht Text-, Markdown- und CSV-Dateien als Seite 1, Bilder gar nicht', async () => {

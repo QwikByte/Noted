@@ -2,7 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { createExtensions, type CompletionData } from '../client/editor/setup'
+import { createExtensions, setEditorLanguage, type CompletionData } from '../client/editor/setup'
 import { docReplacement } from '../client/editor/replace'
 import type { EditorLinkActions } from '../client/editor/links'
 import { insertionToMarkdown } from '../client/active-editor'
@@ -23,6 +23,8 @@ type Props = {
   data: CompletionData
   autoFocus?: boolean
   spellcheck?: boolean
+  /** Sprache des Textes (BCP-47) – wirkt sofort, z. B. nach `lang:` im Frontmatter */
+  lang?: string
   /** Einfacher Text statt Markdown */
   plain?: boolean
   /** Menü mit Befehlen nach „/“ – wirkt beim Öffnen */
@@ -99,6 +101,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           onSave: () => latest.current.onSave(),
           onPasteFiles: (files) => latest.current.onPasteFiles(files),
           spellcheck: latest.current.spellcheck,
+          lang: latest.current.lang,
           plain: latest.current.plain,
           slashCommands: latest.current.slashCommands,
           links: latest.current.links ? () => latest.current.links ?? NO_LINKS : undefined,
@@ -116,6 +119,13 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
       viewRef.current = null
     }
   }, [])
+
+  // Nur bei geändertem Wert, nicht pro Tastendruck
+  const { lang, spellcheck } = props
+  useEffect(() => {
+    const view = viewRef.current
+    if (view) setEditorLanguage(view, spellcheck !== false, lang ?? 'de')
+  }, [lang, spellcheck])
 
   return <div ref={host} className="h-full min-h-0" data-testid="editor" />
 })

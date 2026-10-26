@@ -9,14 +9,38 @@ import { Field, Input, Select } from '@/shared/ui/input'
 import { Modal } from '@/shared/ui/modal'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
-import { CARD_TYPE_LABELS, createCards, createDeck, useFlashcards } from '../client/flashcards'
+import { CARD_TYPE_LABELS, createCards, createDeck, deleteCard, updateCard, useFlashcards } from '../client/flashcards'
 import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
 import { EXPLICIT_SOURCES, SOURCE_LABELS, parseCardsFromNote, type CandidateSource } from '../card-markdown'
+import { changedParts, noteCards, normFront as norm, syncCards } from '../note-sync'
+import type { Card, CardOption, CardType } from '../types'
 
 const NEW_DECK = '__new__'
 const SOURCES: CandidateSource[] = ['syntax', 'question', 'cloze', 'definition', 'bold', 'highlight', 'heading']
-const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+
+/** Was mit einer Karte geschieht, die es in der Notiz nicht mehr gibt */
+type OrphanAction = 'keep' | 'suspend' | 'unlink' | 'delete'
+const ORPHAN_ACTIONS: { value: OrphanAction; label: string }[] = [
+  { value: 'keep', label: 'Behalten' },
+  { value: 'suspend', label: 'Aussetzen' },
+  { value: 'unlink', label: 'Verknüpfung lösen' },
+  { value: 'delete', label: 'Löschen' },
+]
+
+const PART_LABELS = { front: 'Frage', back: 'Antwort', type: 'Kartentyp' }
+
+/** Vorder- und Rückseite in zwei Zeilen – bei Multiple Choice die Antworten, die richtigen mit ✓ */
+function CardText({ card }: { card: { type: CardType; front: string; back: string; options: CardOption[] } }) {
+  return (
+    <>
+      <span className="line-clamp-2 text-sm font-medium whitespace-pre-line">{card.front}</span>
+      <span className="line-clamp-2 text-sm whitespace-pre-line text-muted">
+        {card.type === 'mc' ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ') : card.back}
+      </span>
+    </>
+  )
+}
 
 function SyntaxHelp() {
   return (
@@ -48,6 +72,9 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
   const decks = useMemo(() => data?.decks ?? [], [data])
   const [lastDeck, setLastDeck] = usePref<string>('noted:lastDeck', '')
   const candidates = useMemo(() => parseCardsFromNote(note.content), [note.content])
+  // Karten, die schon aus dieser Notiz entstanden sind: geändert oder nicht mehr in der Notiz?
+  const sync = useMemo(() => syncCards(candidates, noteCards(data?.cards ?? [], note.id)), [candidates, data, note.id])
+  const changedIndex = useMemo(() => new Set(sync.changed.map((c) => c.candidate)), [sync])
 
   // Vorschlag: der Stapel, in dem schon Karten aus dieser Notiz liegen – sonst der zuletzt benutzte
   const suggested = useMemo(() => {
@@ -76,10 +103,22 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
     if (selected) return selected
     const wanted = (c: (typeof candidates)[number]) =>
       preselect ? c.source === 'heading' && preselect.has(c.line) : EXPLICIT_SOURCES.includes(c.source)
-    return new Set(candidates.map((c, i) => (wanted(c) && !existing.has(norm(c.front)) ? i : -1)).filter((i) => i >= 0))
-  }, [selected, candidates, existing, preselect])
+    const fresh = (c: (typeof candidates)[number], i: number) => !existing.has(norm(c.front)) && !changedIndex.has(i)
+    return new Set(candidates.map((c, i) => (wanted(c) && fresh(c, i) ? i : -1)).filter((i) => i >= 0))
+  }, [selected, candidates, existing, preselect, changedIndex])
+  // Aktualisieren: vorausgewählt nur bei gleicher Vorderseite – eine ähnliche ist nur ein Vorschlag
+  const [updates, setUpdates] = useState<Set<number> | null>(null)
+  const effectiveUpdates = useMemo(
+    () => updates ?? new Set(sync.changed.filter((c) => c.exact).map((c) => c.candidate)),
+    [updates, sync],
+  )
+  const [orphanActions, setOrphanActions] = useState<Record<string, OrphanAction>>({})
+  const orphanAction = (card: Card) => orphanActions[card.id] ?? 'keep'
+  const orphanChoices = sync.orphaned.filter((c) => orphanAction(c) !== 'keep')
+  const total = effective.size + effectiveUpdates.size + orphanChoices.length
   const [open, setOpen] = useState<Set<CandidateSource>>(() => new Set(note.preselect ? ['heading'] : EXPLICIT_SOURCES))
   const [help, setHelp] = useState(candidates.length === 0)
+  const [changedOpen, setChangedOpen] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -94,22 +133,52 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
 
   async function submit() {
     const chosen = [...effective].sort((a, b) => a - b).map((i) => candidates[i])
-    if (chosen.length === 0) return setError('Wähle mindestens eine Karte aus.')
-    if (deckId === NEW_DECK && !deckName.trim()) return setError('Bitte gib einen Namen für den neuen Stapel ein.')
+    const changed = sync.changed.filter((c) => effectiveUpdates.has(c.candidate))
+    if (total === 0) return setError('Wähle mindestens eine Karte aus.')
+    if (chosen.length > 0 && deckId === NEW_DECK && !deckName.trim()) {
+      return setError('Bitte gib einen Namen für den neuen Stapel ein.')
+    }
     setSaving(true)
     setError(null)
     try {
-      const target = deckId === NEW_DECK ? (await createDeck(qc, { name: deckName.trim() })).id : deckId
-      await createCards(
-        qc,
-        target,
-        chosen.map(({ type, front, back, options }) => ({ type, front, back, options, noteId: note.id })),
-      )
-      setLastDeck(target)
-      toast.show(`${chosen.length} ${chosen.length === 1 ? 'Karte' : 'Karten'} erstellt.`, {
+      if (chosen.length > 0) {
+        const target = deckId === NEW_DECK ? (await createDeck(qc, { name: deckName.trim() })).id : deckId
+        await createCards(
+          qc,
+          target,
+          chosen.map(({ type, front, back, options }) => ({ type, front, back, options, noteId: note.id })),
+        )
+        setLastDeck(target)
+      }
+      // Bearbeiten behält den Lernstand; bei Lückentexten wandert er mit seiner Lücke, ein Zusatz auf der Karte bleibt
+      for (const { candidate, card } of changed) {
+        const { type, front, back, options } = candidates[candidate]
+        await updateCard(qc, card.id, type === 'cloze' ? { type, front } : { type, front, back, options })
+      }
+      const done: Record<OrphanAction, number> = { keep: 0, suspend: 0, unlink: 0, delete: 0 }
+      for (const card of orphanChoices) {
+        const action = orphanAction(card)
+        if (action === 'delete') await deleteCard(qc, card.id)
+        else await updateCard(qc, card.id, action === 'suspend' ? { suspended: true } : { noteId: null })
+        done[action]++
+      }
+      const parts = [
+        chosen.length ? `${chosen.length} erstellt` : '',
+        changed.length ? `${changed.length} aktualisiert` : '',
+        done.suspend ? `${done.suspend} ausgesetzt` : '',
+        done.unlink ? `${done.unlink} von der Notiz gelöst` : '',
+        done.delete ? `${done.delete} gelöscht` : '',
+      ].filter(Boolean)
+      const message =
+        parts.length === 1 && chosen.length
+          ? `${chosen.length} ${chosen.length === 1 ? 'Karte' : 'Karten'} erstellt.`
+          : `Karten abgeglichen: ${parts.join(', ')}.`
+      toast.show(message, {
         tone: 'success',
         duration: 6000,
-        action: { label: 'Jetzt lernen', onClick: () => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' }) },
+        action: chosen.length
+          ? { label: 'Jetzt lernen', onClick: () => app.go({ kind: 'study', scope: `note:${note.id}`, mode: 'learn' }) }
+          : undefined,
       })
       onClose()
     } catch (err) {
@@ -121,7 +190,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
 
   const groups = SOURCES.map((source) => ({
     source,
-    items: candidates.map((c, i) => ({ c, i })).filter(({ c }) => c.source === source),
+    items: candidates.map((c, i) => ({ c, i })).filter(({ c, i }) => c.source === source && !changedIndex.has(i)),
   })).filter((g) => g.items.length > 0)
 
   return (
@@ -139,9 +208,9 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
             </p>
           ) : null}
           <Button onClick={onClose}>Abbrechen</Button>
-          {candidates.length > 0 ? (
-            <Button variant="primary" onClick={() => void submit()} loading={saving} disabled={effective.size === 0} data-testid="create-from-note">
-              {effective.size} {effective.size === 1 ? 'Karte' : 'Karten'} erstellen
+          {candidates.length > 0 || sync.orphaned.length > 0 ? (
+            <Button variant="primary" onClick={() => void submit()} loading={saving} disabled={total === 0} data-testid="create-from-note">
+              {total === effective.size ? `${effective.size} ${effective.size === 1 ? 'Karte' : 'Karten'} erstellen` : 'Übernehmen'}
             </Button>
           ) : (
             <Button
@@ -158,7 +227,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
       }
     >
       <div className="space-y-4">
-        {candidates.length > 0 ? (
+        {groups.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="In Stapel">
               {(id) => (
@@ -178,9 +247,138 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
               </Field>
             ) : null}
           </div>
-        ) : (
+        ) : candidates.length === 0 ? (
           <p className="rounded-xl bg-subtle px-4 py-3 text-sm">In dieser Notiz wurden keine Karten erkannt.</p>
-        )}
+        ) : null}
+
+        {sync.changed.length > 0 ? (
+          <section className="rounded-xl border border-border" data-testid="cards-changed">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={effectiveUpdates.size === sync.changed.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = effectiveUpdates.size > 0 && effectiveUpdates.size < sync.changed.length
+                }}
+                onChange={(e) => setUpdates(new Set(e.target.checked ? sync.changed.map((c) => c.candidate) : []))}
+                aria-label="Alle geänderten Karten aktualisieren"
+                className="size-4 accent-[var(--accent)]"
+              />
+              <button
+                type="button"
+                onClick={() => setChangedOpen((o) => !o)}
+                className="flex flex-1 items-center gap-1 text-left text-sm font-medium hover:underline"
+                aria-expanded={changedOpen}
+              >
+                Geändert
+                <span className="text-faint">({sync.changed.length})</span>
+                <span className="ml-auto text-faint">{changedOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</span>
+              </button>
+            </div>
+            {changedOpen ? (
+              <ul className="max-h-96 divide-y divide-border overflow-y-auto border-t border-border">
+                {sync.changed.map(({ candidate, card, exact }) => {
+                  const next = candidates[candidate]
+                  const parts = changedParts(card, next).map((p) => (p === 'front' && next.type === 'cloze' && exact ? 'Lücken' : PART_LABELS[p]))
+                  const on = effectiveUpdates.has(candidate)
+                  return (
+                    <li key={card.id}>
+                      <label className={cn('flex cursor-pointer gap-3 px-3 py-2.5 hover:bg-hover', !on && 'opacity-70')}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => {
+                            const n = new Set(effectiveUpdates)
+                            if (e.target.checked) n.add(candidate)
+                            else n.delete(candidate)
+                            setUpdates(n)
+                          }}
+                          aria-label={`„${next.front}“ aktualisieren`}
+                          className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                        />
+                        <span className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+                          <span className="min-w-0" data-testid="card-before">
+                            <span className="text-xs font-medium text-faint">Bisher</span>
+                            <CardText card={card} />
+                          </span>
+                          <span className="min-w-0" data-testid="card-after">
+                            <span className="text-xs font-medium text-faint">In der Notiz</span>
+                            <CardText card={next} />
+                          </span>
+                          <span className="flex flex-wrap gap-1.5 sm:col-span-2">
+                            {parts.length ? <Badge tone="accent">{parts.join(' und ')} geändert</Badge> : null}
+                            {exact ? null : <Badge tone="warning">Vorschlag – ähnliche Frage</Badge>}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+            <p className="border-t border-border px-3 py-2 text-xs text-muted">Aktualisieren übernimmt die Fassung aus der Notiz, der Lernstand bleibt.</p>
+          </section>
+        ) : null}
+
+        {sync.orphaned.length > 0 ? (
+          <section className="rounded-xl border border-border" data-testid="cards-orphaned">
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <h3 className="flex-1 text-sm font-medium">
+                Nicht mehr in der Notiz <span className="text-faint">({sync.orphaned.length})</span>
+              </h3>
+              {sync.orphaned.length > 1 ? (
+                <Select
+                  value=""
+                  onChange={(e) => {
+                    const action = e.target.value as OrphanAction
+                    setOrphanActions(Object.fromEntries(sync.orphaned.map((c) => [c.id, action])))
+                  }}
+                  aria-label="Für alle"
+                  className="h-9! w-auto! text-sm!"
+                >
+                  <option value="" disabled>
+                    Für alle …
+                  </option>
+                  {ORPHAN_ACTIONS.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.label}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+            </div>
+            <p className="border-t border-border px-3 py-2 text-xs text-muted">
+              Diese Karten stammen aus der Notiz, haben dort aber kein Gegenstück – etwa weil der Abschnitt gelöscht wurde. Von Hand
+              angelegte Karten erscheinen hier auch; sie kannst du behalten.
+            </p>
+            <ul className="max-h-72 divide-y divide-border overflow-y-auto border-t border-border">
+              {sync.orphaned.map((card) => (
+                <li key={card.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+                  <span className="min-w-0 flex-1">
+                    <CardText card={card} />
+                    {card.suspended ? (
+                      <span className="mt-1 flex">
+                        <Badge>Ausgesetzt</Badge>
+                      </span>
+                    ) : null}
+                  </span>
+                  <Select
+                    value={orphanAction(card)}
+                    onChange={(e) => setOrphanActions((a) => ({ ...a, [card.id]: e.target.value as OrphanAction }))}
+                    aria-label={`„${card.front}“: was tun?`}
+                    className="h-9! w-auto! text-sm!"
+                  >
+                    {ORPHAN_ACTIONS.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label}
+                      </option>
+                    ))}
+                  </Select>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {groups.map(({ source, items }) => {
           const all = items.every(({ i }) => effective.has(i))
@@ -229,10 +427,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
                           className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="line-clamp-2 text-sm font-medium whitespace-pre-line">{c.front}</span>
-                          <span className="line-clamp-2 text-sm whitespace-pre-line text-muted">
-                            {c.type === 'mc' ? c.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ') : c.back}
-                          </span>
+                          <CardText card={c} />
                           <span className="mt-1 flex flex-wrap gap-1.5">
                             {c.type !== 'basic' ? <Badge>{CARD_TYPE_LABELS[c.type]}</Badge> : null}
                             {isDuplicate(i) ? <Badge tone="warning">Schon vorhanden</Badge> : null}

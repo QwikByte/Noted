@@ -28,6 +28,7 @@ import type { SessionInfo } from '@/features/auth/types'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { useShares } from '@/features/sharing/client/queries'
 import { ShareList } from '@/features/sharing/components/ShareList'
+import { DEFAULT_LANGUAGE, NOTE_LANGUAGES, isLanguageTag } from '@/features/notes/language'
 import { VaultSettings } from '@/features/vault/components/VaultSettings'
 
 export function SettingsPage() {
@@ -335,6 +336,8 @@ function AppearanceSection() {
   const [spellcheck, setSpellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands, setSlashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml, setPasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
+  const [wordCount, setWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
+  const [swipeGrading, setSwipeGrading] = usePref<'1' | '0'>('noted:swipeGrading', '1')
   return (
     <Section title="Darstellung" description="Gilt nur für dieses Gerät.">
       <div className="space-y-5">
@@ -382,6 +385,23 @@ function AppearanceSection() {
             description="Aus Webseiten, Moodle oder Word Kopiertes kommt als Markdown an – Überschriften, Listen, Fettdruck, Links und Tabellen bleiben. Eine Adresse über markiertem Text wird zum Link. Strg/⌘ + Umschalt + V fügt immer nur den Text ein."
           />
         </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={wordCount === '1'}
+            onChange={(v) => setWordCount(v ? '1' : '0')}
+            label="Wortzahl anzeigen"
+            description="Zeigt über der Notiz laufend die Wörter und die Lesezeit – mit Markierung im Editor die Wörter der Markierung. Hilft bei Wortgrenzen für Hausarbeiten und Abstracts."
+          />
+        </div>
+        <div className="max-w-sm">
+          <Switch
+            checked={swipeGrading === '1'}
+            onChange={(v) => setSwipeGrading(v ? '1' : '0')}
+            label="Karteikarten per Wischen bewerten"
+            description="Auf Touchscreens nach dem Aufdecken: nach links „Nochmal“, nach rechts „Gut“ – beim Üben „Nicht gewusst“ bzw. „Gewusst“."
+          />
+        </div>
+        <NoteLanguageField />
         <Field label="Notizen öffnen im Modus" className="max-w-sm">
           {(id) => (
             <Select id={id} value={mode} onChange={(e) => setMode(e.target.value as EditorMode)}>
@@ -393,6 +413,59 @@ function AppearanceSection() {
         </Field>
       </div>
     </Section>
+  )
+}
+
+/** Standardsprache der Notizen – eine der üblichen oder ein freies Kürzel wie „pt-BR“ */
+function NoteLanguageField() {
+  const [lang, setLang] = usePref<string>('noted:lang', DEFAULT_LANGUAGE)
+  const known = NOTE_LANGUAGES.some((l) => l.code === lang)
+  const [other, setOther] = useState(!known)
+  const [draft, setDraft] = useState(known ? '' : lang)
+  const invalid = other && draft.trim() !== '' && !isLanguageTag(draft.trim())
+  return (
+    <div className="max-w-sm space-y-2">
+      <Field
+        label="Sprache der Notizen"
+        hint="Für Rechtschreibprüfung und Vorlesen. Eine Markdown-Notiz kann mit „lang: en“ in den Properties (oder unter ⋮ → Informationen) eine eigene haben. Ob die Rechtschreibprüfung sie nutzt, hängt vom Browser ab."
+      >
+        {(id) => (
+          <Select
+            id={id}
+            value={other ? 'other' : lang}
+            onChange={(e) => {
+              if (e.target.value === 'other') return setOther(true)
+              setOther(false)
+              setLang(e.target.value)
+            }}
+          >
+            {NOTE_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+            <option value="other">Andere …</option>
+          </Select>
+        )}
+      </Field>
+      {other ? (
+        <Field label="Sprachkürzel" hint="Zum Beispiel „pt-BR“ oder „nl“." error={invalid ? 'Kein gültiges Sprachkürzel.' : null}>
+          {(id) => (
+            <Input
+              id={id}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                if (isLanguageTag(e.target.value.trim())) setLang(e.target.value.trim())
+              }}
+              placeholder="pt-BR"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
+          )}
+        </Field>
+      ) : null}
+    </div>
   )
 }
 

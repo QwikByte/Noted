@@ -21,6 +21,7 @@ export function NotePrint({
   title,
   format,
   content,
+  lang,
   links,
   onClose,
 }: {
@@ -29,6 +30,7 @@ export function NotePrint({
   title: string
   format: NoteFormat
   content: string
+  lang: string
   links: PreviewLinks
   onClose: () => void
 }) {
@@ -66,12 +68,12 @@ export function NotePrint({
     >
       {markdown !== null ? (
         <NoteEmbeds noteId={noteId} links={links} print>
-          <Preview content={markdown} {...links} print embeds onRendered={() => setRenderedFor(markdown)} />
+          <Preview content={markdown} {...links} print lang={lang} embeds onRendered={() => setRenderedFor(markdown)} />
         </NoteEmbeds>
       ) : format === 'richtext' ? (
-        <RichTextView html={content} onOpenPdf={ignore} />
+        <RichTextView html={content} lang={lang} onOpenPdf={ignore} />
       ) : (
-        <PlainTextView text={content} />
+        <PlainTextView text={content} lang={lang} />
       )}
     </PrintView>
   )

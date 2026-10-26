@@ -1,7 +1,7 @@
 // markdown-it-Plugins für die erweiterte Syntax: Wikilinks, Einbettungen, Tags, ==Markierungen==,
 // Callouts, Aufgabenlisten, Kommentare (%% %%) und Überschriften-Anker.
 import type { MarkdownIt, StateCore, StateInline, Token } from 'markdown-it'
-import { isFileTarget, parseWikiTarget } from './meta'
+import { ATTACHMENT_EXT, isFileTarget, parseWikiTarget } from './meta'
 import { escapeHtml } from '@/shared/lib/html'
 
 export type ResolvedNote = { id: string; title: string }
@@ -41,8 +41,12 @@ const AUDIO_EXT = /\.(mp3|m4a|wav|ogg|flac)$/i
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv)$/i
 const PDF_EXT = /\.pdf$/i
 const PDF_PAGE_RE = /^page=(\d{1,5})\b/i
-const ATTACHMENT_EXT =
-  /\.(pdf|png|jpe?g|gif|webp|avif|bmp|svg|heic|heif|mp3|m4a|wav|ogg|flac|mp4|webm|mov|mkv|txt|csv|json|zip|docx?|xlsx?|pptx?|odt|ods|odp|epub)$/i
+
+/** Seite aus dem Teil hinter „#“ eines Links auf ein PDF (`page=12`) – null ohne Seitenangabe */
+export function pdfPageFromSubpath(subpath: string): number | null {
+  const page = PDF_PAGE_RE.exec(subpath)?.[1]
+  return page ? Number(page) : null
+}
 
 export function defaultFileUrl(name: string) {
   return '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
@@ -91,7 +95,7 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     const name = escapeHtml(target.split('/').pop() ?? target)
     // PDFs öffnen im eingebauten Viewer – auch direkt auf einer Seite: [[Skript.pdf#page=12]]
     const isPdf = PDF_EXT.test(target)
-    const page = isPdf && heading ? (PDF_PAGE_RE.exec(heading)?.[1] ?? null) : null
+    const page = isPdf && heading ? pdfPageFromSubpath(heading) : null
     const pdfAttrs = isPdf ? ` data-pdf="${escapeHtml(target)}"${page ? ` data-page="${page}"` : ''}` : ''
     if (!embed) {
       const label = alias ? escapeHtml(alias) : page ? `${name}, S. ${page}` : name
@@ -113,7 +117,11 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     }
     const kind = isPdf ? 'pdf' : 'file'
     const label = page ? `${name} · Seite ${page}` : name
-    return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}><span class="embed-file-icon"></span><span>${label}</span></a>`
+    // Eingebettete PDF-Seite: Die Vorschau zeigt sie als Bild (Breite wie bei Bildern: ![[Skript.pdf#page=3|400]]) –
+    // bis dahin, ohne JavaScript und in geteilten Notizen bleibt es bei der Karte
+    const width = page && alias && /^\d+$/.test(alias) ? ` data-width="${alias}"` : ''
+    const pageClass = page ? ' embed-pdf-page' : ''
+    return `<a class="embed-file embed-${kind}${pageClass}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}${width}><span class="embed-file-icon"></span><span>${label}</span></a>`
   }
 
   const note = linkedNote ?? (target ? (env.resolveNote?.(target) ?? null) : null)

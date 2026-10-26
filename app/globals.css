@@ -40,6 +40,8 @@
   --warning: #9c5600;
   --warning-soft: #fcf1df;
   --mark: #ffe866;
+  /* Aktueller Treffer beim Springen zwischen Fundstellen */
+  --mark-current: #ffbe5c;
   --code-bg: #f2f3f7;
   --rule: #d9483b;
   --grid-line: #e1e6f0;
@@ -91,6 +93,7 @@
   --warning: #f2b84b;
   --warning-soft: #362c17;
   --mark: #5e5214;
+  --mark-current: #7a4a0c;
   --code-bg: #1f2330;
   --rule: #e2695e;
   --grid-line: #212634;
@@ -635,6 +638,16 @@ html.dragging * {
 }
 /* Textmarker: leicht unregelmäßige Kanten wie ein Strich mit dem Marker */
 .markdown-body mark,
+/* Fundstellen aus der Volltextsuche in der geöffneten Notiz (CSS Custom Highlight API, siehe find-in-note.ts) */
+::highlight(search-hit) {
+  background-color: var(--mark);
+  color: inherit;
+}
+::highlight(search-current) {
+  background-color: var(--mark-current);
+  color: inherit;
+}
+
 .search-snippet mark {
   background: var(--mark);
   color: inherit;
@@ -724,6 +737,23 @@ html.dragging * {
 }
 .markdown-body .embed-pdf .embed-file-icon::before {
   content: '📄';
+}
+/* Eingebettete PDF-Seite als Bild (![[Skript.pdf#page=3]]) – ein Klick öffnet weiter den Viewer */
+.markdown-body .embed-pdf-page-image {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.markdown-body .embed-pdf-page-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
 }
 .markdown-body .embed-note-label {
   font-family: var(--font-sans);
@@ -1141,6 +1171,18 @@ html.dragging * {
 .dark .pdf-container .pdfViewer .page {
   /* Seiten bleiben weiß (Folien und Skripte sind so gestaltet), nur etwas gedämpft */
   filter: brightness(0.92);
+}
+/* Nachtmodus (⋮ im Viewer): Seiten dunkel, Schrift hell – die Farben bleiben durch die Drehung des Farbtons erkennbar.
+   Die Markierungen liegen außerhalb des Seitenbilds und werden nicht mit umgekehrt */
+.pdf-night .pdfViewer .page {
+  filter: none;
+}
+.pdf-night .pdfViewer .page .canvasWrapper {
+  filter: invert(1) hue-rotate(180deg);
+}
+.pdf-night .pdf-annotation {
+  background: color-mix(in srgb, var(--hl) 45%, transparent);
+  mix-blend-mode: screen;
 }
 /* Markierungen (Anmerkungen) wie mit einem Textmarker – ohne Mausereignisse, damit Text auswählbar bleibt */
 .pdf-annotation-layer {

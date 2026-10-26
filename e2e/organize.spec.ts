@@ -269,6 +269,96 @@ test('Mehrfachauswahl: auswählen, gemeinsam ziehen, in den Papierkorb und zurü
   await mobileContext.close()
 })
 
+test('Sortierung: Ordner nach Name, Bearbeitung oder Erstellung – gemerkt, Auswahl folgt der Reihenfolge', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = (await (await page.request.post('/api/folders', { headers, data: { name: 'Sortierung' } })).json())
+    .folder as { id: string }
+  cleanup.unshift(`/api/folders/${folder.id}`)
+  const ids: Record<string, string> = {}
+  // Unterschiedliche Zeiten: erstellt in dieser Reihenfolge, zuletzt bearbeitet „Sort A“
+  for (const title of ['Sort B 2', 'Sort A', 'Sort B 10']) {
+    const data = { title, content: title, folderId: folder.id }
+    ids[title] = ((await (await page.request.post('/api/notes', { headers, data })).json()).note as { id: string }).id
+    cleanup.unshift(`/api/notes/${ids[title]}?permanent=1`)
+    await page.waitForTimeout(20)
+  }
+  await page.request.put(`/api/notes/${ids['Sort A']}`, { headers, data: { content: 'Sort A bearbeitet' } })
+
+  await page.goto(`/?f=${folder.id}`)
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+  await expect.poll(titles).toEqual(['Sort A', 'Sort B 2', 'Sort B 10'])
+
+  const sort = page.getByRole('button', { name: /^Sortieren:/ })
+  await expect(sort).toHaveAccessibleName('Sortieren: Name, aufsteigend')
+  await sort.click()
+  await expect(page.getByRole('menuitemradio', { name: 'Name (A–Z)' })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('menuitemradio', { name: 'Zuletzt bearbeitet (neueste zuerst)' }).click()
+  await expect.poll(titles).toEqual(['Sort A', 'Sort B 10', 'Sort B 2'])
+  await shot(page, '93-sort')
+
+  // Mit der Tastatur: Pfeiltasten wandern durch die Einträge
+  await sort.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitemradio', { name: 'Zuletzt bearbeitet (neueste zuerst)' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('menuitemradio', { name: 'Name (A–Z)' })).toBeFocused()
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitemradio', { name: 'Erstellt (neueste zuerst)' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(sort).toBeFocused()
+  await expect.poll(titles).toEqual(['Sort B 10', 'Sort A', 'Sort B 2'])
+
+  // Gemerkt nach dem Neuladen
+  await page.reload()
+  await expect.poll(titles).toEqual(['Sort B 10', 'Sort A', 'Sort B 2'])
+  await expect(sort).toHaveAccessibleName('Sortieren: erstellt, neueste zuerst')
+
+  // Umschalt-Klick wählt den sichtbaren Bereich
+  const card = (title: string) => page.getByRole('main').getByRole('link', { name: new RegExp(`^${title}`) })
+  await card('Sort B 10').click({ modifiers: ['Control'] })
+  await card('Sort A').click({ modifiers: ['Shift'] })
+  await expect(page.getByText('2 ausgewählt')).toBeVisible()
+  await page.keyboard.press('Escape')
+})
+
+test('Suche: Phrase, Ausschluss und Ordnerfilter – die Wahl übersteht das Neuladen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const folder = (await (await page.request.post('/api/folders', { headers, data: { name: 'Suchfilter Mathe' } })).json())
+    .folder as { id: string }
+  cleanup.unshift(`/api/folders/${folder.id}`)
+  for (const [title, content, folderId] of [
+    ['Filter innen', 'Grenzwert einer Folge', folder.id],
+    ['Filter außen', 'Folge einer Grenzwert-Rechnung', null],
+  ] as const) {
+    const n = (await (await page.request.post('/api/notes', { headers, data: { title, content, folderId } })).json()).note
+    cleanup.unshift(`/api/notes/${n.id}?permanent=1`)
+  }
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+
+  await page.goto('/?q=grenzwert%20folge')
+  await expect.poll(titles).toEqual(expect.arrayContaining(['Filter innen', 'Filter außen']))
+  // Phrase: nur die Wortfolge
+  await page.getByLabel('Suchbegriff').fill('"Grenzwert einer"')
+  await expect.poll(titles).toEqual(['Filter innen'])
+  // Ausschluss
+  await page.getByLabel('Suchbegriff').fill('grenzwert -rechnung')
+  await expect.poll(titles).toEqual(['Filter innen'])
+  // Nur ausgeschlossen: Hinweis statt aller Notizen
+  await page.getByLabel('Suchbegriff').fill('-rechnung')
+  await expect(page.getByText('Gib mindestens ein Suchwort ein')).toBeVisible()
+
+  await page.getByLabel('Suchbegriff').fill('grenzwert folge')
+  await expect.poll(titles).toEqual(expect.arrayContaining(['Filter innen', 'Filter außen']))
+  await page.getByLabel('Suchen in').selectOption(folder.id)
+  await expect.poll(titles).toEqual(['Filter innen'])
+  await expect(page).toHaveURL(new RegExp(`in=${folder.id}`))
+  await expect(page.getByTestId('search-files-hidden')).toBeVisible()
+  await page.reload()
+  await expect(page.getByLabel('Suchen in')).toHaveValue(folder.id)
+  await expect.poll(titles).toEqual(['Filter innen'])
+})
+
 test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)
@@ -298,6 +388,12 @@ test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) =>
   await expect(list).toContainText('Vor dem Formatwechsel')
   await expect(preview.getByRole('heading', { name: 'Hauptsätze' })).toBeVisible()
   await shot(page, '92-history')
+  // Vergleich mit dem aktuellen Inhalt: was seitdem dazugekommen ist
+  await page.getByRole('radio', { name: 'Änderungen bis heute' }).click()
+  const diff = preview.getByTestId('diff-view')
+  await expect(diff.locator('[data-kind="added"]', { hasText: 'Aus Versehen überschrieben' })).toHaveCount(1)
+  await expect(diff.locator('[data-kind="removed"]', { hasText: 'Erster Hauptsatz' })).toHaveCount(1)
+  await page.getByRole('radio', { name: 'Vorschau' }).click()
   await page.getByRole('button', { name: 'Diesen Stand wiederherstellen' }).click()
   const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Diesen Stand wiederherstellen?' }) })
   await confirm.getByRole('button', { name: 'Wiederherstellen', exact: true }).click()
@@ -314,6 +410,40 @@ test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) =>
   await expect(list.getByRole('button')).toHaveCount(2)
   await expect(list.getByRole('button').first()).toContainText('Vor dem Wiederherstellen')
   await expect(preview).toContainText('Aus Versehen überschrieben')
+})
+
+test('Tags umbenennen: in der Seitenleiste zusammenführen, die offene Notiz zeigt den neuen Tag', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  for (const [title, content] of [
+    ['Tag alt E2E', '# Ableitungen\n\nSiehe #e2e-alt und #E2E-alt/kettenregel'],
+    ['Tag neu E2E', 'Schon da: #e2e-neu'],
+  ]) {
+    const n = (await (await page.request.post('/api/notes', { headers, data: { title, content } })).json()).note
+    cleanup.unshift(`/api/notes/${n.id}?permanent=1`)
+    if (title === 'Tag alt E2E') await page.goto(`/?n=${n.id}`)
+  }
+  const editor = page.locator('.cm-content')
+  await expect(editor).toContainText('#e2e-alt und')
+
+  const sidebar = page.getByRole('complementary')
+  // Name des Links: Tag und Anzahl der Notizen
+  await sidebar.getByRole('link', { name: /^e2e-alt\s*1$/ }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Umbenennen …' }).click()
+  const dialog = page.getByRole('dialog', { name: '#e2e-alt umbenennen' })
+  await dialog.getByLabel('Neuer Name').fill('E2E-neu')
+  await expect(dialog).toContainText('#e2e-neu gibt es schon (1 Notiz)')
+  await shot(page, '93-rename-tag')
+  await dialog.getByRole('button', { name: 'Zusammenführen' }).click()
+  await expect(page.getByText('#e2e-alt in 1 Notiz mit #e2e-neu zusammengeführt.')).toBeVisible()
+
+  // Die offene Notiz übernimmt den neuen Stand, der Rest des Unter-Tags bleibt
+  await expect(editor).toContainText('Siehe #E2E-neu und #E2E-neu/kettenregel')
+  await expect(sidebar.getByRole('link', { name: /^e2e-alt\s*\d/ })).toHaveCount(0)
+  await sidebar.getByRole('link', { name: /^e2e-neu\s*2$/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '#e2e-neu' })).toBeVisible()
+  const titles = () => page.getByRole('main').locator('a span.font-semibold').allTextContents()
+  await expect.poll(async () => (await titles()).sort()).toEqual(['Tag alt E2E', 'Tag neu E2E'])
 })
 
 test('Graph: verlinkte Notizen sehen und per Klick öffnen', async ({ page }) => {

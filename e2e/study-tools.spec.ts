@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { strToU8, zipSync } from 'fflate'
@@ -156,6 +157,43 @@ test('Problemkarten erkennen, aussetzen und neu lernen', async ({ page }) => {
   expect(data.reviews.find((r: { cardId: string }) => r.cardId === hard.id)).toBeUndefined()
 })
 
+test('Eigene Übung: heute vergessene Karte gezielt üben, ohne den Lernplan zu ändern', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Gezielt üben' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await post(page, `/api/decks/${deck.id}/cards`, { cards: [{ type: 'basic', front: 'Vergessene Frage', back: 'A' }, { type: 'basic', front: 'Gewusste Frage', back: 'B' }] }, 'cards')
+
+  // Lernen: die erste Karte mit „Nochmal“ bewerten
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('deck-learn').click()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(page.getByTestId('study-card')).toContainText('Gewusste Frage')
+
+  // Stapel → Üben → „Heute vergessen“: genau diese Karte
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: /^Üben/ }).click()
+  await expect(page.getByRole('menuitem', { name: 'Problemkarten (0)' })).toBeDisabled()
+  await page.getByRole('menuitem', { name: 'Heute vergessen (1)' }).click()
+  await expect(page).toHaveURL(/filter=again-today/)
+  await expect(page.getByText('Gezielt üben · Heute vergessen')).toBeVisible()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await shot(page, '36-practice-again')
+  // Neu laden: dieselbe Übung
+  await page.reload()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await page.keyboard.press('Space')
+  await page.getByRole('button', { name: 'Gewusst', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Übung beendet' })).toBeVisible()
+
+  // Üben ändert den Plan nicht: Die Karte ist weiter in der Lernphase
+  const states = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const forgotten = states.cards.find((c: { front: string }) => c.front === 'Vergessene Frage')
+  const review = states.reviews.find((r: { cardId: string }) => r.cardId === forgotten.id)
+  expect(review?.phase ?? 'learning').toBe('learning')
+})
+
 test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitzung', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Aussetzen' }, 'deck')
@@ -258,6 +296,64 @@ test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzt
     )
     .toEqual([0, undefined])
   await expect.poll(total, { timeout: 15_000 }).toBe(loggedBefore + 1)
+})
+
+test('Kartenbrowser: in allen Stapeln suchen, mehrere auswählen, verschieben und aussetzen', async ({ page }) => {
+  await login(page)
+  const analysis = await post(page, '/api/decks', { name: 'Browser Analysis' }, 'deck')
+  const physik = await post(page, '/api/decks', { name: 'Browser Physik' }, 'deck')
+  const klausur = await post(page, '/api/decks', { name: 'Browser Klausur' }, 'deck')
+  for (const d of [analysis, physik, klausur]) cleanup.push(`/api/decks/${d.id}`)
+  const add = (deckId: string, fronts: string[]) =>
+    post<Created[]>(page, `/api/decks/${deckId}/cards`, { cards: fronts.map((front) => ({ type: 'basic', front, back: 'x' })) }, 'cards')
+  await add(analysis.id, ['Taylorreihe von sin', 'Taylorreihe von cos', 'Grenzwert einer Folge'])
+  await add(physik.id, ['Taylor in der Mechanik', 'Impulserhaltung'])
+  await add(klausur.id, ['Schon im Klausurstapel'])
+
+  await page.goto('/?v=cards')
+  await page.getByRole('button', { name: 'Karten durchsuchen' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Alle Karten' })).toBeVisible()
+  await page.getByLabel('Karten durchsuchen').fill('taylor')
+  const rows = page.getByTestId('card-row')
+  await expect(rows).toHaveCount(3)
+  await expect(page).toHaveURL(/v=browse&cq=taylor/)
+
+  // Auswählen: Strg-Klick auf die erste, Umschalt-Klick auf die letzte – dazwischen alle
+  await rows.nth(0).locator('.card-markdown').first().click({ modifiers: ['Control'] })
+  await rows.nth(2).locator('.card-markdown').first().click({ modifiers: ['Shift'] })
+  const bar = page.getByRole('toolbar', { name: 'Auswahl' })
+  await expect(bar).toContainText('3 ausgewählt')
+  await shot(page, '99-card-browser')
+  await bar.getByRole('button', { name: 'Verschieben …' }).click()
+  const dialog = page.getByRole('dialog', { name: '3 Karten verschieben' })
+  await dialog.getByLabel('In Stapel').selectOption(klausur.id)
+  await dialog.getByRole('button', { name: 'Verschieben' }).click()
+  await expect(page.getByText('3 Karten verschoben.')).toBeVisible()
+
+  // Hinten an den Zielstapel angehängt
+  const inDeck = async (deckId: string) =>
+    ((await flashcards(page)).cards as { front: string; deckId: string; position: number; suspended: boolean }[])
+      .filter((c) => c.deckId === deckId)
+      .sort((x, y) => x.position - y.position)
+  expect((await inDeck(klausur.id)).map((c) => c.front)).toEqual([
+    'Schon im Klausurstapel',
+    'Taylorreihe von sin',
+    'Taylorreihe von cos',
+    'Taylor in der Mechanik',
+  ])
+
+  // Im Zielstapel zwei davon aussetzen
+  await page.getByLabel('Karten durchsuchen').fill('')
+  await page.getByLabel('Stapel').selectOption(klausur.id)
+  await expect(rows).toHaveCount(4)
+  await page.getByRole('button', { name: 'Auswählen' }).click()
+  await rows.filter({ hasText: 'Taylorreihe von sin' }).locator('.card-markdown').first().click()
+  await rows.filter({ hasText: 'Taylor in der Mechanik' }).getByRole('checkbox').click()
+  await expect(bar).toContainText('2 ausgewählt')
+  await bar.getByRole('button', { name: 'Aussetzen' }).click()
+  await expect(page.getByText('2 Karten ausgesetzt.')).toBeVisible()
+  expect((await inDeck(klausur.id)).filter((c) => c.suspended).map((c) => c.front)).toEqual(['Taylorreihe von sin', 'Taylor in der Mechanik'])
+  await expect(rows.filter({ hasText: 'Ausgesetzt' })).toHaveCount(2)
 })
 
 test('Karteneditor: Bilder einfügen und hineinziehen', async ({ page }) => {
@@ -670,6 +766,105 @@ test('Gliederung: Überschriften auflisten, hinspringen und den aktuellen Abschn
   await context.close()
 })
 
+test('Abschnitte einklappen: Knopf vor der Überschrift, Kontextmenü, Tastatur und Gliederung', async ({ page }) => {
+  await login(page)
+  const content = '# Kapitel 1\nText eins\n\n# Kapitel 2\nText zwei\n\n## Unterkapitel 2.1\nText zwei-eins\n\n# Kapitel 3\nText drei\n'
+  const note = await post(page, '/api/notes', { title: 'Einklappen', content }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto(`/?n=${note.id}`)
+  const editor = page.locator('.note-paper .cm-content')
+  const line = (text: string) => page.locator('.cm-line', { hasText: text })
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Knopf vor „Kapitel 2“: blendet bis zur nächsten Überschrift gleicher Ebene aus, Kapitel 3 bleibt
+  await line('# Kapitel 2').hover()
+  await line('# Kapitel 2').getByRole('button', { name: 'Abschnitt einklappen' }).click()
+  await expect(editor).not.toContainText('Text zwei')
+  await expect(line('Text drei')).toBeVisible()
+  await expect(line('# Kapitel 2').getByRole('button', { name: 'Abschnitt aufklappen' })).toHaveAttribute('aria-expanded', 'false')
+  await shot(page, '58-folding')
+  // „…“ klappt wieder auf
+  await page.locator('.cm-foldPlaceholder').click()
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Kontextmenü: alle einklappen, dann springt die Gliederung in einen eingeklappten Abschnitt und klappt ihn auf
+  await line('Text eins').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Alle Abschnitte einklappen' }).click()
+  await expect(editor).not.toContainText('Text eins')
+  await expect(editor).not.toContainText('Text drei')
+  await page.getByRole('button', { name: 'Gliederung', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Gliederung' }).getByRole('button', { name: 'Unterkapitel 2.1' }).click()
+  await expect(line('## Unterkapitel 2.1')).toBeVisible()
+  await expect(line('Text zwei-eins')).toBeVisible()
+
+  // Tastatur: Strg+Alt+] klappt alles auf, Strg+Umschalt+[ den Abschnitt am Cursor ein
+  await line('Text zwei-eins').click()
+  await page.keyboard.press('Control+Alt+BracketRight')
+  await expect(line('Text drei')).toBeVisible()
+  await expect(line('Text eins')).toBeVisible()
+  await line('Text drei').click()
+  await page.keyboard.press('Control+Shift+BracketLeft')
+  await expect(editor).not.toContainText('Text drei')
+
+  // Einklappen ändert den Inhalt nicht
+  const saved = (await (await page.request.get(`/api/notes/${note.id}`)).json()).note
+  expect(saved.content).toBe(content)
+
+  // Tippen in der Zeile einer eingeklappten Überschrift klappt sie auf
+  await line('# Kapitel 3').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('!')
+  await expect(line('Text drei')).toBeVisible()
+})
+
+test('Suche: Klick auf einen Treffer springt zur Fundstelle – im Editor und im Lesemodus', async ({ page }) => {
+  await login(page)
+  const filler = Array.from({ length: 80 }, (_, i) => `Absatz ${i + 1}`).join('\n\n')
+  const content = `# Analysis\n\n${filler}\n\nDie **Taylorreihe** nähert eine Funktion an.\n\nÜbungen dazu folgen.\n`
+  const note = await post(page, '/api/notes', { title: 'Lange Mitschrift Reihen', content }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  const highlighted = () =>
+    page.evaluate(() => ({ all: CSS.highlights.get('search-hit')?.size ?? 0, current: CSS.highlights.get('search-current')?.size ?? 0 }))
+
+  // Editor: Die Zeile mit dem Treffer ist im Bild und markiert
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'edit'))
+  await page.goto('/?q=taylor')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(page).toHaveURL(/find=taylor/)
+  const hit = page.locator('.cm-search-hit')
+  await expect(hit).toHaveText('Taylor')
+  await expect(hit).toBeInViewport()
+  const bar = page.getByTestId('find-bar')
+  await expect(bar).toContainText('1 Treffer für „taylor“')
+  await shot(page, '59-find-editor')
+  // Tippen entfernt die Markierung und die Leiste
+  await page.locator('.cm-content').click()
+  await page.keyboard.type('x')
+  await expect(hit).toHaveCount(0)
+  await expect(bar).toBeHidden()
+  await expect(page).not.toHaveURL(/find=/)
+
+  // Lesemodus: „ubung“ findet „Übungen“, mehrere Begriffe, Pfeile springen, Esc schließt
+  await page.evaluate(() => localStorage.setItem('noted:mode', 'read'))
+  await page.goto('/?q=ubung%20taylor')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(bar).toContainText('Treffer 1 von 2 für „ubung taylor“')
+  await expect.poll(highlighted).toEqual({ all: 2, current: 1 })
+  await expect(page.locator('.markdown-body strong', { hasText: 'Taylorreihe' })).toBeInViewport()
+  await bar.getByRole('button', { name: 'Nächster Treffer' }).click()
+  await expect(bar).toContainText('Treffer 2 von 2')
+  await page.keyboard.press('Escape')
+  await expect(bar).toBeHidden()
+  await expect.poll(highlighted).toEqual({ all: 0, current: 0 })
+
+  // Nur im Titel gefunden: Die Notiz öffnet oben, ohne Leiste
+  await page.goto('/?q=mitschrift')
+  await page.getByRole('main').getByRole('link', { name: /Lange Mitschrift Reihen/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Lange Mitschrift Reihen' })).toBeVisible()
+  await expect(bar).toBeHidden()
+})
+
 test('Glossar und Formeln eines Ordners: durchsuchen und an die Stelle springen', async ({ page }) => {
   await login(page)
   const folder = await post(page, '/api/folders', { name: 'Glossar-Test', parentId: null }, 'folder')
@@ -797,6 +992,9 @@ test('Lückentext: im Editor markieren und Lücke für Lücke lernen', async ({ 
   await front.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(18, 21))
   await dialog.getByRole('button', { name: 'Als Lücke' }).click()
   await expect(front).toHaveValue('Die Ableitung von ==sin== ist cos.')
+  // Der Editor setzt den Cursor im nächsten Frame hinter die Lücke – erst danach ersetzen, sonst landet der neue Text
+  // mitten im alten
+  await expect.poll(() => front.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(25)
   await front.fill('Die Ableitung von ==sin== ist {{cos}}.')
   await dialog.getByRole('button', { name: 'Speichern', exact: true }).click()
   await expect(page.getByTestId('card-list')).toContainText('Lückentext')
@@ -908,7 +1106,8 @@ test('Wiederholungsplan FSRS je Stapel', async ({ page }) => {
   // Erst tippen, wenn die Karte da ist – sonst geht die Leertaste je nach Auslastung ins Leere
   await expect(page.getByTestId('study-card')).toContainText('Frage')
   await page.keyboard.press('Space')
-  await expect(page.getByTestId('rate-4')).toContainText('16 Tage')
+  // Gut zwei Wochen (16 Tage), je Karte leicht gestreut: 13–19 Tage
+  await expect(page.getByTestId('rate-4')).toContainText(/(?<!\d)1[3-9] Tage/)
   await expect(page.getByTestId('rate-3')).toContainText('10 Min.')
 })
 
@@ -1135,6 +1334,49 @@ test('Volltextsuche in Dateien: Treffer im PDF öffnet den Viewer auf der Seite'
   await expect(page.getByText('„Skript Optik.pdf“ ist durchsuchbar.')).toBeVisible()
 })
 
+test('PDF mit Markierungen herunterladen: echte Anmerkungen mit Kommentar, Original unverändert', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Wärmelehre'], ['Zweiter Hauptsatz', 'Die Entropie nimmt nie ab']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Export.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const now = Date.now()
+  const saved = await page.request.put(`/api/attachments/${att.id}/annotations`, {
+    headers,
+    data: {
+      annotations: [
+        { id: crypto.randomUUID(), page: 2, rects: [[60, 730, 300, 752]], quote: 'Die Entropie nimmt nie ab', comment: 'Klausurrelevant', color: 4, createdAt: now, updatedAt: now },
+      ],
+    },
+  })
+  expect(saved.ok()).toBe(true)
+  const note = await post(page, '/api/notes', { title: 'Export Mitschrift', content: 'Siehe [[Skript Export.pdf#page=2]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.page[data-page-number="2"] .pdf-annotation')).toHaveCount(1, { timeout: 15_000 })
+  await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('menuitem', { name: 'Mit Markierungen herunterladen' }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('Skript Export (mit Markierungen).pdf')
+  const file = await readFile((await download.path())!)
+  expect(file.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  expect(file.toString('latin1')).toContain('/Highlight')
+  expect(file.length).toBeGreaterThan(pdf.length)
+  // Auf dem Server liegt weiter das Original
+  const original = await page.request.get(`/api/attachments/${att.id}`)
+  expect(Buffer.from(await original.body()).equals(pdf)).toBe(true)
+})
+
 test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und als Zitat einfügen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)
@@ -1240,6 +1482,187 @@ test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und a
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(async () => (await saved()).length, { timeout: 15_000 }).toBe(1)
   await expect.poll(queued).toBe(0)
+})
+
+test('PDF-Rückverweise: Notizen zur offenen Seite und zum ganzen PDF, ein Klick öffnet die Notiz', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Kapitel 1'], ['Zweiter Hauptsatz'], ['Kreisprozesse']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Rückverweise.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const lecture = await post(page, '/api/notes', { title: 'Entropie Rückverweis', content: 'Siehe [[Skript Rückverweise.pdf#page=2]]\n', folderId: null }, 'note')
+  const overview = await post(page, '/api/notes', { title: 'Gesamtüberblick Rückverweis', content: '![[Skript Rückverweise.pdf]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${lecture.id}?permanent=1`, `/api/notes/${overview.id}?permanent=1`)
+
+  await page.goto(`/?n=${lecture.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
+
+  await panel.getByRole('button', { name: 'Notizen zu diesem PDF' }).click()
+  const refs = panel.getByTestId('pdf-references')
+  // Diese Seite: nur die Notiz mit dem Seitenlink
+  await expect(refs.getByRole('button', { name: 'Entropie Rückverweis' })).toBeVisible()
+  await expect(refs.getByRole('button', { name: 'Gesamtüberblick Rückverweis' })).toHaveCount(0)
+  await shot(page, '96-pdf-references')
+  await refs.getByRole('tab', { name: 'Ganzes PDF' }).click()
+  const whole = refs.getByRole('listitem').filter({ hasText: 'Gesamtüberblick Rückverweis' })
+  await expect(whole).toContainText('Ganzes PDF')
+  await expect(refs.getByRole('listitem').filter({ hasText: 'Entropie Rückverweis' })).toContainText('S.2')
+
+  // Ein Klick öffnet die Notiz, das PDF bleibt offen
+  await whole.getByRole('button', { name: 'Gesamtüberblick Rückverweis' }).click()
+  await expect(page).toHaveURL(new RegExp(`n=${overview.id}`))
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible()
+  await expect(refs).toBeVisible()
+
+  // „PDF hochladen …“ im Viewer bettet die Datei in die offene Notiz ein
+  const extra = makePdf([['Nachtrag']])
+  await panel.locator('input[type="file"]').setInputFiles({ name: 'Nachtrag Rückverweis.pdf', mimeType: 'application/pdf', buffer: extra })
+  await expect(page.getByText('„Nachtrag Rückverweis.pdf“ in „Gesamtüberblick Rückverweis“ eingefügt.')).toBeVisible()
+  const added = ((await (await page.request.get('/api/attachments')).json()).attachments as { id: string; filename: string }[]).find(
+    (a) => a.filename === 'Nachtrag Rückverweis.pdf',
+  )!
+  cleanup.push(`/api/attachments/${added.id}`)
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/notes/${overview.id}`)).json()).note.content, { timeout: 10_000 })
+    .toContain('![[Nachtrag Rückverweis.pdf]]')
+})
+
+test('PDF-Seite als Bild in der Notiz: Breite, fehlende Seite bleibt Karte, im Druck – ein Klick öffnet den Viewer', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Titelseite'], ['Abbildung zwei'], ['Kreisprozess drei']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Seitenbild.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const content = [
+    '![[Skript Seitenbild.pdf#page=2]]',
+    '![[Skript Seitenbild.pdf#page=3|300]]',
+    '![[Skript Seitenbild.pdf#page=9]]',
+    '![[Skript Seitenbild.pdf]]',
+  ].join('\n\n')
+  const note = await post(page, '/api/notes', { title: 'Seitenbilder', content, folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  const images = page.locator('.markdown-body a.embed-pdf-page img')
+  await expect(images).toHaveCount(2, { timeout: 15_000 })
+  await expect(images.first()).toHaveAttribute('alt', 'Skript Seitenbild.pdf, Seite 2')
+  expect(Math.round((await images.nth(1).boundingBox())!.width)).toBe(300)
+  // Keine solche Seite: Die Karte bleibt; ohne Seite sieht die Einbettung aus wie bisher
+  await expect(page.locator('.markdown-body a.embed-pdf-page[data-page="9"]')).toHaveText('Skript Seitenbild.pdf · Seite 9')
+  await expect(page.locator('.markdown-body a.embed-pdf:not(.embed-pdf-page)')).toHaveText('Skript Seitenbild.pdf')
+  await shot(page, '97-pdf-page-images')
+
+  // Im Druck sind die Bilder da, sobald gedruckt werden kann
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Drucken …' }).click()
+  const view = page.getByTestId('print-view')
+  await expect(view.getByRole('button', { name: 'Drucken', exact: true })).toBeEnabled({ timeout: 15_000 })
+  await expect(page.getByTestId('print-sheet').locator('a.embed-pdf-page img')).toHaveCount(2)
+  await page.keyboard.press('Escape')
+  await expect(view).toHaveCount(0)
+
+  // Ein Klick auf das Bild öffnet den Viewer auf der Seite
+  await images.first().click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
+})
+
+test('PDF-Ansicht: Folienmodus, Drehen mit Markierung, Nachtmodus – Zoom, Drehung und Seite je PDF gemerkt', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Folie eins'], ['Folie zwei', 'Die Entropie nimmt nie ab'], ['Folie drei']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Folien Ansicht.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const note = await post(page, '/api/notes', { title: 'Ansicht Mitschrift', content: '[[Folien Ansicht.pdf]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  const menu = async (name: string) => {
+    await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+    await page.getByRole('menuitem', { name }).click()
+  }
+  const pageNumber = panel.getByLabel('Seite', { exact: true })
+  const pages = panel.locator('.pdfViewer .page:visible')
+
+  // Folienmodus: genau eine Seite, → blättert weiter
+  await menu('Folienmodus')
+  await expect(pages).toHaveCount(1)
+  await panel.locator('.pdf-container').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(pageNumber).toHaveValue('2')
+  await expect(pages).toHaveCount(1)
+  await shot(page, '98-pdf-slides')
+  await menu('Fortlaufend scrollen')
+  await expect(pages).toHaveCount(3)
+
+  // Drehen: Die Markierung bleibt auf dem markierten Text
+  const span = panel.locator('.page[data-page-number="2"] .textLayer span', { hasText: 'Die Entropie nimmt nie ab' })
+  await span.scrollIntoViewIfNeeded()
+  const b = (await span.boundingBox())!
+  await page.mouse.move(b.x + 1, b.y + b.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width - 1, b.y + b.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await panel.getByTestId('pdf-selection').getByRole('button', { name: 'Markieren' }).click()
+  const mark = panel.locator('.page[data-page-number="2"] .pdf-annotation')
+  await expect(mark).toHaveCount(1)
+  await menu('Nach rechts drehen')
+  const inside = async () => {
+    const m = await mark.boundingBox()
+    const t = await span.boundingBox()
+    if (!m || !t) return false
+    const tol = 4
+    return m.x >= t.x - tol && m.y >= t.y - tol && m.x + m.width <= t.x + t.width + tol && m.y + m.height <= t.y + t.height + tol
+  }
+  await expect.poll(inside).toBe(true)
+  // Quer: die Seite ist jetzt breiter als hoch
+  const landscape = async () => {
+    const box = (await panel.locator('.page[data-page-number="1"]').boundingBox())!
+    return box.width > box.height
+  }
+  await expect.poll(landscape).toBe(true)
+
+  // Nachtmodus und Zoom
+  await menu('Nachtmodus')
+  await expect(panel.locator('.pdf-container')).toHaveClass(/pdf-night/)
+  await panel.locator('.pdf-container').focus()
+  await page.keyboard.press('+')
+  await page.keyboard.press('+')
+  const width = async () => Math.round((await panel.locator('.page[data-page-number="1"]').boundingBox())!.width)
+  await expect.poll(width).toBeGreaterThan(0)
+  const zoomed = await width()
+
+  // Nach dem Neuladen: dieselbe Ansicht
+  await page.reload()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.locator('.pdf-container')).toHaveClass(/pdf-night/)
+  await expect.poll(landscape).toBe(true)
+  await expect.poll(width).toBe(zoomed)
+  await expect(pageNumber).toHaveValue('2')
+  await menu('Nachtmodus ausschalten')
+  await expect(panel.locator('.pdf-container')).not.toHaveClass(/pdf-night/)
 })
 
 test('FSRS-Parameter aus dem Lernverlauf optimieren und zurücksetzen', async ({ page }) => {

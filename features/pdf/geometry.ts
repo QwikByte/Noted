@@ -93,6 +93,24 @@ export function annotationAt<T extends Pick<PdfAnnotation, 'rects' | 'createdAt'
   return hits.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
 }
 
+/**
+ * Rechtecke einer Markierung als Geometrie einer PDF-Anmerkung (/Highlight): die Hülle, QuadPoints (je Rechteck links
+ * oben, rechts oben, links unten, rechts unten – wie pdf.js sie schreibt) und Umrisse für das Aussehen
+ */
+export function highlightGeometry(rects: PdfRect[]): { rect: PdfRect; quadPoints: number[]; outlines: number[][] } {
+  const rect: PdfRect = [
+    Math.min(...rects.map((r) => r[0])),
+    Math.min(...rects.map((r) => r[1])),
+    Math.max(...rects.map((r) => r[2])),
+    Math.max(...rects.map((r) => r[3])),
+  ]
+  return {
+    rect,
+    quadPoints: rects.flatMap(([x1, y1, x2, y2]) => [x1, y2, x2, y2, x1, y1, x2, y1]),
+    outlines: rects.map(([x1, y1, x2, y2]) => [x1, y1, x2, y1, x2, y2, x1, y2]),
+  }
+}
+
 /** Reihenfolge wie im Dokument: nach Seite, dann von oben nach unten (PDF-y zeigt nach oben) */
 export function sortAnnotations<T extends Pick<PdfAnnotation, 'page' | 'rects' | 'createdAt'>>(list: T[]): T[] {
   const top = (a: T) => Math.max(...a.rects.map((r) => r[3]))

@@ -6,6 +6,7 @@ import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
 import { focusSessions, GOAL_KEY, SUBJECT_KEY } from '@/features/focus/client/sessions'
 import { pdfAnnotations } from '@/features/pdf/client/annotations'
+import { OFFLINE_KEY, OPENED_KEY } from '@/features/pdf/client/offline'
 import { scratchpad } from '@/features/scratchpad/client/scratchpad'
 import { vault } from '@/features/vault/client/vault'
 
@@ -25,7 +26,9 @@ export async function logout() {
   pdfAnnotations.clearAll()
   scratchpad.clearAll()
   // Zuletzt geöffnetes PDF und Lesepositionen gehören zum Konto
-  for (const key of ['noted:pdf', 'noted:pdfpos', 'noted:lastDeck', SUBJECT_KEY, GOAL_KEY]) localStorage.removeItem(key)
+  for (const key of ['noted:pdf', 'noted:pdfpos', OFFLINE_KEY, OPENED_KEY, 'noted:lastDeck', SUBJECT_KEY, GOAL_KEY]) {
+    localStorage.removeItem(key)
+  }
   await clearCachedData()
   location.href = '/login'
 }

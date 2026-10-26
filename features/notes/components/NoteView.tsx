@@ -31,6 +31,7 @@ import {
   Pin,
   PinOff,
   Printer,
+  RefreshCw,
   Share2,
   TableOfContents,
   Trash2,
@@ -42,6 +43,9 @@ import { NavLink } from '@/features/workspace/components/NavLink'
 import { Editor, type EditorHandle } from './Editor'
 import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
+import { WordCount } from './WordCount'
+import { FindBar } from './FindBar'
+import { ConflictDialog } from './ConflictDialog'
 import { NotePrint } from './NotePrint'
 import { NoteEmbeds } from './NoteEmbed'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
@@ -59,6 +63,7 @@ import { linkAtPos } from '../editor-links'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
+import { Select } from '@/shared/ui/input'
 import { usePrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
@@ -69,7 +74,7 @@ import { usePref, type EditorMode } from '@/shared/client/prefs'
 import { copyHtml, copyText } from '@/shared/client/clipboard'
 import { folderByPath, folderPath } from '../tree'
 import { noteFromLinkTarget } from '../link-target'
-import { formatDateTime, formatRelative, wordCount } from '@/shared/lib/format'
+import { formatDateTime, formatRelative } from '@/shared/lib/format'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import type { Attachment } from '@/features/attachments/types'
 import { errorMessage, ApiError } from '@/shared/client/api'
@@ -77,15 +82,20 @@ import { useFlashcards } from '@/features/flashcards/client/flashcards'
 import { insertionToMarkdown, registerActiveEditor } from '../client/active-editor'
 import type { NoteEditorHandle, RichTextHandle } from '../client/editor-handle'
 import { revealEntry, revealLine, useOutlineSpy } from '../client/outline-spy'
+import { useFindInNote, type FindSurface } from '../client/find-in-note'
+import { highlightTerms } from '@/shared/lib/search-query'
 import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
+import { noteStats } from '../note-stats'
+import { DEFAULT_LANGUAGE, NOTE_LANGUAGES, frontmatterLanguage, isLanguageTag, languageLabel, noteLanguage, withLanguage } from '../language'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { extractLinks, findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
 import { buildExportIndex } from '@/features/transfer/paths'
 import { EXPLICIT_SOURCES, parseCardsFromNote } from '@/features/flashcards/card-markdown'
 import { canQuiz } from '@/features/flashcards/note-quiz'
+import { noteCards, syncCards } from '@/features/flashcards/note-sync'
 import { validateName } from '@/shared/lib/names'
 import {
   clearPendingHeading,
@@ -148,6 +158,23 @@ function useIsWide(ref: React.RefObject<HTMLElement | null>, minWidth: number) {
   return wide
 }
 
+/** Ab dieser Länge rendert die Vorschau im Modus „Geteilt“ erst nach einer Tipppause neu */
+const LONG_PREVIEW = 20_000
+const PREVIEW_PAUSE = 400
+
+/** `value` erst, wenn es sich `delay` ms nicht geändert hat – bei 0 sofort */
+function useSettledValue<T>(value: T, delay: number): T {
+  const [settled, setSettled] = useState({ value, delay })
+  // Andere Verzögerung (z. B. Wechsel in den Modus „Geteilt“): den aktuellen Wert gleich übernehmen, nicht den alten
+  if (settled.delay !== delay) setSettled({ value, delay })
+  useEffect(() => {
+    if (delay === 0) return
+    const timer = setTimeout(() => setSettled((s) => (s.value === value ? s : { value, delay })), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return delay === 0 ? value : settled.value
+}
+
 function useMemoryOnly(): boolean {
   return useSyncExternalStore(
     sync.subscribe,
@@ -187,7 +214,18 @@ function StatusIndicator({ status, memoryOnly }: { status: NoteSyncStatus; memor
 }
 
 /** Lädt die Notiz (Server oder lokaler Entwurf) und zeigt dann den Editor. */
-export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?: string; onOpenSidebar: () => void }) {
+export function NoteView({
+  id,
+  heading,
+  find,
+  onOpenSidebar,
+}: {
+  id: string
+  heading?: string
+  /** Suchwörter aus der Volltextsuche: Fundstellen markieren (nicht im Tresor – die Suche findet dort nichts) */
+  find?: string
+  onOpenSidebar: () => void
+}) {
   const drafts = useDrafts()
   const draft = drafts.find((d) => d.id === id)
   const isLocalOnly = !!draft?.isNew
@@ -237,7 +275,7 @@ export function NoteView({ id, heading, onOpenSidebar }: { id: string; heading?:
   if (base.vault) {
     return <VaultNote note={base} serverNote={query.data ?? null} heading={heading} onOpenSidebar={onOpenSidebar} />
   }
-  return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} />
+  return <NoteEditor note={base} serverNote={query.data ?? null} heading={heading} find={find} />
 }
 
 /** Statt der Notiz: Laden, Fehler, gesperrt */
@@ -314,7 +352,17 @@ function headingElement(root: HTMLElement | null, heading: string): HTMLElement 
   return [...(all ?? [])].find((h) => !h.closest('.note-embed') && headingKey(h.textContent ?? '') === key) ?? null
 }
 
-function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Note | null; heading?: string }) {
+function NoteEditor({
+  note,
+  serverNote,
+  heading,
+  find,
+}: {
+  note: Note
+  serverNote: Note | null
+  heading?: string
+  find?: string
+}) {
   const app = useApp()
   const qc = useQueryClient()
   const toast = useToast()
@@ -347,6 +395,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [infoOpen, setInfoOpen] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [conflictOpen, setConflictOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   // Strg/⌘+P: Druckansicht statt Schnellwechsler
@@ -355,6 +404,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [spellcheck] = usePref<'1' | '0'>('noted:spellcheck', '1')
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
+  const [showWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
+  const [langPref] = usePref<string>('noted:lang', DEFAULT_LANGUAGE)
+  const defaultLang = isLanguageTag(langPref) ? langPref : DEFAULT_LANGUAGE
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -364,6 +416,46 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const visual = isVisualFormat(format)
   const effectiveMode: EditorMode = mode === 'split' && !canSplit ? 'edit' : mode
   const text = useMemo(() => noteText(format, content), [format, content])
+  const info = useMemo(
+    () => (infoOpen ? { ...noteStats(format, content), lang: frontmatterLanguage(format, content) } : null),
+    [infoOpen, format, content],
+  )
+  const lang = useMemo(() => noteLanguage(format, content, defaultLang), [format, content, defaultLang])
+
+  // Aus der Volltextsuche geöffnet: Fundstellen markieren – bis zur ersten Änderung, Esc oder ✕
+  const [findTerms, setFindTerms] = useState<string[] | null>(() => {
+    const terms = find ? highlightTerms(find) : []
+    return terms.length ? terms : null
+  })
+  const findSurface: FindSurface =
+    (format === 'markdown' || format === 'text') && effectiveMode !== 'read'
+      ? { kind: 'editor', view: () => cmRef.current?.view() ?? null }
+      : {
+          kind: 'dom',
+          root: () =>
+            contentRef.current?.querySelector<HTMLElement>(
+              effectiveMode === 'read' ? '.note-paper :is(.markdown-body, .plain-text)' : '.ProseMirror',
+            ) ?? null,
+        }
+  // Mindmap und Canvas öffnen wie bisher
+  const found = useFindInNote(visual ? null : findTerms, findSurface, `${format}:${effectiveMode}`)
+  useEffect(() => {
+    if (!findTerms) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) setFindTerms(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [findTerms])
+  // Danach die Suchwörter aus der Adresse nehmen – Neuladen markiert sonst wieder
+  useEffect(() => {
+    if (!findTerms && find) app.go({ kind: 'note', id: note.id }, { replace: true })
+  }, [findTerms, find, app, note.id])
+  // Nur solange der Editor den Fokus hat – sonst bliebe nach dem Wechsel in den Titel die alte Markierung gezählt
+  const selectedText = useCallback(() => {
+    const handle = format === 'richtext' ? richRef.current : cmRef.current
+    return handle && document.activeElement?.closest('.cm-editor, .ProseMirror') ? handle.selectedText() : ''
+  }, [format])
 
   const setMode = (m: EditorMode) => {
     setModeState(m)
@@ -420,6 +512,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const onChange = useCallback(
     (doc: string) => {
       setContent(doc)
+      setFindTerms(null)
       if (inVault) updateVaultNote(note.id, version, { content: doc }).catch(vaultFailed)
       else sync.update(note.id, version, { content: doc, format })
     },
@@ -427,9 +520,9 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   )
 
   // Für Aufrufe von außen (PDF-Viewer, Uploads): immer der aktuelle Stand
-  const latest = useRef({ content, format, title, onChange })
+  const latest = useRef({ content, format, title, onChange, inVault })
   useEffect(() => {
-    latest.current = { content, format, title, onChange }
+    latest.current = { content, format, title, onChange, inVault }
   })
   const editorHandle = (): NoteEditorHandle | null => {
     const f = latest.current.format
@@ -485,6 +578,15 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     else sync.update(note.id, version, { title: value.trim() })
   }
 
+  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
+  const addAttachment = useCallback((att: Attachment) => {
+    const handle = editorHandle()
+    if (handle) return handle.insertAttachment(att)
+    const { content: cur, format: f, onChange: change } = latest.current
+    if (f === 'richtext') change(cur + attachmentHtml(att))
+    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
+  }, [])
+
   // Seitenlinks und Zitate aus dem PDF-Viewer an der Cursorposition einfügen – im Lesemodus ans Ende
   useEffect(
     () =>
@@ -501,18 +603,16 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
           change(cur + sep + insertionToMarkdown(insertion) + '\n')
         },
+        // Im Tresor keine Dateien, einfacher Text kennt keine Einbettung, ein Canvas nur im Editor
+        attach: (att) => {
+          const { inVault: vaulted, format: f } = latest.current
+          if (vaulted || f === 'text' || (f === 'canvas' && !editorHandle())) return false
+          addAttachment(att)
+          return true
+        },
       }),
-    [note.id],
+    [note.id, addAttachment],
   )
-
-  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
-  const addAttachment = useCallback((att: Attachment) => {
-    const handle = editorHandle()
-    if (handle) return handle.insertAttachment(att)
-    const { content: cur, format: f, onChange: change } = latest.current
-    if (f === 'richtext') change(cur + attachmentHtml(att))
-    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
-  }, [])
 
   const upload = useCallback(
     async (files: File[]) => {
@@ -652,6 +752,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     if (effectiveMode === 'split') cmRef.current?.replaceDoc(doc)
   }
 
+  /** Sprache der Markdown-Notiz als `lang:` ins Frontmatter schreiben – null nimmt wieder die Standardsprache */
+  function changeLanguage(code: string | null) {
+    const next = withLanguage(content, code)
+    if (next === content) return
+    cmRef.current?.replaceDoc(next)
+    onChange(next)
+  }
+
   const toggleTask = useCallback(
     (line: number, checked: boolean) => {
       const lines = content.split('\n')
@@ -782,6 +890,12 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     () => mode === 'read' && !inVault && parseCardsFromNote(text).some((c) => EXPLICIT_SOURCES.includes(c.source)),
     [mode, text, inVault],
   )
+  // … und auf Karten, die nicht mehr zur Notiz passen (geändert oder dort nicht mehr vorhanden)
+  const outdatedCards = useMemo(() => {
+    if (mode !== 'read' || inVault || linkedCards === 0 || !flashcards) return 0
+    const result = syncCards(parseCardsFromNote(text), noteCards(flashcards.cards, note.id))
+    return result.changed.length + result.orphaned.length
+  }, [mode, inVault, linkedCards, flashcards, text, note.id])
 
   const path = folderPath(folders, folderId)
   const summaryForActions = summary ?? { ...note, title }
@@ -830,7 +944,13 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <EditorLinkMenuItems link={link} noteId={linked?.id ?? null} vault={!!linked && isVaultNote(linked.id)} onOpen={() => editorLinks.open(link)} />
     ) : null
     const items = view ? (
-      <MarkdownEditorMenu view={view} markdown={format !== 'text'} linkItems={linkItems} onCreateCard={createCard} />
+      <MarkdownEditorMenu
+        view={view}
+        markdown={format !== 'text'}
+        pos={pos ?? undefined}
+        linkItems={linkItems}
+        onCreateCard={createCard}
+      />
     ) : null
     openContextMenu(e, items, { text: true })
   }
@@ -996,14 +1116,18 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         vault={inVault}
       />
     ) : null
+  // Im Modus „Geteilt“ folgt die Vorschau verzögert – das Tippen wartet nicht auf Markdown, Formeln und Bereinigung.
+  // Lange Notizen erst nach einer Tipppause: Ihr Rendern lässt sich nicht unterbrechen
+  const previewPause = effectiveMode === 'split' && content.length > LONG_PREVIEW ? PREVIEW_PAUSE : 0
+  const previewContent = useDeferredValue(useSettledValue(content, previewPause))
   const readView =
     format === 'richtext' ? (
-      <RichTextView html={content} onOpenPdf={app.openPdf} />
+      <RichTextView html={content} lang={lang} onOpenPdf={app.openPdf} />
     ) : format === 'text' ? (
-      <PlainTextView text={content} />
+      <PlainTextView text={content} lang={lang} />
     ) : (
       <NoteEmbeds noteId={note.id} links={previewLinks}>
-        <Preview content={content} {...previewLinks} onToggleTask={toggleTask} embeds />
+        <Preview content={previewContent} {...previewLinks} lang={lang} onToggleTask={toggleTask} embeds />
       </NoteEmbeds>
     )
 
@@ -1065,6 +1189,13 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
               </Badge>
             ) : null}
           </nav>
+          {showWordCount === '1' ? (
+            <WordCount
+              format={format}
+              content={content}
+              selectedText={visual || effectiveMode === 'read' ? null : selectedText}
+            />
+          ) : null}
           <StatusIndicator status={status} memoryOnly={memoryOnly} />
           <Menu
             className="max-h-[60vh] w-72 overflow-y-auto"
@@ -1136,7 +1267,27 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
         </div>
       </header>
 
-      {status.state === 'conflict' ? <ConflictBanner status={status} onResolve={resolveConflict} /> : null}
+      {status.state === 'conflict' ? (
+        <ConflictBanner status={status} onResolve={resolveConflict} onShowDiff={() => setConflictOpen(true)} />
+      ) : null}
+      <ConflictDialog
+        open={conflictOpen && status.state === 'conflict'}
+        server={status.serverNote ?? null}
+        mine={{ format, content }}
+        vault={inVault}
+        onClose={() => setConflictOpen(false)}
+        onResolve={(mode) => void resolveConflict(mode)}
+      />
+      {findTerms && !visual && found.count > 0 ? (
+        <FindBar
+          terms={findTerms.join(' ')}
+          index={found.index}
+          count={found.count}
+          onPrev={found.prev}
+          onNext={found.next}
+          onClose={() => setFindTerms(null)}
+        />
+      ) : null}
       {status.state === 'error' ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
           <AlertTriangle className="size-4 shrink-0" />
@@ -1198,6 +1349,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                 onCreateCard={createCard}
                 autoFocus={autoFocus}
                 spellcheck={spellcheck === '1' && !inVault}
+                lang={lang}
                 slashCommands={slashCommands === '1'}
                 header={titleInput}
               />
@@ -1217,6 +1369,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                         data={completionData}
                         autoFocus={autoFocus}
                         spellcheck={spellcheck === '1' && !inVault}
+                        lang={lang}
                         plain={format === 'text'}
                         // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
                         slashCommands={format === 'markdown' && slashCommands === '1'}
@@ -1251,6 +1404,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                     {linkedCards > 0 || cardsInNote ? (
                       <NoteCards
                         count={linkedCards}
+                        outdated={outdatedCards}
                         onLearn={(m) => app.go({ kind: 'study', scope: `note:${note.id}`, mode: m })}
                         onCreate={() => app.openCardsFromNote({ id: note.id, title, content: text })}
                       />
@@ -1283,6 +1437,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           title={title}
           format={format}
           content={content}
+          lang={lang}
           links={previewLinks}
           onClose={() => setPrintOpen(false)}
         />
@@ -1291,6 +1446,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       <HistoryDialog
         noteId={note.id}
         title={title}
+        current={{ format, content }}
         vault={inVault}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -1307,10 +1463,39 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <dd>{formatDateTime(summary?.updatedAt ?? note.updatedAt)}</dd>
           <dt className="text-muted">Format</dt>
           <dd>{NOTE_FORMAT_LABELS[format].label}</dd>
+          <dt className="text-muted">Sprache</dt>
+          <dd>
+            {format === 'markdown' ? (
+              <Select
+                aria-label="Sprache der Notiz"
+                value={info?.lang ?? ''}
+                onChange={(e) => changeLanguage(e.target.value || null)}
+                className="h-8 py-0"
+              >
+                <option value="">Standard ({languageLabel(defaultLang)})</option>
+                {NOTE_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+                {info?.lang && !NOTE_LANGUAGES.some((l) => l.code === info.lang) ? (
+                  <option value={info.lang}>{info.lang}</option>
+                ) : null}
+              </Select>
+            ) : (
+              `${languageLabel(lang)}${info?.lang ? '' : ' (Standard)'}`
+            )}
+          </dd>
           <dt className="text-muted">Wörter</dt>
-          <dd>{wordCount(text).toLocaleString('de-DE')}</dd>
+          <dd>{info?.words.toLocaleString('de-DE')}</dd>
+          {info?.readingMinutes ? (
+            <>
+              <dt className="text-muted">Lesezeit</dt>
+              <dd>ca. {info.readingMinutes} Min.</dd>
+            </>
+          ) : null}
           <dt className="text-muted">Zeichen</dt>
-          <dd>{text.length.toLocaleString('de-DE')}</dd>
+          <dd>{info?.chars.toLocaleString('de-DE')}</dd>
           <dt className="text-muted">Dateiname</dt>
           <dd className="break-all">{[...path.map((f) => f.name), `${title}${noteExtension(format)}`].join('/')}</dd>
           <dt className="text-muted">Version</dt>
@@ -1416,7 +1601,17 @@ function TitleInput({
 }
 
 /** Lesemodus: Karteikarten aus dieser Notiz */
-function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode: 'learn' | 'practice') => void; onCreate: () => void }) {
+function NoteCards({
+  count,
+  outdated,
+  onLearn,
+  onCreate,
+}: {
+  count: number
+  outdated: number
+  onLearn: (mode: 'learn' | 'practice') => void
+  onCreate: () => void
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3 text-sm">
       <Layers className="size-4 text-muted" />
@@ -1433,9 +1628,15 @@ function NoteCards({ count, onLearn, onCreate }: { count: number; onLearn: (mode
           </Button>
         </>
       ) : null}
-      <Button size="sm" variant="ghost" onClick={onCreate}>
-        <Layers className="size-4" /> Karten erstellen
-      </Button>
+      {outdated > 0 ? (
+        <Button size="sm" variant="ghost" onClick={onCreate} className="text-warning!">
+          <RefreshCw className="size-4" /> {outdated} {outdated === 1 ? 'Karte' : 'Karten'} veraltet – abgleichen
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={onCreate}>
+          <Layers className="size-4" /> Karten erstellen
+        </Button>
+      )}
     </div>
   )
 }
@@ -1489,9 +1690,11 @@ function NoteGraph({ id }: { id: string }) {
 function ConflictBanner({
   status,
   onResolve,
+  onShowDiff,
 }: {
   status: NoteSyncStatus
   onResolve: (mode: 'mine' | 'theirs' | 'copy') => void
+  onShowDiff: () => void
 }) {
   const server = status.serverNote
   return (
@@ -1513,6 +1716,11 @@ function ConflictBanner({
         <Button size="sm" onClick={() => onResolve('copy')}>
           Beide behalten
         </Button>
+        {server ? (
+          <Button size="sm" variant="ghost" onClick={onShowDiff}>
+            Unterschiede ansehen
+          </Button>
+        ) : null}
       </div>
     </div>
   )
