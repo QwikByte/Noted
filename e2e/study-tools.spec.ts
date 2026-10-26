@@ -157,6 +157,43 @@ test('Problemkarten erkennen, aussetzen und neu lernen', async ({ page }) => {
   expect(data.reviews.find((r: { cardId: string }) => r.cardId === hard.id)).toBeUndefined()
 })
 
+test('Eigene Übung: heute vergessene Karte gezielt üben, ohne den Lernplan zu ändern', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Gezielt üben' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  await post(page, `/api/decks/${deck.id}/cards`, { cards: [{ type: 'basic', front: 'Vergessene Frage', back: 'A' }, { type: 'basic', front: 'Gewusste Frage', back: 'B' }] }, 'cards')
+
+  // Lernen: die erste Karte mit „Nochmal“ bewerten
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByTestId('deck-learn').click()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(page.getByTestId('study-card')).toContainText('Gewusste Frage')
+
+  // Stapel → Üben → „Heute vergessen“: genau diese Karte
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: /^Üben/ }).click()
+  await expect(page.getByRole('menuitem', { name: 'Problemkarten (0)' })).toBeDisabled()
+  await page.getByRole('menuitem', { name: 'Heute vergessen (1)' }).click()
+  await expect(page).toHaveURL(/filter=again-today/)
+  await expect(page.getByText('Gezielt üben · Heute vergessen')).toBeVisible()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await shot(page, '36-practice-again')
+  // Neu laden: dieselbe Übung
+  await page.reload()
+  await expect(page.getByTestId('study-card')).toContainText('Vergessene Frage')
+  await page.keyboard.press('Space')
+  await page.getByRole('button', { name: 'Gewusst', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Übung beendet' })).toBeVisible()
+
+  // Üben ändert den Plan nicht: Die Karte ist weiter in der Lernphase
+  const states = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const forgotten = states.cards.find((c: { front: string }) => c.front === 'Vergessene Frage')
+  const review = states.reviews.find((r: { cardId: string }) => r.cardId === forgotten.id)
+  expect(review?.phase ?? 'learning').toBe('learning')
+})
+
 test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitzung', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Aussetzen' }, 'deck')

@@ -420,7 +420,9 @@ export default function NotesApp() {
       main = <DeckView key={view.id} id={view.id} />
       break
     case 'study':
-      main = <StudyView key={`${view.scope}:${view.mode}`} scope={view.scope} mode={view.mode} />
+      main = (
+        <StudyView key={`${view.scope}:${view.mode}:${view.filter ?? ''}`} scope={view.scope} mode={view.mode} filter={view.filter} />
+      )
       break
     case 'quiz':
       main = <QuizView key={view.id} id={view.id} />

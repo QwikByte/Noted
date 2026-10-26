@@ -6,8 +6,10 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '@/shared/client/api'
+import { useNow } from '@/shared/client/now'
 import { deviceTimeZone, useEvents } from '@/features/calendar/client/calendar'
 import { examsByDeck } from '../exam'
+import { startOfDay } from '../srs'
 import { movedSides, reviewKey, sidesOf, stateMap, type Side, type StateMap } from '../study'
 import type {
   AnkiImportResult,
@@ -70,6 +72,7 @@ export class ReviewQueue {
   private forgotten = new Map<string, number>()
   private listeners = new Set<() => void>()
   private snapshot: CardReview[] = []
+  private logSnapshot: ReviewLogEntry[] = []
   private timer: ReturnType<typeof setTimeout> | undefined
   private flushing = false
   private started = false
@@ -103,8 +106,12 @@ export class ReviewQueue {
   /** Alle lokal bekannten Bewertungen (gesendet und ungesendet) */
   getSnapshot = () => this.snapshot
 
+  /** Noch nicht gesendete Einträge fürs Bewertungsprotokoll – z. B. für „Heute vergessen“, bevor der Server sie kennt */
+  getLog = () => this.logSnapshot
+
   private emit() {
     this.snapshot = [...this.acked.values(), ...this.pending.values()]
+    this.logSnapshot = [...this.log.values()]
     for (const fn of this.listeners) fn()
   }
 
@@ -335,6 +342,32 @@ export function useFlashcards() {
     return { ...query.data, decks, reviews, states: stateMap(reviews) }
   }, [query.data, pending, events])
   return { ...query, data }
+}
+
+const NO_LOG: ReviewLogEntry[] = []
+
+/**
+ * Kartenseiten (reviewKey), die heute mit „Nochmal“ bewertet wurden – vom Server und die noch nicht gesendeten dieses
+ * Geräts. `offline`: Der Server war nicht erreichbar, es zählen nur die lokalen.
+ */
+export function useAgainToday(enabled = true) {
+  const query = useQuery({
+    queryKey: ['again-today'],
+    queryFn: () =>
+      api<{ sides: { cardId: string; side: Side }[] }>(`/api/stats/again?tz=${encodeURIComponent(deviceTimeZone())}`),
+    enabled,
+    staleTime: 0,
+    retry: false,
+  })
+  const log = useSyncExternalStore(reviewQueue.subscribe, reviewQueue.getLog, () => NO_LOG)
+  // Nach Mitternacht beginnt ein neuer Tag
+  const today = startOfDay(useNow())
+  const keys = useMemo(() => {
+    const set = new Set((query.data?.sides ?? []).map((s) => reviewKey(s.cardId, s.side)))
+    for (const e of log) if (e.rating === 1 && e.reviewedAt >= today) set.add(reviewKey(e.cardId, e.side))
+    return set
+  }, [query.data, log, today])
+  return { keys, loading: enabled && query.isPending && !query.isError, offline: query.isError }
 }
 
 // ---------------------------------------------------------------------------

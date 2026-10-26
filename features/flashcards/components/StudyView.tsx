@@ -12,7 +12,7 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
 import { errorMessage } from '@/shared/client/api'
-import { reviewQueue, updateCard, useFlashcards, type Flashcards } from '../client/flashcards'
+import { reviewQueue, updateCard, useAgainToday, useFlashcards, type Flashcards } from '../client/flashcards'
 import { useNotes } from '@/features/notes/client/queries'
 import type { StudyMode, StudyScope, View } from '@/features/workspace/client/nav'
 import { LEECH_LAPSES, SM2, formatInterval, previewIntervals, RATINGS, schedule, type Plan, type Rating } from '../srs'
@@ -21,17 +21,20 @@ import {
   PracticeSession,
   allItems,
   deckCounts,
+  filterItems,
   isCorrectSelection,
   isProblemCard,
   itemKey,
   shuffle,
   type ItemKind,
+  type StudyFilter,
   type StudyItem,
 } from '../study'
 import { answerText, compareAnswer, type TypedResult } from '../typed-answer'
 import { clozeAnswer, clozeCount, clozeQuestion, clozeText } from '../cloze'
 import { reviewLogEntry } from '../stats'
 import { OcclusionImage } from './Occlusion'
+import { FILTER_LABELS } from './PracticeMenu'
 import type { Card, Deck } from '../types'
 
 /** `cards`: zu lernende Karten, `pool`: alle Karten der beteiligten Stapel (für das Tageslimit neuer Karten) */
@@ -65,17 +68,30 @@ function resolveScope(data: Flashcards, scope: StudyScope, noteTitle: (id: strin
   }
 }
 
-export function StudyView({ scope, mode }: { scope: StudyScope; mode: StudyMode }) {
+export function StudyView({ scope, mode, filter }: { scope: StudyScope; mode: StudyMode; filter?: StudyFilter }) {
   const app = useApp()
   const { data, isLoading, error } = useFlashcards()
   const { notes } = useNotes()
   const titleOf = useCallback((id: string) => notes.find((n) => n.id === id)?.title, [notes])
+  const practiceFilter = mode === 'practice' ? filter : undefined
+  // „Heute vergessen“ braucht das Protokoll vom Server – ohne Verbindung nur die Bewertungen dieses Geräts
+  const again = useAgainToday(practiceFilter === 'again-today')
   // Sitzung einmalig aus dem Stand beim Öffnen aufbauen – spätere Änderungen (z. B. gesendete Bewertungen)
   // sollen die laufende Reihenfolge nicht durcheinanderbringen
-  const [snapshot, setSnapshot] = useState<{ data: Flashcards; scope: Scope } | null>(null)
-  if (!snapshot && data) {
+  const [snapshot, setSnapshot] = useState<{ data: Flashcards; scope: Scope; items?: StudyItem[] } | null>(null)
+  if (!snapshot && data && !again.loading) {
     const resolved = resolveScope(data, scope, titleOf)
-    if (resolved) setSnapshot({ data, scope: resolved })
+    if (resolved) {
+      setSnapshot(
+        practiceFilter
+          ? {
+              data,
+              scope: { ...resolved, title: `${resolved.title} · ${FILTER_LABELS[practiceFilter]}` },
+              items: filterItems(practiceFilter, resolved.cards, data.states, { again: again.keys }),
+            }
+          : { data, scope: resolved },
+      )
+    }
   }
 
   if (!snapshot) {
@@ -92,7 +108,16 @@ export function StudyView({ scope, mode }: { scope: StudyScope; mode: StudyMode 
       </div>
     )
   }
-  return <StudySession key={`${scope}:${mode}`} mode={mode} scope={scope} snapshot={snapshot} live={data ?? snapshot.data} />
+  return (
+    <StudySession
+      key={`${scope}:${mode}:${practiceFilter ?? ''}`}
+      mode={mode}
+      scope={scope}
+      snapshot={snapshot}
+      live={data ?? snapshot.data}
+      notice={practiceFilter === 'again-today' && again.offline ? 'Offline – es zählen nur die Bewertungen dieses Geräts.' : undefined}
+    />
+  )
 }
 
 function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
@@ -123,11 +148,15 @@ function StudySession({
   scope,
   snapshot,
   live,
+  notice,
 }: {
   mode: StudyMode
   scope: StudyScope
-  snapshot: { data: Flashcards; scope: Scope }
+  /** `items`: Seiten einer eigenen Übung, sonst alle Karten des Bereichs */
+  snapshot: { data: Flashcards; scope: Scope; items?: StudyItem[] }
   live: Flashcards
+  /** Hinweis über der Karte, z. B. dass offline nur lokale Bewertungen zählen */
+  notice?: string
 }) {
   const app = useApp()
   const qc = useQueryClient()
@@ -140,7 +169,7 @@ function StudySession({
     (items?: StudyItem[]): LearnSession | PracticeSession =>
       mode === 'learn'
         ? new LearnSession(snapshot.scope.decks, snapshot.scope.pool, snapshot.data.states, Date.now(), inScope(snapshot.scope))
-        : new PracticeSession(items ?? allItems(snapshot.scope.cards)),
+        : new PracticeSession(items ?? snapshot.items ?? allItems(snapshot.scope.cards)),
     [mode, snapshot],
   )
   const [init] = useState(() => {
@@ -418,6 +447,11 @@ function StudySession({
           <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
         </div>
       </header>
+      {notice ? (
+        <p className="border-b border-border bg-warning-soft px-4 py-1.5 text-center text-xs text-warning" role="status">
+          {notice}
+        </p>
+      ) : null}
 
       {!current || !card ? (
         <Finished

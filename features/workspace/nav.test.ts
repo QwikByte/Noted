@@ -19,4 +19,16 @@ describe('Adressen der Ansichten', () => {
       find: undefined,
     })
   })
+
+  it('nimmt die eigene Übung mit – nur im Übungsmodus und nur bekannte Filter', () => {
+    expect(viewToUrl({ kind: 'study', scope: 'deck:d1', mode: 'practice', filter: 'problem' })).toBe('/?s=deck%3Ad1&m=practice&filter=problem')
+    expect(roundTrip({ kind: 'study', scope: 'all', mode: 'practice', filter: 'again-today' })).toEqual({
+      kind: 'study',
+      scope: 'all',
+      mode: 'practice',
+      filter: 'again-today',
+    })
+    expect(viewFromParams(new URLSearchParams('s=all&filter=problem'))).toMatchObject({ mode: 'learn', filter: undefined })
+    expect(viewFromParams(new URLSearchParams('s=all&m=practice&filter=unbekannt'))).toMatchObject({ filter: undefined })
+  })
 })

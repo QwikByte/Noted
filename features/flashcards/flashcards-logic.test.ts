@@ -15,6 +15,7 @@ import {
   reviewKey,
   sidesOf,
   stateMap,
+  filterItems,
 } from './study'
 import { cardToMarkdown, deckToMarkdown, deckTag, parseCardsFromNote } from './card-markdown'
 import type { Card, CardReview, SrsState } from './types'
@@ -595,5 +596,50 @@ describe('Karten in Notizen erkennen', () => {
       { type: 'basic', front: 'C++: Namensraum::Name?', back: 'Qualifizierter Name', options: [] },
     ])
     expect(deckTag('  ')).toBe('flashcards')
+  })
+})
+
+describe('Eigene Übungen', () => {
+  const state = (patch: Partial<SrsState>): SrsState => ({
+    phase: 'review',
+    step: 0,
+    interval: 10,
+    ease: 2.5,
+    reps: 5,
+    lapses: 0,
+    due: NOW,
+    reviewedAt: NOW - DAY,
+    introducedAt: NOW - 30 * DAY,
+    ...patch,
+  })
+  const cards = [card('c1'), card('c2', { type: 'reversed' }), card('c3'), card('c4', { suspended: true }), card('c5')]
+  const states = new Map<string, SrsState>([
+    [reviewKey('c1', 0), state({ lapses: 7, difficulty: 6 })],
+    [reviewKey('c2', 0), state({ difficulty: 9 })],
+    [reviewKey('c2', 1), state({ lapses: 6, difficulty: 2 })],
+    [reviewKey('c3', 0), state({ ease: 1.3, lapses: 2 })],
+    [reviewKey('c4', 0), state({ lapses: 9, difficulty: 10 })],
+  ])
+  const keys = (items: { card: Card; side: number }[]) => items.map((i) => reviewKey(i.card.id, i.side))
+
+  it('Problemkarten: alle Seiten, ohne ausgesetzte Karten', () => {
+    expect(keys(filterItems('problem', cards, states))).toEqual(['c1:0', 'c2:0', 'c2:1'])
+  })
+
+  it('Schwerste: FSRS und SM-2 gemeinsam sortiert, neue Karten nicht, bei Gleichstand die öfter vergessenen', () => {
+    // c3 (Leichtigkeit am Minimum) ist so schwer wie es SM-2 kennt, c2:0 hat FSRS-Schwierigkeit 9
+    expect(keys(filterItems('hardest', cards, states))).toEqual(['c3:0', 'c2:0', 'c1:0', 'c2:1'])
+    expect(keys(filterItems('hardest', cards, states, { limit: 2 }))).toEqual(['c3:0', 'c2:0'])
+    const tie = new Map([
+      [reviewKey('c1', 0), state({ lapses: 1 })],
+      [reviewKey('c3', 0), state({ lapses: 3 })],
+    ])
+    expect(keys(filterItems('hardest', cards, tie))).toEqual(['c3:0', 'c1:0'])
+  })
+
+  it('Heute vergessen: genau die übergebenen Seiten', () => {
+    const again = new Set(['c2:1', 'c4:0', 'c5:0'])
+    expect(keys(filterItems('again-today', cards, states, { again }))).toEqual(['c2:1', 'c5:0'])
+    expect(filterItems('again-today', cards, states)).toEqual([])
   })
 })

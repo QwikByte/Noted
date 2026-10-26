@@ -397,6 +397,45 @@ export function allItems(cards: Card[]): StudyItem[] {
     .flatMap((card) => sidesOf(card).map((side) => ({ card, side, kind: 'review' as const })))
 }
 
+/** Eigene Übungen: Problemkarten, die schwersten Karten oder heute mit „Nochmal“ bewertete */
+export type StudyFilter = 'problem' | 'hardest' | 'again-today'
+
+export const STUDY_FILTERS: readonly StudyFilter[] = ['again-today', 'problem', 'hardest']
+
+/** So viele Seiten umfasst „Schwerste“ */
+export const HARDEST_COUNT = 50
+
+/**
+ * Wie schwer eine gelernte Seite ist, von 0 bis 1: mit FSRS aus der Schwierigkeit (1–10), sonst aus der Leichtigkeit
+ * von SM-2 (2,5 beim Start, 1,3 als Minimum) – so lassen sich Stapel mit beiden Plänen gemeinsam sortieren
+ */
+function hardness(state: SrsState): number {
+  if (state.difficulty != null) return (state.difficulty - 1) / 9
+  return Math.min(1, Math.max(0, (2.5 - state.ease) / (2.5 - 1.3)))
+}
+
+/**
+ * Seiten für eine eigene Übung – ohne ausgesetzte Karten. `again`: Kartenseiten (reviewKey), die heute mit „Nochmal“
+ * bewertet wurden.
+ */
+export function filterItems(
+  filter: StudyFilter,
+  cards: Card[],
+  states: StateMap,
+  opts: { again?: ReadonlySet<string>; limit?: number } = {},
+): StudyItem[] {
+  const items = allItems(cards)
+  if (filter === 'problem') return items.filter((i) => isProblemCard(i.card, states))
+  if (filter === 'again-today') return items.filter((i) => opts.again?.has(itemKey(i)))
+  // Schwerste: nur schon gelernte Seiten, bei Gleichstand die öfter vergessenen
+  return items
+    .map((item) => ({ item, state: states.get(itemKey(item)) }))
+    .filter((x): x is { item: StudyItem; state: SrsState } => !!x.state)
+    .sort((a, b) => hardness(b.state) - hardness(a.state) || b.state.lapses - a.state.lapses)
+    .slice(0, opts.limit ?? HARDEST_COUNT)
+    .map((x) => x.item)
+}
+
 /** Multiple Choice: Ist die Auswahl genau die Menge der richtigen Antworten? */
 export function isCorrectSelection(options: { correct: boolean }[], selected: Set<number>): boolean {
   return options.every((o, i) => o.correct === selected.has(i))

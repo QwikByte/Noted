@@ -47,6 +47,26 @@ export function getStudyStats(userId: number, timeZone: string, now = Date.now()
   return { days, decks, total, since }
 }
 
+/**
+ * Kartenseiten, die heute (in der Zeitzone des Geräts) mit „Nochmal“ bewertet wurden – für die Übung „Heute vergessen“.
+ * Ein Tag hat in keiner Zeitzone mehr als 26 Stunden; was früher war, kann nicht von heute sein.
+ */
+export function againToday(userId: number, timeZone: string, now = Date.now()): { cardId: string; side: number }[] {
+  const dayOf = dayFormatter(timeZone)
+  const today = dayOf(now)
+  const rows = getDb()
+    .prepare(
+      `SELECT card_id AS cardId, side, reviewed_at AS reviewedAt FROM review_log
+       WHERE user_id = ? AND rating = 1 AND reviewed_at >= ? AND reviewed_at <= ?`,
+    )
+    .all(userId, now - 26 * 3_600_000, now) as { cardId: string; side: number; reviewedAt: number }[]
+  const sides = new Map<string, { cardId: string; side: number }>()
+  for (const { cardId, side, reviewedAt } of rows) {
+    if (dayOf(reviewedAt) === today) sides.set(`${cardId}:${side}`, { cardId, side })
+  }
+  return [...sides.values()]
+}
+
 const RATING_LABELS = ['', 'Nochmal', 'Schwer', 'Gut', 'Einfach']
 const PHASE_LABELS: Record<string, string> = { new: 'neu', learning: 'lernend', review: 'wiederholt', relearning: 'neu lernend' }
 

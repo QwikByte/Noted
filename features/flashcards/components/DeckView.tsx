@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronDown,
   ChevronRight,
   Copy,
   Dumbbell,
@@ -28,6 +29,7 @@ import { useApp } from '@/features/workspace/client/context'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { usePrintShortcut } from '@/shared/ui/print-view'
 import { CardMarkdown } from './CardMarkdown'
+import { PracticeMenu } from './PracticeMenu'
 import { DeckPrint } from './DeckPrint'
 import { OcclusionThumb } from './Occlusion'
 import { Legend, ProgressBar, statusCounts } from './common'
@@ -265,9 +267,16 @@ export function DeckView({ id }: { id: string }) {
             >
               <GraduationCap className="size-4" /> Lernen
             </Button>
-            <Button className="max-sm:flex-1" onClick={() => app.go({ kind: 'study', scope, mode: 'practice' })} disabled={cards.length === 0}>
-              <Dumbbell className="size-4" /> Üben
-            </Button>
+            <PracticeMenu
+              scope={scope}
+              cards={cards}
+              states={data.states}
+              trigger={(p) => (
+                <Button className="max-sm:flex-1" disabled={cards.length === 0} {...p}>
+                  <Dumbbell className="size-4" /> Üben <ChevronDown className="size-3.5" />
+                </Button>
+              )}
+            />
           </div>
         </div>
         {cards.length > 0 ? (

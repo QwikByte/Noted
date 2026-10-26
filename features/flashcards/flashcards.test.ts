@@ -12,12 +12,15 @@ import * as reviews from '@/app/api/reviews/route'
 import * as exportRoute from '@/app/api/export/route'
 import * as stats from '@/app/api/stats/route'
 import * as statsExport from '@/app/api/stats/export/route'
+import * as statsAgain from '@/app/api/stats/again/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
 import * as deckExport from '@/app/api/decks/[id]/export/route'
 import * as deckImport from '@/app/api/decks/import/route'
 import * as attachments from '@/app/api/attachments/route'
 import * as files from '@/app/api/files/[...name]/route'
+import { getDb } from '@/shared/server/db'
+import { againToday } from './server/stats'
 import { MAX_CARD_TEXT } from './limits'
 import { schedule } from './srs'
 import type { Card, CardReview, Deck, DeckImportResult, FlashcardData, ReviewLogEntry, StudyStats } from './types'
@@ -664,5 +667,65 @@ describe('Stapel als Datei', () => {
     const mine = (await data()).decks.find((x) => x.name === 'Kardiologie')!
     expect((await importPackage(exported, other, mine.id)).status).toBe(404)
     expect((await call(deckExport.GET, '/', { cookie: other, params: { id: mine.id } })).status).toBe(404)
+  })
+})
+
+describe('Heute vergessen', () => {
+  it('liefert die heute mit „Nochmal“ bewerteten Kartenseiten des eigenen Kontos', async () => {
+    const d = await newDeck('Vergessen')
+    const [a, b] = (
+      await addCards(d.id, [
+        { type: 'basic', front: 'A', back: '1' },
+        { type: 'reversed', front: 'B', back: '2' },
+      ])
+    ).data.cards as Card[]
+    const now = Date.now()
+    const entry = (cardId: string, side: number, rating: 1 | 3, at: number): ReviewLogEntry => ({
+      cardId,
+      side,
+      rating,
+      phase: 'review',
+      intervalBefore: 3,
+      intervalAfter: 1,
+      durationMs: 2000,
+      reviewedAt: at,
+    })
+    const log = [entry(a.id, 0, 1, now - 1000), entry(a.id, 0, 1, now - 500), entry(b.id, 1, 1, now - 2000), entry(b.id, 0, 3, now - 1000), entry(a.id, 0, 1, now - 3 * 86_400_000)]
+    await call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [], log } })
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const r = await call(statsAgain.GET, '/', { cookie: token, query: { tz } })
+    expect(r.status).toBe(200)
+    const mine = (r.data.sides as { cardId: string; side: number }[]).filter((x) => x.cardId === a.id || x.cardId === b.id)
+    expect(mine).toEqual(expect.arrayContaining([{ cardId: a.id, side: 0 }, { cardId: b.id, side: 1 }]))
+    expect(mine).toHaveLength(2)
+    expect((await call(statsAgain.GET, '/', { cookie: token, query: { tz: 'Mars/Olympus' } })).status).toBe(400)
+
+    // Ein anderes Konto sieht nichts davon
+    const created = await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'vergesslich', password: 'Kennwort-Xyz-111' } })
+    expect(created.status).toBe(201)
+    const other = await loginAs('vergesslich', 'Kennwort-Xyz-111')
+    await call(password.POST, '/', { cookie: other, body: { currentPassword: 'Kennwort-Xyz-111', newPassword: 'Kennwort-Xyz-222' } })
+    expect((await call(statsAgain.GET, '/', { cookie: other, query: { tz } })).data.sides).toEqual([])
+  })
+
+  it('teilt die Tage in der Zeitzone des Geräts', async () => {
+    const d = await newDeck('Vergessen Berlin')
+    const [c] = (await addCards(d.id, [{ type: 'basic', front: 'C', back: '3' }])).data.cards as Card[]
+    const at = (iso: string): ReviewLogEntry => ({
+      cardId: c.id,
+      side: 0,
+      rating: 1,
+      phase: 'review',
+      intervalBefore: 3,
+      intervalAfter: 1,
+      durationMs: 2000,
+      reviewedAt: Date.parse(iso),
+    })
+    // 21:30 UTC ist in Berlin (Sommerzeit) noch der 13., 22:30 UTC schon der 14.
+    await call(reviews.POST, '/api/reviews', { cookie: token, body: { reviews: [], log: [at('2026-10-13T21:30:00Z')] } })
+    const userId = (getDb().prepare("SELECT id FROM users WHERE username = 'admin'").get() as { id: number }).id
+    const now = Date.parse('2026-10-13T23:00:00Z')
+    expect(againToday(userId, 'Europe/Berlin', now).filter((x) => x.cardId === c.id)).toEqual([])
+    expect(againToday(userId, 'UTC', now).filter((x) => x.cardId === c.id)).toEqual([{ cardId: c.id, side: 0 }])
   })
 })

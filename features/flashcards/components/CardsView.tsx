@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { ChartColumn, CloudOff, Dumbbell, FileArchive, GraduationCap, Layers, Loader2, MoreVertical, Plus, Upload } from 'lucide-react'
 import { Menu, MenuItem, useContextMenu } from '@/shared/ui/menu'
 import { useApp } from '@/features/workspace/client/context'
+import { PracticeMenu } from './PracticeMenu'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { Button } from '@/shared/ui/button'
 import { ProgressBar, statusCounts } from './common'
@@ -137,6 +138,9 @@ export function CardsView() {
               onOpen={() => app.go({ kind: 'deck', id: deck.id })}
               onLearn={() => app.go({ kind: 'study', scope: `deck:${deck.id}`, mode: 'learn' })}
               onPractice={() => app.go({ kind: 'study', scope: `deck:${deck.id}`, mode: 'practice' })}
+              practiceMenu={(trigger) => (
+                <PracticeMenu scope={`deck:${deck.id}`} cards={cards} states={data!.states} trigger={trigger} />
+              )}
             />
           ))}
         </div>
@@ -166,6 +170,7 @@ function DeckTile({
   onOpen,
   onLearn,
   onPractice,
+  practiceMenu,
 }: {
   name: string
   description: string
@@ -175,6 +180,8 @@ function DeckTile({
   onOpen: () => void
   onLearn: () => void
   onPractice: () => void
+  /** Knopf „Üben“ mit Menü für eigene Übungen */
+  practiceMenu: (trigger: React.ComponentProps<typeof PracticeMenu>['trigger']) => React.ReactNode
 }) {
   const openContextMenu = useContextMenu()
   return (
@@ -219,9 +226,13 @@ function DeckTile({
         <Button variant="ghost" size="sm" className="flex-1" onClick={onLearn} disabled={cards === 0}>
           <GraduationCap className="size-4" /> Lernen
         </Button>
-        <Button variant="ghost" size="sm" className="flex-1" onClick={onPractice} disabled={cards === 0}>
-          <Dumbbell className="size-4" /> Üben
-        </Button>
+        <div className="flex flex-1 [&>div]:flex-1">
+          {practiceMenu((p) => (
+            <Button variant="ghost" size="sm" className="w-full" disabled={cards === 0} {...p}>
+              <Dumbbell className="size-4" /> Üben
+            </Button>
+          ))}
+        </div>
       </div>
     </div>
   )

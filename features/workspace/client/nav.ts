@@ -1,6 +1,7 @@
 'use client'
 import { useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { STUDY_FILTERS, type StudyFilter } from '@/features/flashcards/study'
 
 export type View =
   | { kind: 'home' }
@@ -19,7 +20,8 @@ export type View =
   | { kind: 'cards' }
   | { kind: 'calendar' }
   | { kind: 'deck'; id: string }
-  | { kind: 'study'; scope: StudyScope; mode: StudyMode }
+  /** filter: eigene Übung (nur im Übungsmodus) – Problemkarten, schwerste oder heute vergessene */
+  | { kind: 'study'; scope: StudyScope; mode: StudyMode; filter?: StudyFilter }
   | { kind: 'stats' }
   /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten */
   | { kind: 'quiz'; id: string }
@@ -44,7 +46,14 @@ export function viewFromParams(params: URLSearchParams): View {
   if (d) return { kind: 'deck', id: d }
   const s = params.get('s')
   if (s === 'all' || /^(deck|note|exam):[\w-]+$/.test(s ?? '')) {
-    return { kind: 'study', scope: s as StudyScope, mode: params.get('m') === 'practice' ? 'practice' : 'learn' }
+    const mode = params.get('m') === 'practice' ? 'practice' : 'learn'
+    const filter = params.get('filter') as StudyFilter | null
+    return {
+      kind: 'study',
+      scope: s as StudyScope,
+      mode,
+      filter: mode === 'practice' && filter && STUDY_FILTERS.includes(filter) ? filter : undefined,
+    }
   }
   const quiz = params.get('quiz')
   if (quiz) return { kind: 'quiz', id: quiz }
@@ -93,7 +102,7 @@ export function viewToUrl(view: View): string {
     case 'deck':
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':
-      return `/?s=${encodeURIComponent(view.scope)}${view.mode === 'practice' ? '&m=practice' : ''}`
+      return `/?s=${encodeURIComponent(view.scope)}${view.mode === 'practice' ? `&m=practice${view.filter ? `&filter=${view.filter}` : ''}` : ''}`
     case 'quiz':
       return `/?quiz=${encodeURIComponent(view.id)}`
     default:
