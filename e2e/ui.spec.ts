@@ -13,8 +13,8 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Administrator')
 }
 
-async function createNote(page: Page, title: string, content: string) {
-  const res = await page.request.post('/api/notes', { headers: await apiHeaders(page), data: { title, content } })
+async function createNote(page: Page, title: string, content: string, format = 'markdown') {
+  const res = await page.request.post('/api/notes', { headers: await apiHeaders(page), data: { title, content, format } })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { note: { id: string } }).note.id
 }
@@ -93,6 +93,45 @@ test('Wortzahl: eingeschaltet zählt die Kopfzeile beim Tippen mit, mit Markieru
   await page.getByRole('radio', { name: 'Lesen' }).click()
   await expect(page.locator('.markdown-body')).toContainText('fünf')
   await expect(page.getByTestId('word-count')).toHaveText('5 Wörter')
+})
+
+test('Sprache: lang im Frontmatter gilt für Editor und Lesemodus, sonst die Standardsprache', async ({ page }) => {
+  await login(page)
+  const id = await createNote(page, 'Englische Mitschrift', '---\nlang: en\n---\nThe quick brown fox')
+  const plain = await createNote(page, 'Ohne Sprache', 'Ein Satz')
+  await page.goto(`/?n=${id}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  const editor = page.locator('.note-paper .cm-content')
+  await expect(editor).toHaveAttribute('lang', 'en')
+
+  // Über ⋮ → Informationen umstellen: schreibt lang ins Frontmatter, der Editor folgt ohne Neuladen
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Informationen' }).click()
+  await page.getByRole('dialog').getByLabel('Sprache der Notiz').selectOption('fr')
+  await page.keyboard.press('Escape')
+  await expect(editor).toHaveAttribute('lang', 'fr')
+  await expect(editor).toContainText('lang: fr')
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.locator('.note-paper .markdown-body').first()).toHaveAttribute('lang', 'fr')
+
+  // Standardsprache für Notizen ohne Angabe
+  await page.goto(`/?n=${plain}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(editor).toHaveAttribute('lang', 'de')
+  await page.goto('/settings')
+  await page.getByLabel('Sprache der Notizen').selectOption('other')
+  await page.getByLabel('Sprachkürzel').fill('pt_BR')
+  await expect(page.getByText('Kein gültiges Sprachkürzel.')).toBeVisible()
+  await page.getByLabel('Sprachkürzel').fill('pt-BR')
+  await page.goto(`/?n=${plain}`)
+  await expect(editor).toHaveAttribute('lang', 'pt-BR')
+  const rich = await createNote(page, 'Formatiert', '<p>Olá</p>', 'richtext')
+  await page.goto(`/?n=${rich}`)
+  await page.getByRole('radio', { name: 'Bearbeiten' }).click()
+  await expect(page.getByTestId('rich-editor')).toHaveAttribute('lang', 'pt-BR')
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await expect(page.getByTestId('rich-view')).toHaveAttribute('lang', 'pt-BR')
+  await page.evaluate(() => localStorage.removeItem('noted:lang'))
 })
 
 test('Menüs der Werkzeugleiste werden nicht abgeschnitten – auch auf dem Handy', async ({ browser }) => {

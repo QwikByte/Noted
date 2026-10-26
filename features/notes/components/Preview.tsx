@@ -60,6 +60,7 @@ export function Preview({
   print,
   onRendered,
   className,
+  lang,
 }: PreviewLinks & {
   content: string
   onToggleTask?: (line: number, checked: boolean) => void
@@ -72,6 +73,8 @@ export function Preview({
   /** Diagramme sind gerendert – auch ohne Diagramme und wenn Mermaid offline nicht geladen werden kann */
   onRendered?: () => void
   className?: string
+  /** Sprache des Inhalts (BCP-47), z. B. aus `lang:` im Frontmatter – für Vorlesen und Silbentrennung */
+  lang?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const rendered = useMemo(() => {
@@ -133,7 +136,7 @@ export function Preview({
   }
 
   return (
-    <div className={cn('markdown-body', className)} onClick={onClick}>
+    <div className={cn('markdown-body', className)} lang={lang} onClick={onClick}>
       {rendered.properties || rendered.propertiesError ? (
         <Properties data={rendered.properties} error={rendered.propertiesError} onOpenTag={onOpenTag} />
       ) : null}

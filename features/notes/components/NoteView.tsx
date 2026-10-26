@@ -59,6 +59,7 @@ import { linkAtPos } from '../editor-links'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { cardFromSelection } from '@/features/flashcards/components/CardEditor'
 import { Modal } from '@/shared/ui/modal'
+import { Select } from '@/shared/ui/input'
 import { usePrintShortcut } from '@/shared/ui/print-view'
 import { useToast } from '@/shared/ui/toast'
 import { cn } from '@/shared/ui/cn'
@@ -81,6 +82,7 @@ import { hasOutline, noteOutline, type OutlineEntry } from '../outline'
 import { attachmentHtml, insertionToHtml, linkedPdfs } from '../rich-html'
 import { NOTE_FORMAT_LABELS, isVisualFormat, noteExtension, noteText } from '../format'
 import { noteStats } from '../note-stats'
+import { DEFAULT_LANGUAGE, NOTE_LANGUAGES, frontmatterLanguage, isLanguageTag, languageLabel, noteLanguage, withLanguage } from '../language'
 import { htmlDocument, htmlToText } from '@/shared/lib/html'
 import { extractLinks, findHeadingLine, findWikiLinks, headingKey, splitFrontmatter } from '@/shared/markdown/meta'
 import { canvasForExport, canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
@@ -354,6 +356,8 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const [slashCommands] = usePref<'1' | '0'>('noted:slashCommands', '1')
   const [pasteHtml] = usePref<'1' | '0'>('noted:pasteHtml', '1')
   const [showWordCount] = usePref<'1' | '0'>('noted:wordCount', '0')
+  const [langPref] = usePref<string>('noted:lang', DEFAULT_LANGUAGE)
+  const defaultLang = isLanguageTag(langPref) ? langPref : DEFAULT_LANGUAGE
   const loadedVersion = useRef(note.version)
   const summary = notes.find((n) => n.id === note.id)
   const folderId = summary?.folderId ?? note.folderId
@@ -363,7 +367,11 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const visual = isVisualFormat(format)
   const effectiveMode: EditorMode = mode === 'split' && !canSplit ? 'edit' : mode
   const text = useMemo(() => noteText(format, content), [format, content])
-  const info = useMemo(() => (infoOpen ? noteStats(format, content) : null), [infoOpen, format, content])
+  const info = useMemo(
+    () => (infoOpen ? { ...noteStats(format, content), lang: frontmatterLanguage(format, content) } : null),
+    [infoOpen, format, content],
+  )
+  const lang = useMemo(() => noteLanguage(format, content, defaultLang), [format, content, defaultLang])
   // Nur solange der Editor den Fokus hat – sonst bliebe nach dem Wechsel in den Titel die alte Markierung gezählt
   const selectedText = useCallback(() => {
     const handle = format === 'richtext' ? richRef.current : cmRef.current
@@ -655,6 +663,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
   const onVisualChange = (doc: string) => {
     onChange(doc)
     if (effectiveMode === 'split') cmRef.current?.replaceDoc(doc)
+  }
+
+  /** Sprache der Markdown-Notiz als `lang:` ins Frontmatter schreiben – null nimmt wieder die Standardsprache */
+  function changeLanguage(code: string | null) {
+    const next = withLanguage(content, code)
+    if (next === content) return
+    cmRef.current?.replaceDoc(next)
+    onChange(next)
   }
 
   const toggleTask = useCallback(
@@ -1003,11 +1019,11 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
     ) : null
   const readView =
     format === 'richtext' ? (
-      <RichTextView html={content} onOpenPdf={app.openPdf} />
+      <RichTextView html={content} lang={lang} onOpenPdf={app.openPdf} />
     ) : format === 'text' ? (
-      <PlainTextView text={content} />
+      <PlainTextView text={content} lang={lang} />
     ) : (
-      <Preview content={content} {...previewLinks} onToggleTask={toggleTask} />
+      <Preview content={content} {...previewLinks} lang={lang} onToggleTask={toggleTask} />
     )
 
   return (
@@ -1208,6 +1224,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                 onCreateCard={createCard}
                 autoFocus={autoFocus}
                 spellcheck={spellcheck === '1' && !inVault}
+                lang={lang}
                 slashCommands={slashCommands === '1'}
                 header={titleInput}
               />
@@ -1227,6 +1244,7 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
                         data={completionData}
                         autoFocus={autoFocus}
                         spellcheck={spellcheck === '1' && !inVault}
+                        lang={lang}
                         plain={format === 'text'}
                         // Nicht in der Gliederung einer Mindmap: Tabellen oder Callouts zerbrächen sie
                         slashCommands={format === 'markdown' && slashCommands === '1'}
@@ -1288,7 +1306,14 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
       />
       <FormatDialog open={formatOpen} current={format} onClose={() => setFormatOpen(false)} onConfirm={changeFormat} />
       {printOpen ? (
-        <NotePrint title={title} format={format} content={content} links={previewLinks} onClose={() => setPrintOpen(false)} />
+        <NotePrint
+          title={title}
+          format={format}
+          content={content}
+          lang={lang}
+          links={previewLinks}
+          onClose={() => setPrintOpen(false)}
+        />
       ) : null}
       {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
       <HistoryDialog
@@ -1310,6 +1335,29 @@ function NoteEditor({ note, serverNote, heading }: { note: Note; serverNote: Not
           <dd>{formatDateTime(summary?.updatedAt ?? note.updatedAt)}</dd>
           <dt className="text-muted">Format</dt>
           <dd>{NOTE_FORMAT_LABELS[format].label}</dd>
+          <dt className="text-muted">Sprache</dt>
+          <dd>
+            {format === 'markdown' ? (
+              <Select
+                aria-label="Sprache der Notiz"
+                value={info?.lang ?? ''}
+                onChange={(e) => changeLanguage(e.target.value || null)}
+                className="h-8 py-0"
+              >
+                <option value="">Standard ({languageLabel(defaultLang)})</option>
+                {NOTE_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+                {info?.lang && !NOTE_LANGUAGES.some((l) => l.code === info.lang) ? (
+                  <option value={info.lang}>{info.lang}</option>
+                ) : null}
+              </Select>
+            ) : (
+              `${languageLabel(lang)}${info?.lang ? '' : ' (Standard)'}`
+            )}
+          </dd>
           <dt className="text-muted">Wörter</dt>
           <dd>{info?.words.toLocaleString('de-DE')}</dd>
           {info?.readingMinutes ? (

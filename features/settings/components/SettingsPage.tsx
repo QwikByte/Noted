@@ -28,6 +28,7 @@ import type { SessionInfo } from '@/features/auth/types'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { useShares } from '@/features/sharing/client/queries'
 import { ShareList } from '@/features/sharing/components/ShareList'
+import { DEFAULT_LANGUAGE, NOTE_LANGUAGES, isLanguageTag } from '@/features/notes/language'
 import { VaultSettings } from '@/features/vault/components/VaultSettings'
 
 export function SettingsPage() {
@@ -391,6 +392,7 @@ function AppearanceSection() {
             description="Zeigt über der Notiz laufend die Wörter und die Lesezeit – mit Markierung im Editor die Wörter der Markierung. Hilft bei Wortgrenzen für Hausarbeiten und Abstracts."
           />
         </div>
+        <NoteLanguageField />
         <Field label="Notizen öffnen im Modus" className="max-w-sm">
           {(id) => (
             <Select id={id} value={mode} onChange={(e) => setMode(e.target.value as EditorMode)}>
@@ -402,6 +404,59 @@ function AppearanceSection() {
         </Field>
       </div>
     </Section>
+  )
+}
+
+/** Standardsprache der Notizen – eine der üblichen oder ein freies Kürzel wie „pt-BR“ */
+function NoteLanguageField() {
+  const [lang, setLang] = usePref<string>('noted:lang', DEFAULT_LANGUAGE)
+  const known = NOTE_LANGUAGES.some((l) => l.code === lang)
+  const [other, setOther] = useState(!known)
+  const [draft, setDraft] = useState(known ? '' : lang)
+  const invalid = other && draft.trim() !== '' && !isLanguageTag(draft.trim())
+  return (
+    <div className="max-w-sm space-y-2">
+      <Field
+        label="Sprache der Notizen"
+        hint="Für Rechtschreibprüfung und Vorlesen. Eine Markdown-Notiz kann mit „lang: en“ in den Properties (oder unter ⋮ → Informationen) eine eigene haben. Ob die Rechtschreibprüfung sie nutzt, hängt vom Browser ab."
+      >
+        {(id) => (
+          <Select
+            id={id}
+            value={other ? 'other' : lang}
+            onChange={(e) => {
+              if (e.target.value === 'other') return setOther(true)
+              setOther(false)
+              setLang(e.target.value)
+            }}
+          >
+            {NOTE_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+            <option value="other">Andere …</option>
+          </Select>
+        )}
+      </Field>
+      {other ? (
+        <Field label="Sprachkürzel" hint="Zum Beispiel „pt-BR“ oder „nl“." error={invalid ? 'Kein gültiges Sprachkürzel.' : null}>
+          {(id) => (
+            <Input
+              id={id}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                if (isLanguageTag(e.target.value.trim())) setLang(e.target.value.trim())
+              }}
+              placeholder="pt-BR"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
+          )}
+        </Field>
+      ) : null}
+    </div>
   )
 }
 

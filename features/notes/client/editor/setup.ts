@@ -1,5 +1,5 @@
 'use client'
-import { Annotation, EditorState, type Extension } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, type Extension } from '@codemirror/state'
 import {
   Decoration,
   EditorView,
@@ -194,6 +194,22 @@ const theme = EditorView.theme({
   '.cm-gutters': { display: 'none' },
 })
 
+// Sprache und Rechtschreibprüfung des Textfelds – die Sprache ändert sich zur Laufzeit (lang: im Frontmatter)
+const contentAttrs = new Compartment()
+
+function contentAttributes(spellcheck: boolean, lang: string): Extension {
+  return EditorView.contentAttributes.of(
+    spellcheck
+      ? { spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', lang, 'aria-label': 'Notiztext' }
+      : { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'sentences', lang, 'aria-label': 'Notiztext' },
+  )
+}
+
+/** Sprache (und Rechtschreibprüfung) eines offenen Editors ändern */
+export function setEditorLanguage(view: EditorView, spellcheck: boolean, lang: string) {
+  view.dispatch({ effects: contentAttrs.reconfigure(contentAttributes(spellcheck, lang)) })
+}
+
 /**
  * Erweiterungen für Markdown – mit `plain` für einfachen Text: ohne Hervorhebung, Autovervollständigung,
  * Formatierungskürzel und Anhänge.
@@ -205,6 +221,8 @@ export function createExtensions(opts: {
   onPasteFiles: (files: File[]) => void
   placeholder?: string
   spellcheck?: boolean
+  /** Sprache als BCP-47-Kürzel, z. B. „en-GB“ (Standard: Deutsch) */
+  lang?: string
   plain?: boolean
   /** Menü mit Befehlen nach „/“ (nur Markdown) */
   slashCommands?: boolean
@@ -222,11 +240,7 @@ export function createExtensions(opts: {
     search({ top: true }),
     highlightSelectionMatches(),
     placeholderExt(opts.placeholder ?? 'Schreib los …'),
-    EditorView.contentAttributes.of(
-      opts.spellcheck === false
-        ? { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'sentences', lang: 'de', 'aria-label': 'Notiztext' }
-        : { spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', lang: 'de', 'aria-label': 'Notiztext' },
-    ),
+    contentAttrs.of(contentAttributes(opts.spellcheck !== false, opts.lang ?? 'de')),
     EditorView.updateListener.of((u) => {
       if (u.docChanged && !u.transactions.some((tr) => tr.annotation(externalChange))) {
         opts.onChange(u.state.doc.toString())
