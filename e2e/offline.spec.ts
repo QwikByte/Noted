@@ -97,7 +97,16 @@ test('Konflikt zwischen zwei Geräten wird erkannt', async ({ browser }) => {
   await b.page.keyboard.insertText(' – Handy')
   await expect(b.page.getByText('Konflikt:')).toBeVisible({ timeout: 10_000 })
   if (SHOTS) await b.page.screenshot({ path: `${SHOTS}/17-conflict.png` })
-  await b.page.getByRole('button', { name: 'Beide behalten' }).click()
+  // Vergleich vor der Entscheidung: die Zeile des Laptops gegen die des Handys
+  await b.page.getByRole('button', { name: 'Unterschiede ansehen' }).click()
+  const dialog = b.page.getByRole('dialog', { name: 'Unterschiede der beiden Versionen' })
+  const diff = dialog.getByTestId('diff-view')
+  await expect(diff.locator('[data-kind="removed"]')).toHaveText(/Version 1 – Laptop/)
+  await expect(diff.locator('[data-kind="added"]')).toHaveText(/Version 1 – Handy/)
+  await expect(diff).toContainText('nur in der anderen Version')
+  if (SHOTS) await b.page.screenshot({ path: `${SHOTS}/17-conflict-diff.png` })
+  await dialog.getByRole('button', { name: 'Beide behalten' }).click()
+  await expect(dialog).toBeHidden()
   await expect(b.page.locator('.cm-content')).toContainText('Version 1 – Laptop')
 
   // Die Handy-Version liegt jetzt als Kopie vor

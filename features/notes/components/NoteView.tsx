@@ -44,6 +44,7 @@ import { EditorToolbar } from './EditorToolbar'
 import { Preview, type PreviewLinks } from './Preview'
 import { WordCount } from './WordCount'
 import { FindBar } from './FindBar'
+import { ConflictDialog } from './ConflictDialog'
 import { NotePrint } from './NotePrint'
 import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
@@ -371,6 +372,7 @@ function NoteEditor({
   const [infoOpen, setInfoOpen] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [conflictOpen, setConflictOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   // Strg/⌘+P: Druckansicht statt Schnellwechsler
@@ -1223,7 +1225,17 @@ function NoteEditor({
         </div>
       </header>
 
-      {status.state === 'conflict' ? <ConflictBanner status={status} onResolve={resolveConflict} /> : null}
+      {status.state === 'conflict' ? (
+        <ConflictBanner status={status} onResolve={resolveConflict} onShowDiff={() => setConflictOpen(true)} />
+      ) : null}
+      <ConflictDialog
+        open={conflictOpen && status.state === 'conflict'}
+        server={status.serverNote ?? null}
+        mine={{ format, content }}
+        vault={inVault}
+        onClose={() => setConflictOpen(false)}
+        onResolve={(mode) => void resolveConflict(mode)}
+      />
       {findTerms && !visual && found.count > 0 ? (
         <FindBar
           terms={findTerms.join(' ')}
@@ -1390,6 +1402,7 @@ function NoteEditor({
       <HistoryDialog
         noteId={note.id}
         title={title}
+        current={{ format, content }}
         vault={inVault}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -1617,9 +1630,11 @@ function NoteGraph({ id }: { id: string }) {
 function ConflictBanner({
   status,
   onResolve,
+  onShowDiff,
 }: {
   status: NoteSyncStatus
   onResolve: (mode: 'mine' | 'theirs' | 'copy') => void
+  onShowDiff: () => void
 }) {
   const server = status.serverNote
   return (
@@ -1641,6 +1656,11 @@ function ConflictBanner({
         <Button size="sm" onClick={() => onResolve('copy')}>
           Beide behalten
         </Button>
+        {server ? (
+          <Button size="sm" variant="ghost" onClick={onShowDiff}>
+            Unterschiede ansehen
+          </Button>
+        ) : null}
       </div>
     </div>
   )

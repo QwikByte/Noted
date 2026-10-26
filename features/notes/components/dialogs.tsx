@@ -21,7 +21,9 @@ import { FormatPicker } from './FormatPicker'
 import { Preview } from './Preview'
 import { PlainTextView, RichTextView } from './ReadView'
 import { formatBytes, formatDateTime, formatRelative } from '@/shared/lib/format'
-import { NOTE_FORMAT_LABELS } from '../format'
+import { NOTE_FORMAT_LABELS, noteText } from '../format'
+import { canvasToMarkdown, parseCanvas } from '@/features/canvas/canvas'
+import { DiffView } from './DiffView'
 import { useDecrypted, useVaultState } from '@/features/vault/client/vault'
 import { revealNote } from '@/features/vault/client/vault-notes'
 import { VaultError } from '@/features/vault/crypto'
@@ -434,6 +436,7 @@ const ignore = () => {}
 export function HistoryDialog({
   noteId,
   title,
+  current,
   vault,
   open,
   onClose,
@@ -442,6 +445,8 @@ export function HistoryDialog({
   noteId: string
   /** Aktueller Titel – ältere Stände mit anderem Titel zeigen ihren Titel an */
   title: string
+  /** Aktueller Inhalt im Editor – damit vergleicht „Änderungen bis heute“ */
+  current: { format: NoteFormat; content: string }
   /** Tresor-Notiz: Stände sind verschlüsselt gespeichert und werden hier entschlüsselt */
   vault: boolean
   open: boolean
@@ -455,6 +460,7 @@ export function HistoryDialog({
   const list = useNoteVersions(noteId, open)
   const versions = list.data ?? []
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [showDiff, setShowDiff] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [restoring, setRestoring] = useState(false)
 
@@ -552,6 +558,28 @@ export function HistoryDialog({
                 <Button size="sm" variant="primary" onClick={() => setConfirming(true)} disabled={content === undefined}>
                   <RotateCcw className="size-4" /> Diesen Stand wiederherstellen
                 </Button>
+                <div className="flex w-full items-center rounded-lg bg-hover p-0.5" role="radiogroup" aria-label="Anzeige">
+                  {(
+                    [
+                      [false, 'Vorschau'],
+                      [true, 'Änderungen bis heute'],
+                    ] as const
+                  ).map(([diff, label]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={showDiff === diff}
+                      onClick={() => setShowDiff(diff)}
+                      className={cn(
+                        'h-7 flex-1 rounded-md px-2 text-xs font-medium transition-colors',
+                        showDiff === diff ? 'bg-elevated text-fg shadow-sm' : 'text-muted hover:text-fg',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
             <div className="history-preview min-h-48 flex-1 overflow-y-auto p-3" data-testid="history-preview">
@@ -561,10 +589,17 @@ export function HistoryDialog({
                 <ErrorText>{plain.message}</ErrorText>
               ) : detail.isLoading || (detail.data && content === undefined) ? (
                 <Loader2 className="mx-auto my-8 size-5 animate-spin text-faint" />
+              ) : detail.data && content !== undefined && showDiff ? (
+                <DiffView
+                  before={noteText(detail.data.format, content)}
+                  after={noteText(current.format, current.content)}
+                  labels={{ removed: 'nur in diesem Stand', added: 'seitdem dazugekommen' }}
+                />
               ) : detail.data && content !== undefined ? (
-                detail.data.format === 'markdown' || detail.data.format === 'mindmap' ? (
+                detail.data.format === 'markdown' || detail.data.format === 'mindmap' || detail.data.format === 'canvas' ? (
                   <Preview
-                    content={content}
+                    // Ein Canvas als Text seiner Karten statt als JSON
+                    content={detail.data.format === 'canvas' ? canvasPreview(content) : content}
                     resolveNote={resolveNote}
                     onOpenNote={ignore}
                     onCreateNote={ignore}
@@ -595,6 +630,11 @@ export function HistoryDialog({
       />
     </Modal>
   )
+}
+
+const canvasPreview = (json: string) => {
+  const data = parseCanvas(json)
+  return data ? canvasToMarkdown(data) : ''
 }
 
 function VersionItem({

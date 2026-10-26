@@ -388,6 +388,12 @@ test('Verlauf: älteren Stand ansehen und wiederherstellen', async ({ page }) =>
   await expect(list).toContainText('Vor dem Formatwechsel')
   await expect(preview.getByRole('heading', { name: 'Hauptsätze' })).toBeVisible()
   await shot(page, '92-history')
+  // Vergleich mit dem aktuellen Inhalt: was seitdem dazugekommen ist
+  await page.getByRole('radio', { name: 'Änderungen bis heute' }).click()
+  const diff = preview.getByTestId('diff-view')
+  await expect(diff.locator('[data-kind="added"]', { hasText: 'Aus Versehen überschrieben' })).toHaveCount(1)
+  await expect(diff.locator('[data-kind="removed"]', { hasText: 'Erster Hauptsatz' })).toHaveCount(1)
+  await page.getByRole('radio', { name: 'Vorschau' }).click()
   await page.getByRole('button', { name: 'Diesen Stand wiederherstellen' }).click()
   const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Diesen Stand wiederherstellen?' }) })
   await confirm.getByRole('button', { name: 'Wiederherstellen', exact: true }).click()
