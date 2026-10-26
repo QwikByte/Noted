@@ -15,6 +15,7 @@ beforeAll(async () => {
 const annotation = (patch: Partial<PdfAnnotation>): PdfAnnotation => ({
   id: 'a1',
   attachmentId: 'f1',
+  kind: 'text',
   page: 1,
   rects: [[60, 755, 200, 785]],
   quote: 'Entropie',

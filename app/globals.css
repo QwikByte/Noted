@@ -1216,6 +1216,33 @@ html.dragging * {
 .pdf-annotation.is-active {
   box-shadow: 0 0 0 1.5px var(--hl);
 }
+/* Bereich (aufgezogenes Rechteck, z. B. in Scans): Rahmen mit leichter Füllung statt Textmarker */
+.pdf-annotation[data-kind='area'] {
+  border: 2px solid var(--hl);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--hl) 14%, transparent);
+}
+.pdf-night .pdf-annotation[data-kind='area'] {
+  background: color-mix(in srgb, var(--hl) 22%, transparent);
+}
+/* „Bereich markieren“: Maus, Stift oder Finger ziehen ein Rechteck auf, statt Text auszuwählen oder zu scrollen */
+.pdf-area-mode {
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.pdf-area-mode .textLayer,
+.pdf-area-mode .annotationLayer {
+  pointer-events: none;
+}
+.pdf-area-draft {
+  position: absolute;
+  z-index: 3;
+  border: 2px dashed var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
 .pdf-annotation.has-comment::before {
   content: '';
   position: absolute;

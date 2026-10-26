@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Quote, Trash2, X } from 'lucide-react'
+import { ImageIcon, ImagePlus, Layers, Quote, Trash2, X } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
 import { pdfAnnotations } from '../client/annotations'
@@ -17,11 +17,21 @@ export const ANNOTATION_COLORS: { id: AnnotationColor; label: string }[] = [
   { id: 6, label: 'Lila' },
 ]
 
-/** Angeklickte Markierung: Kommentar, Farbe, als Zitat einfügen, löschen */
+/** Text zu einer Anmerkung in Leiste und Liste – bei Bereichen „Bereich“ und der Text darunter, falls es einen gibt */
+export const annotationText = (a: Pick<PdfAnnotation, 'kind' | 'quote'>) =>
+  a.kind === 'area' ? (a.quote ? `Bereich: „${a.quote}“` : 'Bereich') : `„${a.quote}“`
+
+/**
+ * Angeklickte Markierung: Kommentar, Farbe, als Zitat einfügen, löschen – bei Bereichen statt des Zitats als Bild
+ * einfügen, als Karteikarte mit Bild oder als Bildverdeckung
+ */
 export default function AnnotationBar({
   annotation,
   focusComment,
   onInsert,
+  onImage,
+  onCard,
+  onOcclusion,
   onColor,
   onDelete,
   onClose,
@@ -29,6 +39,9 @@ export default function AnnotationBar({
   annotation: PdfAnnotation
   focusComment: boolean
   onInsert: () => void
+  onImage: () => void
+  onCard: () => void
+  onOcclusion: () => void
   /** Gewählte Farbe auch für neue Markierungen übernehmen */
   onColor: (color: AnnotationColor) => void
   onDelete: () => void
@@ -91,11 +104,49 @@ export default function AnnotationBar({
           ))}
         </div>
         <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted" title={annotation.quote}>
-          S. {annotation.page} · „{annotation.quote}“
+          S. {annotation.page} · {annotationText(annotation)}
         </span>
-        <Button size="sm" variant="ghost" onClick={onInsert} title="Als Zitat mit Seitenlink in die Notiz einfügen">
-          <Quote className="size-4" /> <span className="@max-lg:hidden">Als Zitat einfügen</span>
-        </Button>
+        {annotation.kind === 'area' ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onImage}
+              aria-label="Als Bild einfügen"
+              title="Als Bild mit Seitenlink in die Notiz einfügen"
+            >
+              <ImagePlus className="size-4" /> <span className="@max-lg:hidden">Als Bild einfügen</span>
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={onCard}
+              aria-label="Karteikarte mit Bild"
+              title="Karteikarte mit Bild anlegen"
+            >
+              <Layers className="size-4" />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={onOcclusion}
+              aria-label="Bildverdeckung"
+              title="Als Bildverdeckung lernen"
+            >
+              <ImageIcon className="size-4" />
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onInsert}
+            aria-label="Als Zitat einfügen"
+            title="Als Zitat mit Seitenlink in die Notiz einfügen"
+          >
+            <Quote className="size-4" /> <span className="@max-lg:hidden">Als Zitat einfügen</span>
+          </Button>
+        )}
         <Button
           size="icon-sm"
           variant="ghost"

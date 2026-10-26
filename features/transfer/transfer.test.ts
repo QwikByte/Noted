@@ -281,6 +281,7 @@ describe('PDF-Anmerkungen in Export und Import', () => {
   const marks: Stored[] = [
     {
       id: crypto.randomUUID(),
+      kind: 'text',
       page: 2,
       rects: [[60.5, 700, 320, 716], [60.5, 682, 210.25, 698]],
       quote: 'Entropie nimmt zu',
@@ -289,10 +290,29 @@ describe('PDF-Anmerkungen in Export und Import', () => {
       createdAt: T + 1_000,
       updatedAt: T + 5_000,
     },
-    { id: crypto.randomUUID(), page: 1, rects: [[72, 740, 300, 756]], quote: 'Energie bleibt erhalten', comment: '', color: 4, createdAt: T + 2_000, updatedAt: T + 2_000 },
+    {
+      id: crypto.randomUUID(),
+      kind: 'area',
+      page: 1,
+      rects: [[72, 740, 300, 756]],
+      quote: 'Energie bleibt erhalten',
+      comment: '',
+      color: 4,
+      createdAt: T + 2_000,
+      updatedAt: T + 2_000,
+    },
   ]
   const comparable = (list: PdfAnnotation[]) =>
-    list.map(({ page, rects, quote, comment, color, createdAt, updatedAt }) => ({ page, rects, quote, comment, color, createdAt, updatedAt }))
+    list.map(({ kind, page, rects, quote, comment, color, createdAt, updatedAt }) => ({
+      kind,
+      page,
+      rects,
+      quote,
+      comment,
+      color,
+      createdAt,
+      updatedAt,
+    }))
 
   async function uploadAs(cookie: string, name: string, data: Uint8Array) {
     const form = new FormData()

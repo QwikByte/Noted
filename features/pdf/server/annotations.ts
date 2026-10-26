@@ -12,11 +12,12 @@ import {
   MAX_QUOTE,
   MAX_RECTS,
 } from '../limits'
-import type { AnnotationColor, PdfAnnotation, PdfRect } from '../types'
+import type { AnnotationColor, AnnotationKind, PdfAnnotation, PdfRect } from '../types'
 
 type AnnotationRow = {
   id: string
   attachment_id: string
+  kind: AnnotationKind
   page: number
   rects: string
   quote: string
@@ -29,6 +30,7 @@ type AnnotationRow = {
 const toAnnotation = (r: AnnotationRow): PdfAnnotation => ({
   id: r.id,
   attachmentId: r.attachment_id,
+  kind: r.kind,
   page: r.page,
   rects: JSON.parse(r.rects) as PdfRect[],
   quote: r.quote,
@@ -43,21 +45,25 @@ const coordinate = z.number(BAD_RECT).min(-100_000, BAD_RECT).max(100_000, BAD_R
 // Zeiten vergibt der Browser – nur plausible zulassen (der ZIP-Export kann nur 1980–2099 darstellen)
 const time = z.number().int().min(Date.UTC(2000, 0, 1), 'Ungültiger Zeitpunkt.').max(Date.UTC(2099, 0, 1), 'Ungültiger Zeitpunkt.')
 
-const annotationSchema = z.object({
-  id: z.string().refine(isValidId, 'Ungültige ID einer Anmerkung.'),
-  page: z.number().int().min(1, 'Ungültige Seite.').max(100_000, 'Ungültige Seite.'),
-  rects: z
-    .array(z.tuple([coordinate, coordinate, coordinate, coordinate], BAD_RECT), BAD_RECT)
-    .min(1, 'Eine Markierung braucht mindestens eine Textzeile.')
-    .max(MAX_RECTS, `Eine Markierung darf höchstens ${MAX_RECTS} Zeilen umfassen.`),
-  quote: z.string().max(MAX_QUOTE, `Der markierte Text ist zu lang (höchstens ${MAX_QUOTE.toLocaleString('de-DE')} Zeichen).`),
-  comment: z
-    .string()
-    .max(MAX_COMMENT, `Der Kommentar ist zu lang (höchstens ${MAX_COMMENT.toLocaleString('de-DE')} Zeichen).`),
-  color: z.number().int().min(1, 'Unbekannte Farbe.').max(6, 'Unbekannte Farbe.'),
-  createdAt: time,
-  updatedAt: time,
-})
+const annotationSchema = z
+  .object({
+    id: z.string().refine(isValidId, 'Ungültige ID einer Anmerkung.'),
+    // Fehlt bei Geräten mit älterem Stand – das sind Textmarkierungen
+    kind: z.enum(['text', 'area'], 'Unbekannte Art der Anmerkung.').default('text'),
+    page: z.number().int().min(1, 'Ungültige Seite.').max(100_000, 'Ungültige Seite.'),
+    rects: z
+      .array(z.tuple([coordinate, coordinate, coordinate, coordinate], BAD_RECT), BAD_RECT)
+      .min(1, 'Eine Markierung braucht mindestens eine Textzeile.')
+      .max(MAX_RECTS, `Eine Markierung darf höchstens ${MAX_RECTS} Zeilen umfassen.`),
+    quote: z.string().max(MAX_QUOTE, `Der markierte Text ist zu lang (höchstens ${MAX_QUOTE.toLocaleString('de-DE')} Zeichen).`),
+    comment: z
+      .string()
+      .max(MAX_COMMENT, `Der Kommentar ist zu lang (höchstens ${MAX_COMMENT.toLocaleString('de-DE')} Zeichen).`),
+    color: z.number().int().min(1, 'Unbekannte Farbe.').max(6, 'Unbekannte Farbe.'),
+    createdAt: time,
+    updatedAt: time,
+  })
+  .refine((a) => a.kind !== 'area' || a.rects.length === 1, 'Ein Bereich besteht aus genau einem Rechteck.')
 
 export const annotationsInputSchema = z.object({
   annotations: z
@@ -88,16 +94,28 @@ export function listAnnotations(userId: number, attachmentId: string): PdfAnnota
 }
 
 /** Anlegen oder ändern: Bei bekannter ID gewinnt der neuere Stand (updatedAt); IDs anderer Nutzer oder PDFs bleiben unberührt */
-const UPSERT = `INSERT INTO pdf_annotations (id, user_id, attachment_id, page, rects, quote, comment, color, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+const UPSERT = `INSERT INTO pdf_annotations
+    (id, user_id, attachment_id, kind, page, rects, quote, comment, color, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
-    page = excluded.page, rects = excluded.rects, quote = excluded.quote, comment = excluded.comment,
-    color = excluded.color, updated_at = excluded.updated_at
+    kind = excluded.kind, page = excluded.page, rects = excluded.rects, quote = excluded.quote,
+    comment = excluded.comment, color = excluded.color, updated_at = excluded.updated_at
   WHERE pdf_annotations.user_id = excluded.user_id AND pdf_annotations.attachment_id = excluded.attachment_id
     AND excluded.updated_at >= pdf_annotations.updated_at`
 
-const upsertValues = (id: string, userId: number, attachmentId: string, a: AnnotationInput) =>
-  [id, userId, attachmentId, a.page, JSON.stringify(a.rects), a.quote.trim(), a.comment.trim(), a.color, a.createdAt, a.updatedAt]
+const upsertValues = (id: string, userId: number, attachmentId: string, a: AnnotationInput) => [
+  id,
+  userId,
+  attachmentId,
+  a.kind,
+  a.page,
+  JSON.stringify(a.rects),
+  a.quote.trim(),
+  a.comment.trim(),
+  a.color,
+  a.createdAt,
+  a.updatedAt,
+]
 
 /**
  * Anmerkungen anlegen oder ändern – idempotent per ID, damit offline gesammelte gefahrlos erneut gesendet werden
@@ -139,8 +157,9 @@ export function annotationsFile(filename: string, list: PdfAnnotation[]): string
     format: FILE_FORMAT,
     version: FILE_VERSION,
     file: filename,
-    annotations: list.map(({ id, page, rects, quote, comment, color, createdAt, updatedAt }) => ({
+    annotations: list.map(({ id, kind, page, rects, quote, comment, color, createdAt, updatedAt }) => ({
       id,
+      kind,
       page,
       rects,
       quote,

@@ -461,6 +461,66 @@ test('PDF-Viewer mit der Tastatur: suchen, blättern, zoomen und markieren', asy
 test.describe('Handy', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
+  test('PDF: Wischen scrollt wie bisher – mit „Bereich markieren“ zieht der Finger einen Bereich auf', async ({ page }) => {
+    await login(page)
+    const headers = await apiHeaders(page)
+    const lines = Array.from({ length: 30 }, (_, i) => `Zeile ${i + 1} mit etwas Text`)
+    const up = await page.request.post('/api/attachments', {
+      headers,
+      multipart: { file: { name: 'Handy Bereich.pdf', mimeType: 'application/pdf', buffer: makePdf([lines, lines, lines]) } },
+    })
+    const att = (await up.json()).attachment as { id: string }
+    const note = (await (await page.request.post('/api/notes', { headers, data: { title: 'Handy Bereich', content: '[[Handy Bereich.pdf]]\n' } })).json())
+      .note as { id: string }
+    const saved = async () => (await (await page.request.get(`/api/attachments/${att.id}/annotations`)).json()).annotations as { kind: string }[]
+
+    await page.goto(`/?n=${note.id}`)
+    await page.getByRole('radio', { name: 'Lesen' }).click()
+    await page.locator('.markdown-body a.file-link-pdf').click()
+    const panel = page.getByTestId('pdf-panel')
+    await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+    const container = panel.locator('.pdf-container')
+    const scrollTop = () => container.evaluate((el) => el.scrollTop)
+    const box = (await container.boundingBox())!
+    const cdp = await page.context().newCDPSession(page)
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', point?: { x: number; y: number }) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: point ? [point] : [] })
+    const drag = async (x1: number, y1: number, x2: number, y2: number) => {
+      await touch('touchStart', { x: x1, y: y1 })
+      for (let i = 1; i <= 6; i++) await touch('touchMove', { x: x1 + ((x2 - x1) * i) / 6, y: y1 + ((y2 - y1) * i) / 6 })
+      await touch('touchEnd')
+    }
+
+    // Ohne den Modus scrollt ein Wisch nach oben die Seiten
+    const cx = box.x + box.width / 2
+    await drag(cx, box.y + box.height - 20, cx, box.y + 20)
+    await expect.poll(scrollTop).toBeGreaterThan(50)
+    expect(await saved()).toEqual([])
+    // Den Nachlauf des Wischens abwarten
+    let last = -1
+    await expect
+      .poll(async () => {
+        const now = await scrollTop()
+        const settled = now === last
+        last = now
+        return settled
+      }, { intervals: [300] })
+      .toBe(true)
+
+    // Im Modus zieht derselbe Finger ein Rechteck auf, statt zu scrollen (ein Bildlauf wäre ~100 px, die Hinweisleiste
+    // verkleinert die Fläche dabei um ein paar Punkte)
+    await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+    await page.getByRole('menuitem', { name: 'Bereich markieren' }).click()
+    await expect(panel.getByTestId('pdf-area-hint')).toBeVisible()
+    const before = await scrollTop()
+    await drag(box.x + 60, box.y + 40, box.x + 220, box.y + 140)
+    await expect(panel.locator('.pdf-annotation[data-kind="area"]')).toHaveCount(1)
+    expect(Math.abs((await scrollTop()) - before)).toBeLessThan(20)
+    await expect.poll(saved).toEqual([expect.objectContaining({ kind: 'area' })])
+
+    for (const url of [`/api/notes/${note.id}?permanent=1`, `/api/attachments/${att.id}`]) await page.request.delete(url, { headers })
+  })
+
   test('Bewerten per Wischen: links „Nochmal“, rechts „Gut“ – vor dem Aufdecken und knapp darunter nichts', async ({ page }) => {
     await login(page)
     const headers = await apiHeaders(page)

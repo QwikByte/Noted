@@ -2,6 +2,7 @@
 import { Quote, X } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
+import { annotationText } from './AnnotationBar'
 import type { PdfAnnotation } from '../types'
 
 /** Seitenleiste „Anmerkungen“ im PDF-Viewer – Markierungen in der Reihenfolge des Dokuments */
@@ -38,7 +39,8 @@ export default function AnnotationList({
       </div>
       {annotations.length === 0 ? (
         <p className="flex-1 p-4 text-sm text-muted">
-          Noch keine Markierungen. Wähle Text im PDF aus und tippe auf „Markieren“ oder „Kommentieren“.
+          Noch keine Markierungen. Wähle Text im PDF aus und tippe auf „Markieren“ oder „Kommentieren“ – oder
+          ziehe mit „Bereich markieren“ ein Rechteck über eine Formel, Abbildung oder einen Scan.
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -62,7 +64,7 @@ export default function AnnotationList({
                       >
                         <span className="w-1 shrink-0 self-stretch rounded-full" style={{ background: `var(--swatch-${a.color})` }} />
                         <span className="min-w-0 flex-1">
-                          <span className="line-clamp-2 text-sm">{a.quote}</span>
+                          <span className="line-clamp-2 text-sm">{a.kind === 'area' ? annotationText(a) : a.quote}</span>
                           {a.comment ? <span className="mt-0.5 line-clamp-2 text-xs text-muted">{a.comment}</span> : null}
                         </span>
                       </button>

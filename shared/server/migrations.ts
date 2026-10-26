@@ -394,4 +394,10 @@ export const migrations: string[] = [
   CREATE INDEX note_links_target ON note_links(target);
   INSERT OR REPLACE INTO settings (key, value) VALUES ('reindex_link_paths', '1');
   `,
+
+  /* 3: Bereiche in PDFs */ `
+  -- Art einer Anmerkung: 'text' markiert ausgewählten Text (ein Rechteck je Zeile), 'area' einen aufgezogenen Bereich
+  -- (genau ein Rechteck – für Scans, Formeln und Abbildungen). Vorhandene Anmerkungen sind Textmarkierungen.
+  ALTER TABLE pdf_annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'area'));
+  `,
 ]

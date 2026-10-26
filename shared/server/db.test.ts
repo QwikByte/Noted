@@ -73,6 +73,31 @@ describe('Datenbank', () => {
     db.close()
   })
 
+  it('Bereiche in PDFs (Migration 3): vorhandene Anmerkungen sind Textmarkierungen, andere Arten gibt es nicht', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = ON')
+    db.exec(migrations[0])
+    db.exec(migrations[1])
+    db.exec(`
+      INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
+      INSERT INTO attachments (id, user_id, filename, mime, size, created_at) VALUES ('f', 1, 'Skript.pdf', 'application/pdf', 1, 0);
+      INSERT INTO pdf_annotations (id, user_id, attachment_id, page, rects, quote, created_at, updated_at)
+        VALUES ('alt', 1, 'f', 1, '[[0,0,1,1]]', 'Zitat', 0, 0);
+    `)
+    db.exec(migrations[2])
+    expect(db.prepare("SELECT kind FROM pdf_annotations WHERE id = 'alt'").pluck().get()).toBe('text')
+    const insert = (kind: string) =>
+      db
+        .prepare(
+          `INSERT INTO pdf_annotations (id, user_id, attachment_id, kind, page, rects, quote, created_at, updated_at)
+           VALUES (?, 1, 'f', ?, 1, '[[0,0,1,1]]', '', 0, 0)`,
+        )
+        .run(kind, kind)
+    expect(() => insert('area')).not.toThrow()
+    expect(() => insert('kreis')).toThrow(/CHECK constraint/)
+    db.close()
+  })
+
   it('Links mit Ordnerpfad (Migration 2): vorhandene Links bleiben, ihr Ordner wird beim Start nachgetragen', () => {
     const db = new Database(':memory:')
     db.pragma('foreign_keys = ON')

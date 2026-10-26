@@ -81,6 +81,26 @@ export function joinSelection(parts: SelectionPart[], whole: string): { text: st
   return { text: text.replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim(), parts: sorted }
 }
 
+/** Textstück der Textebene einer Seite (Ausschnitt aus dem TextItem von pdf.js, Koordinaten der Seite) */
+type TextPiece = { str: string; transform: number[]; width: number; height: number; hasEOL?: boolean }
+
+/**
+ * Text unter einem aufgezogenen Bereich: die Stücke der Textebene, deren Mitte im Rechteck liegt – in der Reihenfolge
+ * der Seite. Einträge ohne Text (Markierungen der Struktur) zählen nicht.
+ */
+export function textInRect(items: (TextPiece | object)[], [x1, y1, x2, y2]: PdfRect): string {
+  let text = ''
+  for (const item of items) {
+    if (!('str' in item)) continue
+    const [, , , , x, y] = item.transform
+    const cx = x + item.width / 2
+    const cy = y + item.height / 2
+    if (cx < x1 || cx > x2 || cy < y1 || cy > y2) continue
+    text += item.str + (item.hasEOL ? '\n' : '')
+  }
+  return text
+}
+
 /** Markierter Text als Zitat: Leerraum bereinigt, auf MAX_QUOTE Zeichen gekürzt */
 export function cleanQuote(text: string): string {
   const clean = text.replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim()
@@ -117,7 +137,7 @@ export function sortAnnotations<T extends Pick<PdfAnnotation, 'page' | 'rects' |
   return [...list].sort((a, b) => a.page - b.page || top(b) - top(a) || a.createdAt - b.createdAt)
 }
 
-/** Markierungen eines PDFs als lesbare Markdown-Datei (Export) – Seite, Zitat, Kommentar */
+/** Markierungen eines PDFs als lesbare Markdown-Datei (Export) – Seite, Zitat bzw. „Bereich“, Kommentar */
 export function annotationsMarkdown(filename: string, list: PdfAnnotation[]): string {
   const out = [`# Anmerkungen zu ${filename}`, '']
   let page = 0
@@ -126,7 +146,8 @@ export function annotationsMarkdown(filename: string, list: PdfAnnotation[]): st
       page = a.page
       out.push(`## Seite ${page}`, '')
     }
-    out.push(...a.quote.split('\n').map((l) => `> ${l}`), '')
+    if (a.kind === 'area') out.push('_Bereich_', '')
+    if (a.kind !== 'area' || a.quote) out.push(...a.quote.split('\n').map((l) => `> ${l}`), '')
     if (a.comment.trim()) out.push(a.comment.trim(), '')
   }
   return out.join('\n')
