@@ -117,7 +117,11 @@ function renderWikilink(tokens: Token[], idx: number, _opts: unknown, env: Rende
     }
     const kind = isPdf ? 'pdf' : 'file'
     const label = page ? `${name} · Seite ${page}` : name
-    return `<a class="embed-file embed-${kind}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}><span class="embed-file-icon"></span><span>${label}</span></a>`
+    // Eingebettete PDF-Seite: Die Vorschau zeigt sie als Bild (Breite wie bei Bildern: ![[Skript.pdf#page=3|400]]) –
+    // bis dahin, ohne JavaScript und in geteilten Notizen bleibt es bei der Karte
+    const width = page && alias && /^\d+$/.test(alias) ? ` data-width="${alias}"` : ''
+    const pageClass = page ? ' embed-pdf-page' : ''
+    return `<a class="embed-file embed-${kind}${pageClass}" href="${url}" target="_blank" rel="noopener"${pdfAttrs}${width}><span class="embed-file-icon"></span><span>${label}</span></a>`
   }
 
   const note = linkedNote ?? (target ? (env.resolveNote?.(target) ?? null) : null)

@@ -66,6 +66,21 @@ describe('Vorschau', () => {
     expect(html).toContain('data-pdf="skript.pdf" data-page="3"><span class="embed-file-icon"></span><span>skript.pdf · Seite 3</span>')
   })
 
+  it('markiert eingebettete PDF-Seiten als Platzhalter für ein Seitenbild – mit Breite, ohne Seite bleibt die Karte', () => {
+    const page = renderMarkdown('![[Skript.pdf#page=3|400]]').html
+    expect(page).toContain(
+      '<a class="embed-file embed-pdf embed-pdf-page" href="/api/files/Skript.pdf" target="_blank" rel="noopener" data-pdf="Skript.pdf" data-page="3" data-width="400">',
+    )
+    expect(page).toContain('<span>Skript.pdf · Seite 3</span>')
+    expect(renderMarkdown('![[Skript.pdf#page=3]]').html).toContain('class="embed-file embed-pdf embed-pdf-page"')
+    expect(renderMarkdown('![[Skript.pdf#page=3]]').html).not.toContain('data-width')
+    const whole = renderMarkdown('![[Skript.pdf]] ![[Skript.pdf|400]]').html
+    expect(whole).not.toContain('embed-pdf-page')
+    expect(whole).not.toContain('data-width')
+    // Ein Link (ohne !) bleibt ein Link
+    expect(renderMarkdown('[[Skript.pdf#page=3]]').html).not.toContain('embed-pdf-page')
+  })
+
   it('behandelt Notiztitel mit Punkt nicht als Datei', () => {
     const resolve = (t: string) => (t === 'Kapitel 3.1' ? { id: 'k31', title: 'Kapitel 3.1' } : null)
     const { html } = renderMarkdown('[[Kapitel 3.1]] [[Übung 2.3]] [[Woche 2.Semester]]', { resolveNote: resolve })

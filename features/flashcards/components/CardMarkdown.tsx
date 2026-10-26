@@ -1,6 +1,9 @@
 'use client'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/features/workspace/client/context'
+import { attachmentsQuery } from '@/features/attachments/client/queries'
+import { renderPdfPageImages } from '@/features/attachments/client/preview'
 import { cn } from '@/shared/ui/cn'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
@@ -16,6 +19,12 @@ export function CardMarkdown({ text, className }: { text: string; className?: st
     [app],
   )
   const html = useMemo(() => sanitize(renderMarkdown(text, { resolveNote }).html), [text, resolveNote])
+  // Eingebettete PDF-Seiten als Bild – wie in der Notiz
+  const qc = useQueryClient()
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (ref.current) void renderPdfPageImages(ref.current, () => qc.ensureQueryData(attachmentsQuery)).catch(() => {})
+  }, [html, qc])
 
   function onClick(e: React.MouseEvent) {
     const a = (e.target as HTMLElement).closest('a')
@@ -36,6 +45,7 @@ export function CardMarkdown({ text, className }: { text: string; className?: st
 
   return (
     <div
+      ref={ref}
       className={cn('markdown-body card-markdown', className)}
       onClick={onClick}
       dangerouslySetInnerHTML={{ __html: html }}

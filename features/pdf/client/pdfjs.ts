@@ -74,21 +74,44 @@ export async function renderPdfData(
   maxWidth: number,
   type = 'image/png',
 ): Promise<{ blob: Blob; pages: number }> {
+  const { images, pages } = await renderPdfDataPages(data, [page], maxWidth, type)
+  const image = images.get(page)
+  if (!(image instanceof Blob)) throw image ?? new Error('Die Seite konnte nicht gerendert werden.')
+  return { blob: image, pages }
+}
+
+/**
+ * Mehrere Seiten einer Datei als Bilder – das PDF wird dabei nur einmal geöffnet. Je Seite das Bild oder der Fehler
+ * (z. B. eine Seite, die es nicht gibt).
+ */
+export async function renderPdfDataPages(
+  data: Uint8Array,
+  pageNumbers: number[],
+  maxWidth: number,
+  type = 'image/png',
+): Promise<{ images: Map<number, Blob | Error>; pages: number }> {
   const { pdfjs } = await loadPdfjs()
   const task = pdfjs.getDocument({ data, ...DOCUMENT_OPTIONS })
   try {
     const doc = await task.promise
-    if (page < 1 || page > doc.numPages) throw new Error(`Das PDF hat ${doc.numPages} ${doc.numPages === 1 ? 'Seite' : 'Seiten'}.`)
-    const p = await doc.getPage(page)
-    const base = p.getViewport({ scale: 1 })
-    const viewport = p.getViewport({ scale: Math.min(3, maxWidth / base.width) })
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(viewport.width)
-    canvas.height = Math.round(viewport.height)
-    await p.render({ canvas, viewport }).promise
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85))
-    if (!blob) throw new Error('Die Seite konnte nicht als Bild gespeichert werden.')
-    return { blob, pages: doc.numPages }
+    const images = new Map<number, Blob | Error>()
+    for (const page of pageNumbers) {
+      if (page < 1 || page > doc.numPages) {
+        images.set(page, new Error(`Das PDF hat ${doc.numPages} ${doc.numPages === 1 ? 'Seite' : 'Seiten'}.`))
+        continue
+      }
+      const p = await doc.getPage(page)
+      const base = p.getViewport({ scale: 1 })
+      const viewport = p.getViewport({ scale: Math.min(3, maxWidth / base.width) })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(viewport.width)
+      canvas.height = Math.round(viewport.height)
+      await p.render({ canvas, viewport }).promise
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85))
+      releaseCanvas(canvas)
+      images.set(page, blob ?? new Error('Die Seite konnte nicht als Bild gespeichert werden.'))
+    }
+    return { images, pages: doc.numPages }
   } finally {
     void task.destroy()
   }

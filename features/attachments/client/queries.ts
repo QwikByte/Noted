@@ -5,11 +5,14 @@ import type { Attachment, FileEntry } from '../types'
 
 export const attachmentsKey = ['attachments'] as const
 
+/** Abfrage der Dateien – auch für `queryClient.fetchQuery` außerhalb von Komponenten (z. B. für Seitenbilder) */
+export const attachmentsQuery = {
+  queryKey: attachmentsKey,
+  queryFn: () => api<{ attachments: Attachment[] }>('/api/attachments').then((r) => r.attachments),
+}
+
 export function useAttachments() {
-  return useQuery({
-    queryKey: attachmentsKey,
-    queryFn: () => api<{ attachments: Attachment[] }>('/api/attachments').then((r) => r.attachments),
-  })
+  return useQuery(attachmentsQuery)
 }
 
 /** Dateien samt den Notizen, die sie einbetten – für den Bereich „Dateien“ (fällt unter attachmentsKey) */

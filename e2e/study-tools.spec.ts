@@ -1474,6 +1474,52 @@ test('PDF-Rückverweise: Notizen zur offenen Seite und zum ganzen PDF, ein Klick
     .toContain('![[Nachtrag Rückverweis.pdf]]')
 })
 
+test('PDF-Seite als Bild in der Notiz: Breite, fehlende Seite bleibt Karte, im Druck – ein Klick öffnet den Viewer', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const pdf = makePdf([['Titelseite'], ['Abbildung zwei'], ['Kreisprozess drei']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Skript Seitenbild.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const content = [
+    '![[Skript Seitenbild.pdf#page=2]]',
+    '![[Skript Seitenbild.pdf#page=3|300]]',
+    '![[Skript Seitenbild.pdf#page=9]]',
+    '![[Skript Seitenbild.pdf]]',
+  ].join('\n\n')
+  const note = await post(page, '/api/notes', { title: 'Seitenbilder', content, folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  const images = page.locator('.markdown-body a.embed-pdf-page img')
+  await expect(images).toHaveCount(2, { timeout: 15_000 })
+  await expect(images.first()).toHaveAttribute('alt', 'Skript Seitenbild.pdf, Seite 2')
+  expect(Math.round((await images.nth(1).boundingBox())!.width)).toBe(300)
+  // Keine solche Seite: Die Karte bleibt; ohne Seite sieht die Einbettung aus wie bisher
+  await expect(page.locator('.markdown-body a.embed-pdf-page[data-page="9"]')).toHaveText('Skript Seitenbild.pdf · Seite 9')
+  await expect(page.locator('.markdown-body a.embed-pdf:not(.embed-pdf-page)')).toHaveText('Skript Seitenbild.pdf')
+  await shot(page, '97-pdf-page-images')
+
+  // Im Druck sind die Bilder da, sobald gedruckt werden kann
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Drucken …' }).click()
+  const view = page.getByTestId('print-view')
+  await expect(view.getByRole('button', { name: 'Drucken', exact: true })).toBeEnabled({ timeout: 15_000 })
+  await expect(page.getByTestId('print-sheet').locator('a.embed-pdf-page img')).toHaveCount(2)
+  await page.keyboard.press('Escape')
+  await expect(view).toHaveCount(0)
+
+  // Ein Klick auf das Bild öffnet den Viewer auf der Seite
+  await images.first().click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(panel.getByLabel('Seite', { exact: true })).toHaveValue('2')
+})
+
 test('FSRS-Parameter aus dem Lernverlauf optimieren und zurücksetzen', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'FSRS-Optimierung', scheduler: 'fsrs' }, 'deck')

@@ -738,6 +738,23 @@ html.dragging * {
 .markdown-body .embed-pdf .embed-file-icon::before {
   content: '📄';
 }
+/* Eingebettete PDF-Seite als Bild (![[Skript.pdf#page=3]]) – ein Klick öffnet weiter den Viewer */
+.markdown-body .embed-pdf-page-image {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.markdown-body .embed-pdf-page-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
 .markdown-body .embed-note-label {
   font-family: var(--font-sans);
   font-size: 0.8em;

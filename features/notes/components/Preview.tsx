@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { QueryClientContext } from '@tanstack/react-query'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
 import type { ResolvedNote } from '@/shared/markdown/syntax'
@@ -8,6 +9,8 @@ import { isDarkMode } from '@/shared/client/prefs'
 import { Properties } from './Properties'
 import { cn } from '@/shared/ui/cn'
 import { EmbedContext, MAX_EMBED_DEPTH, MAX_EMBEDS } from '../client/embeds'
+import { attachmentsQuery } from '@/features/attachments/client/queries'
+import { renderPdfPageImages } from '@/features/attachments/client/preview'
 
 let mermaidCounter = 0
 /**
@@ -176,20 +179,27 @@ export function Preview({
   // Nacheinander rendern: Läuft der Effekt doppelt (Strict Mode), meldet nur der noch gültige Durchlauf – und erst,
   // wenn auch der vorige fertig ist
   const queue = useRef<Promise<void>>(Promise.resolve())
+  // Seitenbilder eingebetteter PDFs brauchen die Dateiliste – in geteilten Notizen (ohne Anmeldung) bleibt die Karte
+  const queryClient = useContext(QueryClientContext)
+  const pdfPages = !plainNoteLinks && queryClient ? queryClient : null
   useEffect(() => {
     const root = ref.current
     if (!root) return
     let valid = true
     // Die Einbettungen dieses Inhalts sind schon erfasst (Layout-Effekt oben)
     const embedsReady = embedsSettled.current?.ready ?? Promise.resolve()
-    queue.current = queue.current.then(() => renderMermaid(root)).catch(() => {})
+    const pages = pdfPages ? renderPdfPageImages(root, () => pdfPages.ensureQueryData(attachmentsQuery)).catch(() => {}) : null
+    queue.current = queue.current
+      .then(() => renderMermaid(root))
+      .then(() => pages ?? undefined)
+      .catch(() => {})
     void Promise.all([queue.current, embedsReady]).then(() => {
       if (valid) latestOnRendered.current?.()
     })
     return () => {
       valid = false
     }
-  }, [rendered.html])
+  }, [rendered.html, pdfPages])
 
   function onClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement
