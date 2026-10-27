@@ -73,15 +73,12 @@ describe('Datenbank', () => {
     db.close()
   })
 
-  it('Optionen der Stapel (Migration 4): vorhandene Stapel planen wie bisher, Tagesbeginn je Konto', () => {
-    const db = new Database(':memory:')
-    db.pragma('foreign_keys = ON')
-    for (const sql of migrations.slice(0, 3)) db.exec(sql)
+  it('begrenzt die Optionen der Stapel und den Tagesbeginn je Konto', () => {
+    const db = memoryDb()
     db.exec(`
       INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
       INSERT INTO decks (id, user_id, name, created_at, updated_at) VALUES ('d', 1, 'Analysis', 0, 0);
     `)
-    db.exec(migrations[3])
     expect(db.prepare("SELECT learning_steps, relearning_steps, review_per_day, leech_lapses, leech_action FROM decks WHERE id = 'd'").get()).toEqual({
       learning_steps: '1 10',
       relearning_steps: '10',
@@ -98,19 +95,12 @@ describe('Datenbank', () => {
     db.close()
   })
 
-  it('Bereiche in PDFs (Migration 3): vorhandene Anmerkungen sind Textmarkierungen, andere Arten gibt es nicht', () => {
-    const db = new Database(':memory:')
-    db.pragma('foreign_keys = ON')
-    db.exec(migrations[0])
-    db.exec(migrations[1])
+  it('kennt in PDFs nur Textmarkierungen und Bereiche', () => {
+    const db = memoryDb()
     db.exec(`
       INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
       INSERT INTO attachments (id, user_id, filename, mime, size, created_at) VALUES ('f', 1, 'Skript.pdf', 'application/pdf', 1, 0);
-      INSERT INTO pdf_annotations (id, user_id, attachment_id, page, rects, quote, created_at, updated_at)
-        VALUES ('alt', 1, 'f', 1, '[[0,0,1,1]]', 'Zitat', 0, 0);
     `)
-    db.exec(migrations[2])
-    expect(db.prepare("SELECT kind FROM pdf_annotations WHERE id = 'alt'").pluck().get()).toBe('text')
     const insert = (kind: string) =>
       db
         .prepare(
@@ -118,25 +108,24 @@ describe('Datenbank', () => {
            VALUES (?, 1, 'f', ?, 1, '[[0,0,1,1]]', '', 0, 0)`,
         )
         .run(kind, kind)
+    expect(() => insert('text')).not.toThrow()
     expect(() => insert('area')).not.toThrow()
     expect(() => insert('kreis')).toThrow(/CHECK constraint/)
     db.close()
   })
 
-  it('Links mit Ordnerpfad (Migration 2): vorhandene Links bleiben, ihr Ordner wird beim Start nachgetragen', () => {
-    const db = new Database(':memory:')
-    db.pragma('foreign_keys = ON')
-    db.exec(migrations[0])
+  it('merkt sich je Wikilink den Ordnerteil und löscht Links mit der Notiz', () => {
+    const db = memoryDb()
     db.exec(`
       INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (1, 'a', 'x', 0, 0);
       INSERT INTO notes (id, user_id, title, content, created_at, updated_at) VALUES ('n', 1, 'Plan', '[[Analysis/Übung 1]]', 0, 0);
       INSERT INTO note_links (note_id, target) VALUES ('n', 'übung 1');
+      INSERT INTO note_links (note_id, target, path) VALUES ('n', 'übung 1', 'analysis');
     `)
-    db.exec(migrations[1])
-    expect(db.prepare('SELECT note_id, target, path FROM note_links').all()).toEqual([{ note_id: 'n', target: 'übung 1', path: '' }])
-    expect(db.prepare("SELECT value FROM settings WHERE key = 'reindex_link_paths'").pluck().get()).toBe('1')
-    // Derselbe Titel mit verschiedenen Ordnern in einer Notiz
-    db.exec(`INSERT INTO note_links (note_id, target, path) VALUES ('n', 'übung 1', 'analysis')`)
+    expect(db.prepare('SELECT target, path FROM note_links ORDER BY path').all()).toEqual([
+      { target: 'übung 1', path: '' },
+      { target: 'übung 1', path: 'analysis' },
+    ])
     db.exec(`DELETE FROM notes WHERE id = 'n'`)
     expect(db.prepare('SELECT COUNT(*) FROM note_links').pluck().get()).toBe(0)
     db.close()

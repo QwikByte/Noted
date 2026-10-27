@@ -16,7 +16,7 @@ export type EditorLinkActions = {
 
 const MAC = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
 /** Strg bzw. ⌘ auf dem Mac – dort ist Strg+Klick der Rechtsklick */
-export const isLinkModifier = (e: MouseEvent | KeyboardEvent) => (MAC ? e.metaKey : e.ctrlKey)
+const isLinkModifier = (e: MouseEvent | KeyboardEvent) => (MAC ? e.metaKey : e.ctrlKey)
 /** „Strg-Klick“ bzw. „⌘-Klick“ für Hinweise */
 export const LINK_CLICK = MAC ? '⌘-Klick' : 'Strg-Klick'
 

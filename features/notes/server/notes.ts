@@ -286,24 +286,6 @@ function indexLinks(db: Database.Database, noteId: string, text: string) {
 }
 
 /**
- * Einmal nach dem Update auf Links mit Ordnerpfad (Migration 2): Notizen mit [[Ordner/…]] neu einlesen, damit auch
- * vorhandene Links ihren Ordner kennen. Läuft beim Serverstart, solange der Merker der Migration steht.
- */
-export function reindexLinkPaths(): number {
-  const db = getDb()
-  if (!db.prepare("SELECT 1 FROM settings WHERE key = 'reindex_link_paths'").get()) return 0
-  // Nur Notizen, in denen ein Link mit „/“ stehen kann; Tresor-Notizen haben keine Links auf dem Server
-  const rows = db
-    .prepare("SELECT id, format, content FROM notes WHERE vault = 0 AND content LIKE '%[[%/%'")
-    .all() as Pick<NoteRow, 'id' | 'format' | 'content'>[]
-  db.transaction(() => {
-    for (const r of rows) indexLinks(db, r.id, noteText(r.format, r.content))
-    db.prepare("DELETE FROM settings WHERE key = 'reindex_link_paths'").run()
-  })()
-  return rows.length
-}
-
-/**
  * Notizen mit dem Titel-Schlüssel `key` (linkKey) und ihr Ordnerpfad – damit ein Link nur für die Notizen zählt, die
  * er meint (linkTargets). Verglichen wird in JavaScript wie bei linkKey: SQLites lower() schreibt nur A–Z klein,
  * „Übungen“ bliebe sonst unerkannt.

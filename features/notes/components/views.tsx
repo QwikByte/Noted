@@ -35,6 +35,7 @@ import { NoteSelectionContext, useNoteSelectionContext } from '../client/selecti
 import { useListSelection } from '@/shared/client/list-selection'
 import { descendantFolderIds, folderPath, sortByName, sortNotes } from '../tree'
 import { formatRelative } from '@/shared/lib/format'
+import { escapeHtml } from '@/shared/lib/html'
 import { parseSearch, positiveQuery } from '@/shared/lib/search-query'
 import type { FileSearchResult } from '@/features/attachments/types'
 import type { Folder, NoteSummary, SearchResponse, SearchResult } from '../types'
@@ -503,8 +504,6 @@ export function TagView({ tag }: { tag: string }) {
     </Page>
   )
 }
-
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 function snippetHtml(snippet: string) {
   return escapeHtml(snippet).replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>')

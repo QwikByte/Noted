@@ -12,6 +12,11 @@ describe('Anki-Felder umwandeln', () => {
     expect(ankiFieldToMarkdown('H<sub>2</sub>O <span style="color:red">rot</span>', media)).toBe('H<sub>2</sub>O rot')
   })
 
+  it('lässt aus ineinander verschachtelten Tags kein neues Tag entstehen', () => {
+    // Nach dem Entfernen von <span> stünde dort <submit> – ein Tag, das erst im zweiten Durchgang wegfällt
+    expect(ankiFieldToMarkdown('<sub<span>mit>x', media)).toBe('x')
+  })
+
   it('wandelt Lücken, MathJax und LaTeX um', () => {
     expect(ankiFieldToMarkdown('{{c1::Paris}} ist die Hauptstadt von {{c2::Frankreich::Land}}', media)).toBe(
       '==Paris== ist die Hauptstadt von ==Frankreich==',

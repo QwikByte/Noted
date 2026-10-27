@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import DOMPurify from 'dompurify'
 import { QueryClientContext } from '@tanstack/react-query'
 import { renderMarkdown } from '@/shared/markdown/render'
 import { sanitize } from '@/shared/markdown/sanitize'
@@ -22,6 +23,13 @@ const MERMAID_CACHE_SIZE = 50
 
 const mermaidSource = (block: HTMLElement) => block.querySelector('.mermaid-source')?.textContent ?? ''
 
+/**
+ * Das von Mermaid gelieferte SVG stammt aus Nutzertext – vor dem Einfügen bereinigen. Beschriftungen liegen als HTML
+ * in <foreignObject>, das DOMPurify nur als Integrationspunkt zulässt.
+ */
+const sanitizeDiagram = (svg: string) =>
+  DOMPurify.sanitize(svg, { ADD_TAGS: ['foreignObject'], HTML_INTEGRATION_POINTS: { foreignobject: true } })
+
 async function renderMermaid(root: HTMLElement) {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>('.mermaid-block:not([data-rendered])'))
   if (blocks.length === 0) return
@@ -41,7 +49,7 @@ async function renderMermaid(root: HTMLElement) {
     block.setAttribute('data-rendered', '1')
     try {
       const source = mermaidSource(block)
-      const { svg } = await mermaid.render(`mermaid-${++mermaidCounter}`, source)
+      const svg = sanitizeDiagram((await mermaid.render(`mermaid-${++mermaidCounter}`, source)).svg)
       block.innerHTML = svg
       mermaidCache.set(`${theme}\u0000${source}`, svg)
       // Das älteste zuerst vergessen
