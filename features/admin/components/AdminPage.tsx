@@ -782,6 +782,8 @@ const EVENTS: Record<string, { label: string; tone: 'neutral' | 'success' | 'war
   vault_keys_changed: { label: 'Tresor-Schlüssel geändert', tone: 'accent' },
   vault_deleted: { label: 'Tresor gelöscht', tone: 'danger' },
   vault_note_moved: { label: 'Notiz in/aus Tresor verschoben', tone: 'neutral' },
+  ai_key_saved: { label: 'KI-Schlüssel hinterlegt', tone: 'accent' },
+  ai_key_removed: { label: 'KI-Schlüssel entfernt', tone: 'neutral' },
 }
 
 function AuditTab() {

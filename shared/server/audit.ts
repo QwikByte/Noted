@@ -26,6 +26,8 @@ type AuditEvent =
   | 'vault_keys_changed'
   | 'vault_deleted'
   | 'vault_note_moved'
+  | 'ai_key_saved'
+  | 'ai_key_removed'
 
 type AuditEntry = {
   event: AuditEvent

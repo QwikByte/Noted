@@ -104,10 +104,17 @@ Noted ist eine selbst gehostete Web-App (PWA) mit Benutzerverwaltung, Zwei-Fakto
 - **Anki-Import** (Karteikarten → ⋮ → **Anki-Deck importieren**): fertige Decks als `.apkg` (auch im neuen Format ab Anki 2.1.50 und als `.colpkg`) übernehmen – Stapel und Unterstapel, Grund-, beidseitige und Lückentext-Karten, Formeln (MathJax), Bilder und Töne (unter **Dateien**). Auf Wunsch kommen Fälligkeiten, ausgesetzte Karten und alle bisherigen Bewertungen mit. Karten, die es im Stapel schon gibt, werden nicht doppelt angelegt.
 - **Lernstatistik** (Karteikarten → **Statistik**): Lerntage als Heatmap über das letzte Jahr, Serie (Tage am Stück), Bewertungen heute, Trefferquote und Zeit pro Karte (30 Tage, auch je Stapel), eine Vorschau, wie viele Karten in den nächsten 7 bzw. 30 Tagen fällig werden (vor einer Klausur mit den vorgezogenen Wiederholungen), und die Lernzeit je Fach aus dem Fokus-Timer, außerdem die FSRS-Parameter (optimieren und wie gut sie vorhersagen). Grundlage ist ein Protokoll aller Bewertungen – auch offline gesammelte werden beim Hochladen mitprotokolliert. Über ⋮ lässt es sich als CSV herunterladen (für Excel oder LibreOffice).
 - **Mit Notizen verknüpft:** Markierten Text im Editor (Knopf in der Werkzeugleiste) oder im PDF als Karte übernehmen, oder über **⋮ → Karteikarten aus Notiz** Karten automatisch erkennen lassen: `Frage::Antwort`, `Frage:::Antwort` (beidseitig), mehrzeilig mit `?`, Multiple Choice als Aufgabenliste nach dem `?`, Frage-Callouts (`> [!question] …`), Definitionen (`> [!info] Begriff`), fett gedruckte Begriffe, Lückentexte (Absätze mit `{{Lücke}}`, auf Wunsch auch mit `==Markierungen==`) und Überschriften. Die Karten merken sich ihre Notiz; im Lesemodus siehst du unter der Notiz, wie viele Karten aus ihr stammen, und kannst sie direkt lernen. Wird eine Notiz endgültig gelöscht, bleiben ihre Karten im Stapel.
+- **Karten von Claude vorschlagen lassen** (optional, mit eigenem Anthropic-API-Schlüssel – siehe **KI mit Claude** unten): In **Karteikarten aus Notiz** liest Claude die Notiz und schlägt Grund-, beidseitige, Lückentext- und Multiple-Choice-Karten vor – auch für Notizen ganz ohne Karten-Syntax. Optional mit Wünschen („nur Definitionen“, „auf Englisch“). Die Vorschläge erscheinen als eigene Gruppe **Von Claude vorgeschlagen** und sind ausgewählt; was es im Stapel oder in der Notiz schon gibt, ist als „Schon vorhanden“ markiert und nicht ausgewählt. Gespeichert wird erst mit **Karten erstellen** – die Karten merken sich ihre Notiz wie die erkannten. Claude bekommt die Vorderseiten der Karten mit, die schon aus der Notiz stammen, und schlägt sie nicht noch einmal vor. **Neu vorschlagen** ersetzt die bisherigen Vorschläge, **Abbrechen** oder das Schließen des Dialogs bricht die Anfrage ab.
 - **Notiz und Karten abgleichen:** Ändert sich die Notiz, zeigt **Karteikarten aus Notiz** (oder „N Karten veraltet – abgleichen“ unter der Notiz im Lesemodus) die betroffenen Karten: Unter **Geändert** stehen bisherige Fassung und Fassung aus der Notiz nebeneinander – **Übernehmen** aktualisiert die Karte, der Lernstand bleibt (bei Lückentexten wandert er mit seiner Lücke). Bei gleicher Frage ist die Karte vorausgewählt; eine umformulierte, nur ähnliche Frage ist ein Vorschlag statt einer Dublette. Unter **Nicht mehr in der Notiz** stehen Karten der Notiz ohne Gegenstück – etwa nach dem Löschen eines Abschnitts; sie lassen sich aussetzen, löschen oder von der Notiz lösen. Zugeordnet wird über den Inhalt: Auch von Hand angelegte Karten der Notiz erscheinen dort – sie einfach behalten.
 - Lernen geht auch offline: Bewertungen werden auf dem Gerät gesammelt und später übertragen. Karten anlegen und bearbeiten braucht eine Verbindung.
 - Tastatur beim Lernen: `Leertaste`/`Enter` deckt auf bzw. wählt *Gut* (nach einer falsch eingetippten Antwort *Nochmal*), `1`–`4` bewerten, bei Multiple Choice wählen `1`–`9` die Antworten, `Z` oder `Strg/⌘ + Z` nimmt die letzte Bewertung zurück. Beim Abfragen einer Notiz: `Leertaste`/`Enter` deckt auf bzw. „gewusst“, `1` „nicht gewusst“.
 - **Wischen am Handy:** Nach dem Aufdecken bewertet ein Wisch auf der Karte – nach links *Nochmal*, nach rechts *Gut* (nach einer eingetippten Antwort die vorausgewählte Bewertung, nach einer falschen Multiple-Choice-Antwort beide *Weiter*); beim Üben *Nicht gewusst* bzw. *Gewusst*. Die Karte folgt dem Finger und zeigt, was das Loslassen auslöst; ein kurzer Wisch schnappt zurück, senkrechtes Scrollen und Wischen in breiten Formeln oder Tabellen lösen nichts aus. Abschalten unter **Einstellungen → Darstellung**. Maus und Stift ändern nichts.
+
+**KI mit Claude (optional)**
+- Jedes Konto kann unter **Einstellungen → KI (Claude)** einen eigenen **API-Schlüssel von Anthropic** hinterlegen – erstellt in der [Claude Console](https://platform.claude.com/settings/keys) unter „API keys“, dabei einen Workspace auswählen. Ohne Schlüssel ist nichts davon zu sehen außer einem Hinweis im Dialog **Karteikarten aus Notiz**. Die Kosten rechnet Anthropic direkt mit dem Konto des Schlüssels ab; Noted setzt kein eigenes Limit.
+- **Modell wählbar:** Claude Opus 5.5 (Standard), Sonnet 5.5 (schneller, günstiger), Haiku 5.5 (am günstigsten) oder Fable 5.1 (das stärkste, deutlich teurer). Beim Speichern fragt der Server bei Anthropic nach, ob Schlüssel und Modell zusammen funktionieren – das kostet nichts. Lehnt ein Modell eine Anfrage aus Sicherheitsgründen ab (das kommt selten auch bei harmlosen Themen wie Biologie vor), versucht Anthropic sie automatisch mit einem anderen Modell (außer bei Haiku).
+- **Datenschutz:** Beim Vorschlagen gehen Titel und Text der Notiz (ohne Frontmatter) und die Vorderseiten ihrer vorhandenen Karten an Anthropic – nur dann und nur diese eine Notiz, höchstens 200 000 Zeichen. Notizen aus dem **Tresor** gehen nie an Claude; auch der Server lehnt sie ab. Der Schlüssel liegt mit `SECRET_KEY` verschlüsselt in der Datenbank (wie die MFA-Geheimnisse), geht nie zurück an den Browser – angezeigt werden nur seine letzten vier Zeichen – und gehört nicht zum Export. Hinterlegen und Entfernen stehen im Sicherheitsprotokoll. Die Anfragen stellt der Server; der Browser spricht nie selbst mit Anthropic, die Content-Security-Policy bleibt unverändert.
+- Offline geht das Vorschlagen nicht; Lernen und alles andere schon.
 
 **Startseite und Kalender**
 - Die Startseite zeigt auf einen Blick deine Termine von heute und den nächsten Tagen, die fälligen Karteikarten je Stapel (ein Klick startet das Lernen) und die nächsten Klausuren mit Countdown. Darunter stehen wie gewohnt Vorlagen, angeheftete und zuletzt bearbeitete Notizen.
@@ -173,7 +180,7 @@ Notizen im Tresor werden in deinem Browser verschlüsselt, bevor sie den Server 
   - Sicherheitsprotokoll
 - Jeder sieht nur die eigenen Notizen; auch der Admin kann fremde Notizen in der Oberfläche nicht öffnen. Technisch könnte ein Admin Passwort und MFA eines Kontos zurücksetzen und sich damit anmelden. Das wird protokolliert, und der Betroffene merkt es, weil sein Passwort danach nicht mehr funktioniert. Für den **Tresor** gilt das nicht: Ohne Tresor-Passwort oder Wiederherstellungsschlüssel sieht auch dann niemand mehr als „Tresor – gesperrt“ (löschen ließe er sich, wie das ganze Konto).
 - Weitere Schutzmaßnahmen:
-  - Argon2id für Passwörter, verschlüsselt gespeicherte MFA-Schlüssel und Replay-Schutz für TOTP-Codes
+  - Argon2id für Passwörter, verschlüsselt gespeicherte MFA- und KI-Schlüssel und Replay-Schutz für TOTP-Codes
   - Begrenzte Anmeldeversuche: nach 10 falschen Passwörtern wird die jeweilige IP-Adresse für dieses Konto 15 Minuten gesperrt (Fremde können dich so nicht aussperren), nach 50 Fehlversuchen insgesamt das ganze Konto
   - Nach 5 falschen MFA-Codes eine Sperre, die mit jedem weiteren Fehlversuch länger wird (bis 24 h)
   - Größenlimits für Anfragen, Uploads und ZIP-Importe
@@ -279,7 +286,7 @@ Alle Variablen sind optional (siehe `.env.example`):
 | `ADMIN_USERNAME` | `admin` | Benutzername des ersten Admins (nur beim allerersten Start) |
 | `ADMIN_PASSWORD` | – | Passwort des ersten Admins; ohne Angabe wird eins generiert und im Log ausgegeben |
 | `APP_URL` | – | Öffentliche Adresse, z. B. `https://notizen.example.com` |
-| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse (sonst `/data/secret.key`) |
+| `SECRET_KEY` | automatisch | Schlüssel für die Verschlüsselung der MFA-Geheimnisse und KI-Schlüssel (sonst `/data/secret.key`) |
 | `APP_NAME` | `Noted` | Name in der Authenticator-App |
 | `COOKIE_SECURE` | `auto` | Cookie nur über HTTPS senden (`auto` erkennt das über `X-Forwarded-Proto`) |
 | `EXTERNAL_IMAGES` | `true` | Bilder von fremden Servern in Notizen anzeigen; `false` blockiert sie (ein externes Bild verrät dem fremden Server beim Öffnen die IP-Adresse) |
@@ -414,7 +421,7 @@ npm run dev            # http://localhost:3000 – Admin-Passwort steht in der K
 
 **Technik:**
 - Frontend: Next.js 16 (App Router), React 19, Tailwind CSS 4, TanStack Query, CodeMirror 6, TipTap (formatierter Text), React Flow (Mindmap, Canvas und Graph), markdown-it, KaTeX, Mermaid, pdf.js
-- Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), pdf.js (Text aus PDFs für die Suche), @node-rs/argon2, otpauth
+- Backend: SQLite (better-sqlite3, FTS5-Volltextsuche), pdf.js (Text aus PDFs für die Suche), @node-rs/argon2, otpauth, Anthropic-SDK (Claude, optional)
 
 **Aufbau** – nach Features gegliedert (Regeln für Beiträge stehen in [`AGENTS.md`](AGENTS.md)):
 
@@ -427,6 +434,7 @@ features/               Ein Ordner je fachlichem Bereich, jeweils mit components
   canvas/               Canvas im Format JSON Canvas: Lesen/Schreiben, Pfade für Export, Editor mit Karten und Pfeilen
   attachments/          Dateien: Upload, Bereich „Dateien“ (Ordner der einbettenden Notizen), Auslieferung, Volltextsuche
   flashcards/           Karteikarten: Stapel, Karteneditor, Lernen/Üben, Wiederholungsplan (SM-2, FSRS samt Optimierung der Parameter), Klausurmodus, Karten ↔ Markdown, Stapel als Datei, Notiz abfragen
+  ai/                   KI mit Claude: eigener API-Schlüssel je Konto (verschlüsselt), Modellwahl, Karteikarten vorschlagen lassen
   glossary/             Glossar und Formelsammlung aus den Notizen
   graph/                Graph der Wikilinks: Daten, kräftebasierte Anordnung, Gesamtansicht und lokaler Graph
   sharing/              Notizen per Link teilen: Freigaben, öffentliche Leseansicht (/s/…), Verwaltung

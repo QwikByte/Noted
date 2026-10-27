@@ -12,12 +12,17 @@ import { cn } from '@/shared/ui/cn'
 import { CARD_TYPE_LABELS, createCards, createDeck, deleteCard, updateCard, useFlashcards } from '../client/flashcards'
 import { usePref } from '@/shared/client/prefs'
 import { errorMessage } from '@/shared/client/api'
+import { AiCardsPrompt } from '@/features/ai/components/AiCardsPrompt'
+import type { SuggestedCard } from '@/features/ai/types'
 import { EXPLICIT_SOURCES, SOURCE_LABELS, parseCardsFromNote, type CandidateSource } from '../card-markdown'
 import { changedParts, noteCards, normFront as norm, syncCards } from '../note-sync'
 import type { Card, CardOption, CardType } from '../types'
 
 const NEW_DECK = '__new__'
-const SOURCES: CandidateSource[] = ['syntax', 'question', 'cloze', 'definition', 'bold', 'highlight', 'heading']
+/** Herkunft einer Karte im Dialog: aus der Notiz erkannt oder von Claude vorgeschlagen */
+type Source = CandidateSource | 'ai'
+const SOURCES: Source[] = ['ai', 'syntax', 'question', 'cloze', 'definition', 'bold', 'highlight', 'heading']
+const LABELS: Record<Source, string> = { ...SOURCE_LABELS, ai: 'Von Claude vorgeschlagen' }
 
 /** Was mit einer Karte geschieht, die es in der Notiz nicht mehr gibt */
 type OrphanAction = 'keep' | 'suspend' | 'unlink' | 'delete'
@@ -72,6 +77,13 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
   const decks = useMemo(() => data?.decks ?? [], [data])
   const [lastDeck, setLastDeck] = usePref<string>('noted:lastDeck', '')
   const candidates = useMemo(() => parseCardsFromNote(note.content), [note.content])
+  // Vorschläge von Claude hinten anhängen – so behalten die erkannten Karten ihre Indizes für den Abgleich
+  const [aiCards, setAiCards] = useState<SuggestedCard[]>([])
+  const [aiDone, setAiDone] = useState(false)
+  const entries = useMemo(
+    () => [...candidates, ...aiCards.map((c) => ({ ...c, source: 'ai' as Source, line: -1 }))],
+    [candidates, aiCards],
+  )
   // Karten, die schon aus dieser Notiz entstanden sind: geändert oder nicht mehr in der Notiz?
   const sync = useMemo(() => syncCards(candidates, noteCards(data?.cards ?? [], note.id)), [candidates, data, note.id])
   const changedIndex = useMemo(() => new Set(sync.changed.map((c) => c.candidate)), [sync])
@@ -94,18 +106,26 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
     for (const c of data?.cards ?? []) if (c.deckId === deckId || c.noteId === note.id) set.add(norm(c.front))
     return set
   }, [data, deckId, note.id])
-  const isDuplicate = (i: number) => existing.has(norm(candidates[i].front))
+  const parsedFronts = useMemo(() => new Set(candidates.map((c) => norm(c.front))), [candidates])
+  // Ein Vorschlag von Claude ist auch doppelt, wenn die Karte schon in der Notiz erkannt wurde
+  const duplicates = useMemo(() => {
+    const dup = (front: string, i: number) =>
+      existing.has(norm(front)) || (i >= candidates.length && parsedFronts.has(norm(front)))
+    return new Set(entries.map((c, i) => (dup(c.front, i) ? i : -1)).filter((i) => i >= 0))
+  }, [entries, candidates, existing, parsedFronts])
+  const isDuplicate = (i: number) => duplicates.has(i)
 
   const [selected, setSelected] = useState<Set<number> | null>(null)
   // Vorauswahl: eindeutige Karten – oder die übergebenen Abschnitte (z. B. die beim Abfragen nicht gewussten)
   const preselect = useMemo(() => (note.preselect ? new Set(note.preselect) : null), [note.preselect])
   const effective = useMemo(() => {
     if (selected) return selected
-    const wanted = (c: (typeof candidates)[number]) =>
-      preselect ? c.source === 'heading' && preselect.has(c.line) : EXPLICIT_SOURCES.includes(c.source)
-    const fresh = (c: (typeof candidates)[number], i: number) => !existing.has(norm(c.front)) && !changedIndex.has(i)
-    return new Set(candidates.map((c, i) => (wanted(c) && fresh(c, i) ? i : -1)).filter((i) => i >= 0))
-  }, [selected, candidates, existing, preselect, changedIndex])
+    const wanted = (c: (typeof entries)[number]) =>
+      c.source === 'ai' ||
+      (preselect ? c.source === 'heading' && preselect.has(c.line) : EXPLICIT_SOURCES.includes(c.source))
+    const fresh = (i: number) => !duplicates.has(i) && !changedIndex.has(i)
+    return new Set(entries.map((c, i) => (wanted(c) && fresh(i) ? i : -1)).filter((i) => i >= 0))
+  }, [selected, entries, duplicates, preselect, changedIndex])
   // Aktualisieren: vorausgewählt nur bei gleicher Vorderseite – eine ähnliche ist nur ein Vorschlag
   const [updates, setUpdates] = useState<Set<number> | null>(null)
   const effectiveUpdates = useMemo(
@@ -116,11 +136,29 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
   const orphanAction = (card: Card) => orphanActions[card.id] ?? 'keep'
   const orphanChoices = sync.orphaned.filter((c) => orphanAction(c) !== 'keep')
   const total = effective.size + effectiveUpdates.size + orphanChoices.length
-  const [open, setOpen] = useState<Set<CandidateSource>>(() => new Set(note.preselect ? ['heading'] : EXPLICIT_SOURCES))
+  const [open, setOpen] = useState<Set<Source>>(
+    () => new Set<Source>(['ai', ...(note.preselect ? ['heading' as const] : EXPLICIT_SOURCES)]),
+  )
   const [help, setHelp] = useState(candidates.length === 0)
   const [changedOpen, setChangedOpen] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Für Claude: die Vorderseiten der Karten, die schon aus dieser Notiz stammen
+  const linkedFronts = useMemo(() => noteCards(data?.cards ?? [], note.id).map((c) => c.front), [data, note.id])
+
+  /** Neue Vorschläge ersetzen die bisherigen – ausgewählt sind die, die es noch nicht gibt */
+  function receiveSuggestions(cards: SuggestedCard[]) {
+    setAiCards(cards)
+    setAiDone(true)
+    if (!selected) return
+    const base = candidates.length
+    const next = new Set([...selected].filter((i) => i < base))
+    cards.forEach((c, k) => {
+      if (!existing.has(norm(c.front)) && !parsedFronts.has(norm(c.front))) next.add(base + k)
+    })
+    setSelected(next)
+  }
 
   const toggle = (indices: number[], on: boolean) => {
     const next = new Set(effective)
@@ -132,7 +170,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
   }
 
   async function submit() {
-    const chosen = [...effective].sort((a, b) => a - b).map((i) => candidates[i])
+    const chosen = [...effective].sort((a, b) => a - b).map((i) => entries[i])
     const changed = sync.changed.filter((c) => effectiveUpdates.has(c.candidate))
     if (total === 0) return setError('Wähle mindestens eine Karte aus.')
     if (chosen.length > 0 && deckId === NEW_DECK && !deckName.trim()) {
@@ -190,7 +228,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
 
   const groups = SOURCES.map((source) => ({
     source,
-    items: candidates.map((c, i) => ({ c, i })).filter(({ c, i }) => c.source === source && !changedIndex.has(i)),
+    items: entries.map((c, i) => ({ c, i })).filter(({ c, i }) => c.source === source && !changedIndex.has(i)),
   })).filter((g) => g.items.length > 0)
 
   return (
@@ -208,7 +246,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
             </p>
           ) : null}
           <Button onClick={onClose}>Abbrechen</Button>
-          {candidates.length > 0 || sync.orphaned.length > 0 ? (
+          {entries.length > 0 || sync.orphaned.length > 0 ? (
             <Button variant="primary" onClick={() => void submit()} loading={saving} disabled={total === 0} data-testid="create-from-note">
               {total === effective.size ? `${effective.size} ${effective.size === 1 ? 'Karte' : 'Karten'} erstellen` : 'Übernehmen'}
             </Button>
@@ -247,7 +285,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
               </Field>
             ) : null}
           </div>
-        ) : candidates.length === 0 ? (
+        ) : entries.length === 0 ? (
           <p className="rounded-xl bg-subtle px-4 py-3 text-sm">In dieser Notiz wurden keine Karten erkannt.</p>
         ) : null}
 
@@ -380,6 +418,8 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
           </section>
         ) : null}
 
+        <AiCardsPrompt note={note} existing={linkedFronts} suggested={aiDone} onCards={receiveSuggestions} />
+
         {groups.map(({ source, items }) => {
           const all = items.every(({ i }) => effective.has(i))
           const some = items.some(({ i }) => effective.has(i))
@@ -394,7 +434,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
                     if (el) el.indeterminate = some && !all
                   }}
                   onChange={(e) => toggle(items.map(({ i }) => i), e.target.checked)}
-                  aria-label={`${SOURCE_LABELS[source]} auswählen`}
+                  aria-label={`${LABELS[source]} auswählen`}
                   className="size-4 accent-[var(--accent)]"
                 />
                 <button
@@ -410,7 +450,7 @@ export function CardsFromNoteDialog({ note, onClose }: { note: CardsFromNoteInit
                   className="flex flex-1 items-center gap-1 text-left text-sm font-medium hover:underline"
                   aria-expanded={expanded}
                 >
-                  {SOURCE_LABELS[source]}
+                  {LABELS[source]}
                   <span className="text-faint">({items.length})</span>
                   <span className="ml-auto text-faint">{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</span>
                 </button>
