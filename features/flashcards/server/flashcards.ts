@@ -181,6 +181,18 @@ export function getFlashcardData(userId: number): FlashcardData {
   return { decks, cards, reviews, fsrs: getFsrsParams(userId), dayStartHour: getDayStartHour(userId) }
 }
 
+/** Karten bestimmter Stapel in ihrer Reihenfolge – fremde und unbekannte Stapel bleiben leer */
+export function listDeckCards(userId: number, deckIds: string[]): Card[] {
+  if (!deckIds.length) return []
+  return (
+    getDb()
+      .prepare(
+        `SELECT * FROM cards WHERE user_id = ? AND deck_id IN (${deckIds.map(() => '?').join(',')}) ORDER BY deck_id, position, created_at`,
+      )
+      .all(userId, ...deckIds) as CardRow[]
+  ).map(toCard)
+}
+
 // ---------------------------------------------------------------------------
 // Stapel
 // ---------------------------------------------------------------------------

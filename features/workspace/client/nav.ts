@@ -25,15 +25,19 @@ export type View =
   /** filter: eigene Übung (nur im Übungsmodus) – Problemkarten, schwerste oder heute vergessene */
   | { kind: 'study'; scope: StudyScope; mode: StudyMode; filter?: StudyFilter }
   | { kind: 'stats' }
-  /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten */
-  | { kind: 'quiz'; id: string }
+  /** Notiz abfragen: Überschriften als Fragen, Abschnitte als Antworten – `ai`: Claude stellt die Fragen (Tutor) */
+  | { kind: 'quiz'; id: string; ai?: boolean }
   /** Glossar und Formeln – aller Notizen oder eines Ordners samt Unterordnern */
   | { kind: 'glossary'; folder?: string }
   /** Graph der Wikilinks zwischen den Notizen */
   | { kind: 'graph' }
+  /** Probeklausur mit KI zu einer Klausur (Termin-ID) oder einem Stapel */
+  | { kind: 'mock-exam'; scope: MockExamScope }
 
 /** Was gelernt wird: alles, ein Stapel, die Karten einer Notiz oder die Stapel einer Klausur (Termin-ID) */
 export type StudyScope = 'all' | `deck:${string}` | `note:${string}` | `exam:${string}`
+/** Woraus eine Probeklausur entsteht: den Stapeln einer Klausur (Termin-ID) oder einem Stapel */
+export type MockExamScope = `exam:${string}` | `deck:${string}`
 /** learn: Lernmodus mit Wiederholungsplan · practice: Üben ohne Einfluss auf den Plan */
 export type StudyMode = 'learn' | 'practice'
 
@@ -57,8 +61,10 @@ export function viewFromParams(params: URLSearchParams): View {
       filter: mode === 'practice' && filter && STUDY_FILTERS.includes(filter) ? filter : undefined,
     }
   }
+  const mock = params.get('mock')
+  if (mock && /^(exam|deck):[\w-]+$/.test(mock)) return { kind: 'mock-exam', scope: mock as MockExamScope }
   const quiz = params.get('quiz')
-  if (quiz) return { kind: 'quiz', id: quiz }
+  if (quiz) return { kind: 'quiz', id: quiz, ai: params.get('ai') === '1' || undefined }
   const q = params.get('q')
   if (q !== null) return { kind: 'search', q, folder: params.get('in') || undefined }
   const v = params.get('v')
@@ -108,8 +114,10 @@ export function viewToUrl(view: View): string {
       return `/?d=${encodeURIComponent(view.id)}`
     case 'study':
       return `/?s=${encodeURIComponent(view.scope)}${view.mode === 'practice' ? `&m=practice${view.filter ? `&filter=${view.filter}` : ''}` : ''}`
+    case 'mock-exam':
+      return `/?mock=${encodeURIComponent(view.scope)}`
     case 'quiz':
-      return `/?quiz=${encodeURIComponent(view.id)}`
+      return `/?quiz=${encodeURIComponent(view.id)}${view.ai ? '&ai=1' : ''}`
     default:
       return '/'
   }

@@ -34,7 +34,10 @@ export type PdfMarkInput = { page: number; quote: string; comment: string; image
 export type CardSource =
   | { kind: 'note'; noteId: string; title: string; content: string }
   | { kind: 'pdf'; file: string; pages: PdfPageInput[]; marks: PdfMarkInput[] }
-  | { kind: 'card'; mode: 'improve' | 'split'; card: CardDraft }
+  | { kind: 'card'; mode: CardMode; card: CardDraft }
+
+/** `leech`: eine Problemkarte (oft vergessen) leichter merkbar machen – überarbeiten oder in wenige Karten teilen */
+export type CardMode = 'improve' | 'split' | 'leech'
 
 /** `existing`: Vorderseiten vorhandener Karten, die Claude nicht noch einmal vorschlagen soll */
 export type CardsRequest = { source: CardSource; existing?: string[]; wishes?: string }
@@ -71,3 +74,34 @@ export type AssistEvent =
 
 /** Vorschlag für Titel und Tags einer Notiz – `title` null, wenn Claude keinen brauchbaren geliefert hat */
 export type MetaSuggestion = { title: string | null; tags: string[] }
+
+/** Urteil über eine Antwort: ganz, teilweise oder nicht richtig */
+export type GradeVerdict = 'correct' | 'partial' | 'wrong'
+
+/**
+ * Antwort auf eine Frage oder Aufgabe, die Claude bewerten soll. `expected`: Musterlösung bzw. Rückseite der Karte,
+ * `images`: Fotos einer handschriftlichen Lösung, `points`: erreichbare Punkte (Probeklausur)
+ */
+export type GradeItem = { question: string; expected: string; answer: string; images?: AiImage[]; points?: number }
+
+/** `title`: Stapel, Notiz oder Klausur · `context`: Zusammenhang, z. B. der Abschnitt der Notiz · `noteId`: Herkunft */
+export type GradeRequest = { items: GradeItem[]; title: string; context?: string; noteId?: string }
+
+/** `points`: erreichte Punkte – ohne Punktzahl der Aufgabe 1, 0,5 oder 0 */
+export type GradeResult = { verdict: GradeVerdict; points: number; feedback: string }
+
+/**
+ * Frage von Claude zum Abfragen (Tutor) oder Aufgabe einer Probeklausur. `answer`: Musterlösung (bei Aufgaben mit
+ * Erwartungshorizont), `topic`: Überschrift der Notiz bzw. Thema, aus dem sie stammt (sonst leer)
+ */
+export type QuizQuestion = { question: string; answer: string; points: number; topic: string }
+
+/**
+ * Woraus Claude Fragen stellt: eine Notiz (Tutor) oder Stapel samt der Notizen ihrer Karten (Probeklausur – der Server
+ * lädt beides selbst)
+ */
+export type QuestionsSource =
+  | { kind: 'note'; noteId: string; title: string; content: string }
+  | { kind: 'decks'; title: string; deckIds: string[] }
+
+export type QuestionsRequest = { source: QuestionsSource; count: number; wishes?: string }

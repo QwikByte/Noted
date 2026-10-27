@@ -27,6 +27,7 @@ import { CalendarView } from '@/features/calendar/components/CalendarView'
 import { DeckView } from '@/features/flashcards/components/DeckView'
 import { StudyView } from '@/features/flashcards/components/StudyView'
 import { QuizView } from '@/features/flashcards/components/QuizView'
+import { MockExamView } from '@/features/ai/components/MockExamView'
 import { GlossaryView } from '@/features/glossary/components/GlossaryView'
 import { StatsView } from '@/features/flashcards/components/StatsView'
 import { CardEditorDialog } from '@/features/flashcards/components/CardEditor'
@@ -431,7 +432,10 @@ export default function NotesApp() {
       )
       break
     case 'quiz':
-      main = <QuizView key={view.id} id={view.id} />
+      main = <QuizView key={`${view.id}:${view.ai ? 'ai' : ''}`} id={view.id} ai={view.ai} />
+      break
+    case 'mock-exam':
+      main = <MockExamView key={view.scope} scope={view.scope} />
       break
     case 'stats':
       main = <StatsView />
@@ -446,7 +450,7 @@ export default function NotesApp() {
       main = <Dashboard />
   }
 
-  const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz'
+  const showTopBar = view.kind !== 'note' && view.kind !== 'study' && view.kind !== 'quiz' && view.kind !== 'mock-exam'
   const showFab = showTopBar && !pdf && !['trash', 'cards', 'deck', 'calendar', 'stats', 'graph'].includes(view.kind)
   // Der Mini-Timer steht rechts neben der Seitenleiste
   const sidebarSpace = useReservedSpace<HTMLElement>('--sidebar-width')

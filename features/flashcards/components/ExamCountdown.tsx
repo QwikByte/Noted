@@ -1,7 +1,8 @@
 'use client'
 // Startseite: anstehende Klausuren mit Countdown und dem Lernstand der verknüpften Stapel
-import { Dumbbell, GraduationCap } from 'lucide-react'
+import { Dumbbell, FileCheck, GraduationCap } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
+import { useAiReady } from '@/features/ai/client/ai'
 import { useEvents } from '@/features/calendar/client/calendar'
 import { dateOf, daysBetween, localDate, shortDate, timeOf, weekdayName } from '@/features/calendar/dates'
 import type { CalendarEvent } from '@/features/calendar/types'
@@ -41,6 +42,7 @@ export function ExamCountdown() {
 
 function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number; data: Flashcards | null; now: number }) {
   const app = useApp()
+  const aiReady = useAiReady()
   const openContextMenu = useContextMenu()
   const date = dateOf(exam.start)
   const deckIds = new Set(exam.exam?.deckIds)
@@ -56,6 +58,7 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
   const canStudy = decks.length > 0 && total > 0
   const learn = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'learn' })
   const practice = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'practice' })
+  const mockExam = () => app.go({ kind: 'mock-exam', scope: `exam:${exam.id}` })
 
   return (
     <li
@@ -74,6 +77,11 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
               <MenuItem icon={<Dumbbell />} onSelect={practice}>
                 Üben
               </MenuItem>
+              {aiReady ? (
+                <MenuItem icon={<FileCheck />} onSelect={mockExam}>
+                  Probeklausur mit KI
+                </MenuItem>
+              ) : null}
             </>
           ) : null,
           { copy: true },
@@ -113,6 +121,11 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
           <Button size="sm" variant="ghost" onClick={practice}>
             <Dumbbell className="size-4" /> Üben
           </Button>
+          {aiReady ? (
+            <Button size="sm" variant="ghost" onClick={mockExam} title="Probeklausur mit KI" data-testid="exam-mock">
+              <FileCheck className="size-4" /> Probeklausur
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </li>

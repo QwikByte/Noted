@@ -9,6 +9,7 @@ import {
   Copy,
   Dumbbell,
   FileArchive,
+  FileCheck,
   GraduationCap,
   Layers,
   Loader2,
@@ -18,10 +19,13 @@ import {
   RotateCcw,
   Search,
   Settings2,
+  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
+import { useAiReady } from '@/features/ai/client/ai'
+import { AiProblemCards } from '@/features/ai/components/AiProblemCards'
 import { Page, PageHeader } from '@/shared/ui/page-layout'
 import { usePrintShortcut } from '@/shared/ui/print-view'
 import { CardRow } from './CardRow'
@@ -64,7 +68,8 @@ export function DeckView({ id }: { id: string }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<CardFilter>('all')
   const [limit, setLimit] = useState(PAGE)
-  const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | 'print' | null>(null)
+  const [dialog, setDialog] = useState<'settings' | 'import' | 'reset' | 'delete' | 'print' | 'ai-problems' | null>(null)
+  const aiReady = useAiReady()
   const [busy, setBusy] = useState(false)
   const openContextMenu = useContextMenu()
 
@@ -161,6 +166,15 @@ export function DeckView({ id }: { id: string }) {
       <MenuItem icon={<Printer />} onSelect={() => setDialog('print')} disabled={cards.length === 0} hint="Strg+P">
         Drucken …
       </MenuItem>
+      {aiReady ? (
+        <MenuItem
+          icon={<FileCheck />}
+          onSelect={() => app.go({ kind: 'mock-exam', scope: `deck:${deck.id}` })}
+          disabled={cards.length === 0}
+        >
+          Probeklausur mit KI …
+        </MenuItem>
+      ) : null}
       <MenuSeparator />
       <MenuItem icon={<RotateCcw />} onSelect={() => setDialog('reset')}>
         Lernstand zurücksetzen …
@@ -316,10 +330,17 @@ export function DeckView({ id }: { id: string }) {
         </div>
       ) : null}
       {shownFilter === 'problem' ? (
-        <p className="mb-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
-          Mindestens {deck?.leechLapses}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile
-          sie und lerne sie neu; bis dahin kannst du sie aussetzen.
-        </p>
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
+          <p className="min-w-60 flex-1">
+            Mindestens {deck?.leechLapses}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile
+            sie und lerne sie neu; bis dahin kannst du sie aussetzen.
+          </p>
+          {aiReady ? (
+            <Button size="sm" onClick={() => setDialog('ai-problems')}>
+              <Sparkles className="size-4" /> Mit KI überarbeiten …
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {cards.length === 0 ? (
@@ -373,6 +394,9 @@ export function DeckView({ id }: { id: string }) {
       {dialog === 'import' ? <ImportCardsDialog deck={deck} onClose={() => setDialog(null)} /> : null}
       {/* Gedruckt wird, was die Liste zeigt – mit Suche und Filter, aber alle Karten statt der ersten 100 */}
       {dialog === 'print' ? <DeckPrint deck={deck} cards={filtered} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'ai-problems' ? (
+        <AiProblemCards deckName={deck.name} cards={cards.filter((c) => problems.has(c.id))} onClose={() => setDialog(null)} />
+      ) : null}
       <ConfirmModal
         open={dialog === 'reset'}
         onClose={() => setDialog(null)}

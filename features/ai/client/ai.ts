@@ -3,7 +3,18 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api, apiResponse } from '@/shared/client/api'
 import { readAssistEvents } from '../assist'
 import type { AiModel } from '../models'
-import type { AiSettings, AssistEvent, AssistRequest, CardsRequest, MetaSuggestion, SuggestedCard } from '../types'
+import type {
+  AiSettings,
+  AssistEvent,
+  AssistRequest,
+  CardsRequest,
+  GradeRequest,
+  GradeResult,
+  MetaSuggestion,
+  QuestionsRequest,
+  QuizQuestion,
+  SuggestedCard,
+} from '../types'
 
 const aiSettingsKey = ['ai', 'settings'] as const
 
@@ -40,6 +51,16 @@ export async function suggestCards(request: CardsRequest, signal: AbortSignal): 
 /** Titel und Tags für eine Notiz vorschlagen lassen */
 export function suggestMeta(input: { noteId: string; title: string; content: string }, signal: AbortSignal) {
   return api<MetaSuggestion>('/api/ai/meta', { method: 'POST', body: input, signal })
+}
+
+/** Antworten von Claude bewerten lassen – ein Ergebnis je Aufgabe, in derselben Reihenfolge */
+export async function gradeAnswers(request: GradeRequest, signal: AbortSignal): Promise<GradeResult[]> {
+  return (await api<{ results: GradeResult[] }>('/api/ai/grade', { method: 'POST', body: request, signal })).results
+}
+
+/** Fragen zu einer Notiz bzw. Aufgaben einer Probeklausur von Claude stellen lassen */
+export function generateQuestions(request: QuestionsRequest, signal: AbortSignal) {
+  return api<{ questions: QuizQuestion[]; truncated: boolean }>('/api/ai/questions', { method: 'POST', body: request, signal })
 }
 
 /** Assistent: Die Antwort kommt Stück für Stück – `onEvent` bekommt jedes Ereignis, sobald es da ist */

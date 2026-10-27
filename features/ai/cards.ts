@@ -14,6 +14,8 @@ const CARD_TYPES = ['basic', 'reversed', 'cloze', 'mc'] as const
 
 /** Höchstens so viele kleinere Karten entstehen beim Aufteilen einer Karte */
 const MAX_SPLIT = 8
+/** … und beim Entschärfen einer Problemkarte */
+const MAX_LEECH = 4
 
 /**
  * Was Claude liefern muss (strukturierte Ausgabe), von Hand geschrieben: Aus einem Zod-Schema machte das SDK die
@@ -112,6 +114,15 @@ ${CARD_RULES}
 
 Teile sie in 2 bis ${MAX_SPLIT} kleinere Karten auf, die zusammen dasselbe abdecken. Wünsche der Person haben Vorrang. Setze page auf 0.`
 
+const LEECH_SYSTEM = `Du hilfst Studierenden, die mit verteilter Wiederholung (wie in Anki) lernen, bei einer Problemkarte: Sie wurde schon oft vergessen.
+
+${CARD_RULES}
+
+Mach die Karte leichter merkbar. Ist sie zu umfangreich, teile sie in bis zu ${MAX_LEECH} kleinere Karten, die zusammen dasselbe abdecken; ist sie unklar, formuliere sie eindeutig – dann genügt eine Karte. Wo es hilft, ergänze am Ende der Rückseite eine kurze Merkhilfe (Eselsbrücke, Bild, Vergleich) als eigene Zeile „Merkhilfe: …“. Die wichtigste Karte steht zuerst. Wünsche der Person haben Vorrang. Setze page auf 0.`
+
+const CARD_SYSTEMS = { improve: IMPROVE_SYSTEM, split: SPLIT_SYSTEM, leech: LEECH_SYSTEM }
+const CARD_MAX = { improve: 1, split: MAX_SPLIT, leech: MAX_LEECH }
+
 const wishesPart = (wishes: string | undefined): PromptPart[] =>
   wishes?.trim() ? [textPart(`Wünsche zu den Karten: ${wishes.trim()}`)] : []
 
@@ -129,7 +140,7 @@ const cardText = (card: { type: string; front: string; back: string; options: { 
 export function cardsPrompt({ source, existing, wishes }: CardsRequest): Prompt {
   if (source.kind === 'card') {
     return {
-      system: source.mode === 'improve' ? IMPROVE_SYSTEM : SPLIT_SYSTEM,
+      system: CARD_SYSTEMS[source.mode],
       parts: [textPart(`<karte>\n${cardText(source.card)}\n</karte>`), ...wishesPart(wishes)],
     }
   }
@@ -190,7 +201,7 @@ function normalizeCard(c: RawCard, pages: ReadonlySet<number>): SuggestedCard | 
 /** Wie viele Karten aus einer Antwort höchstens übernommen werden und auf welche Seiten sie sich beziehen dürfen */
 export function cardsLimits(request: CardsRequest): { max: number; pages: Set<number> } {
   const { source } = request
-  if (source.kind === 'card') return { max: source.mode === 'improve' ? 1 : MAX_SPLIT, pages: new Set() }
+  if (source.kind === 'card') return { max: CARD_MAX[source.mode], pages: new Set() }
   if (source.kind === 'note') return { max: MAX_AI_CARDS, pages: new Set() }
   return { max: MAX_AI_CARDS, pages: new Set([...source.pages, ...source.marks].map((p) => p.page)) }
 }
