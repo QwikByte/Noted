@@ -1,7 +1,8 @@
 // Zusammenstellung der Lernsitzungen: welche Karten heute dran sind und in welcher Reihenfolge.
 import { LEECH_LAPSES, endOfDay, startOfDay } from './srs'
 import { clozeCount, clozeTexts } from './cloze'
-import { daysUntil, examDue, nextExam } from './exam'
+import { daysUntil, examDue, examReviewsPerDay, nextExam } from './exam'
+import { MAX_REVIEW_PER_DAY } from './limits'
 import type { Card, CardReview, Deck, SrsState } from './types'
 
 /** Abgefragte Seite: 0 = Vorderseite, 1 = Rückseite (beidseitig), bei Lückentexten die Nummer der Lücke */
@@ -122,8 +123,15 @@ export function cardLapses(card: Sided & Pick<Card, 'id'>, states: StateMap): nu
   return Math.max(0, ...sidesOf(card).map((side) => states.get(reviewKey(card.id, side))?.lapses ?? 0))
 }
 
-export const isProblemCard = (card: Sided & Pick<Card, 'id'>, states: StateMap) =>
-  cardLapses(card, states) >= LEECH_LAPSES
+/** Problemkarte: mindestens `leechLapses`-mal vergessen (Schwelle des Stapels) */
+export const isProblemCard = (card: Sided & Pick<Card, 'id'>, states: StateMap, leechLapses = LEECH_LAPSES) =>
+  cardLapses(card, states) >= leechLapses
+
+/** Schwelle für Problemkarten je Karte – die ihres Stapels (Karten aus mehreren Stapeln, z. B. im Kartenbrowser) */
+export function leechThreshold(decks: Pick<Deck, 'id' | 'leechLapses'>[]): (card: Pick<Card, 'deckId'>) => number {
+  const byDeck = new Map(decks.map((d) => [d.id, d.leechLapses]))
+  return (card) => byDeck.get(card.deckId) ?? LEECH_LAPSES
+}
 
 export type DeckCounts = {
   /** Abzufragende Seiten insgesamt */
@@ -134,8 +142,10 @@ export type DeckCounts = {
   newToday: number
   /** In der Lernphase und heute fällig */
   learning: number
-  /** Gelernt und heute fällig */
+  /** Gelernt und heute fällig – höchstens so viele, wie das Tageslimit für Wiederholungen noch erlaubt */
   review: number
+  /** Fällige Wiederholungen, die das Tageslimit auf morgen verschiebt */
+  reviewWaiting: number
   /** Alles, was heute im Lernmodus drankommt */
   due: number
   /** Heute schon abgefragt */
@@ -144,21 +154,30 @@ export type DeckCounts = {
   introducedToday: number
   /** Morgen fällig (ohne neue Karten) */
   dueTomorrow: number
+  /** Vor einer Klausur: so viele Wiederholungen pro Tag braucht es, damit bis dahin jede fällige drankommt (sonst 0) */
+  examReviewsPerDay: number
 }
 
 type Plan = { fresh: StudyItem[]; learning: StudyItem[]; review: StudyItem[]; counts: DeckCounts }
 
-type PlannedDeck = Pick<Deck, 'newPerDay' | 'exams'>
+type PlannedDeck = Pick<Deck, 'newPerDay' | 'reviewPerDay' | 'exams'>
 
 /**
  * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
- * das Tageslimit für neue Karten zählt trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen nicht dran.
- * Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts).
+ * die Tageslimits für neue Karten und Wiederholungen zählen trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen
+ * nicht dran. Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts). `dayStartHour`: Beginn des Lerntags.
  */
-function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
-  const today = startOfDay(now)
-  const exam = nextExam(deck.exams, now)
-  const eod = endOfDay(now)
+function planDeck(
+  deck: PlannedDeck,
+  cards: Card[],
+  states: StateMap,
+  now: number,
+  dayStartHour: number,
+  inScope?: (card: Card) => boolean,
+): Plan {
+  const today = startOfDay(now, dayStartHour)
+  const exam = nextExam(deck.exams, now, dayStartHour)
+  const eod = endOfDay(now, dayStartHour)
   const eot = eod + 86_400_000
   const fresh: StudyItem[] = []
   const learning: StudyItem[] = []
@@ -167,17 +186,24 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   let newTotal = 0
   let introducedToday = 0
   let reviewedToday = 0
+  // Für das Tageslimit zählen wie bei Anki nur Wiederholungen – nicht, was heute neu dazukam und noch in der Lernphase ist
+  let reviewsToday = 0
   let dueTomorrow = 0
   const candidates: StudyItem[] = []
+  const examDues: number[] = []
 
   // Geschwister zurückstellen (wie „bury siblings“ bei Anki): Seiten derselben Karte verraten sich sonst gegenseitig –
   // bei Lücke 2 steht Lücke 1 schon ausgefüllt im Satz. Nicht am Tag vor der Klausur, da muss alles drankommen.
-  const bury = !exam || daysUntil(exam, now) > 1
+  const bury = !exam || daysUntil(exam, now, dayStartHour) > 1
 
   for (const card of [...cards].sort(byPosition)) {
     const counted = !card.suspended && (!inScope || inScope(card))
     const sides = sidesOf(card).map((side) => ({ side, state: states.get(reviewKey(card.id, side)) }))
-    for (const { state } of sides) if (state && state.introducedAt >= today) introducedToday++
+    for (const { state } of sides) {
+      if (!state) continue
+      if (state.introducedAt >= today) introducedToday++
+      else if (state.reviewedAt >= today && state.phase !== 'learning') reviewsToday++
+    }
     if (!counted) continue
     // Heute schon eine Seite gelernt: keine weitere Wiederholung und keine neue Seite dieser Karte mehr
     const studiedToday = bury && sides.some(({ state }) => state && state.reviewedAt >= today)
@@ -198,7 +224,8 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
         continue
       }
       if (state.reviewedAt >= today) reviewedToday++
-      const due = exam ? examDue(state, reviewKey(card.id, side), exam, now) : state.due
+      const due = exam ? examDue(state, reviewKey(card.id, side), exam, now, dayStartHour) : state.due
+      if (exam && state.phase === 'review') examDues.push(due)
       if (due <= eod) {
         if (state.phase === 'review') dueReviews.push({ item: { card, side, kind: 'review' }, due })
         else {
@@ -219,6 +246,11 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
   const due = (item: StudyItem) => states.get(itemKey(item))?.due ?? 0
   review.sort((a, b) => due(a) - due(b))
   learning.sort((a, b) => due(a) - due(b))
+  // Die am längsten überfälligen zuerst – der Rest wartet bis morgen
+  const reviewWaiting =
+    deck.reviewPerDay < MAX_REVIEW_PER_DAY ? Math.max(0, review.length - Math.max(0, deck.reviewPerDay - reviewsToday)) : 0
+  review.length -= reviewWaiting
+  dueTomorrow += reviewWaiting
   return {
     fresh,
     learning,
@@ -229,16 +261,19 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
       newToday,
       learning: learning.length,
       review: review.length,
+      reviewWaiting,
       due: newToday + learning.length + review.length,
       reviewedToday,
       introducedToday,
       dueTomorrow,
+      examReviewsPerDay: exam ? examReviewsPerDay(examDues, reviewsToday, exam, now, dayStartHour) : 0,
     },
   }
 }
 
-export function deckCounts(deck: PlannedDeck, cards: Card[], states: StateMap, now: number): DeckCounts {
-  return planDeck(deck, cards, states, now).counts
+/** Zahlen für einen Stapel – `dayStartHour`: Beginn des Lerntags (Einstellung des Kontos) */
+export function deckCounts(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, dayStartHour = 0): DeckCounts {
+  return planDeck(deck, cards, states, now, dayStartHour).counts
 }
 
 /** Neue Karten gleichmäßig zwischen die Wiederholungen verteilen. */
@@ -267,20 +302,24 @@ export class LearnSession {
   /** Nach „Rückgängig“ zurückgelegte Karten – kommen vor allen anderen dran, die zuletzt zurückgelegte zuerst */
   private front: StudyItem[] = []
 
-  /** `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden */
+  /**
+   * `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden, `dayStartHour`: Beginn
+   * des Lerntags
+   */
   constructor(
     decks: (PlannedDeck & Pick<Deck, 'id'>)[],
     cards: Card[],
     states: StateMap,
     now: number,
     inScope?: (card: Card) => boolean,
+    private readonly dayStartHour = 0,
   ) {
     const byDeck = cardsByDeck(cards)
     const review: StudyItem[] = []
     const fresh: StudyItem[] = []
     const learning: { item: StudyItem; due: number }[] = []
     for (const deck of decks) {
-      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now, inScope)
+      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now, dayStartHour, inScope)
       review.push(...plan.review)
       fresh.push(...plan.fresh)
       for (const item of plan.learning) learning.push({ item, due: states.get(itemKey(item))?.due ?? now })
@@ -301,7 +340,7 @@ export class LearnSession {
 
   /** Nach der Bewertung: Karten, die heute noch einmal drankommen, wieder einreihen. */
   answered(item: StudyItem, state: SrsState, now: number) {
-    if (state.phase === 'review' || state.due > endOfDay(now)) return
+    if (state.phase === 'review' || state.due > endOfDay(now, this.dayStartHour)) return
     const entry = { item: { ...item, kind: 'learning' as const }, due: state.due }
     const idx = this.learning.findIndex((l) => l.due > state.due)
     if (idx < 0) this.learning.push(entry)
@@ -433,16 +472,16 @@ export function hardness(state: SrsState): number {
 
 /**
  * Seiten für eine eigene Übung – ohne ausgesetzte Karten. `again`: Kartenseiten (reviewKey), die heute mit „Nochmal“
- * bewertet wurden.
+ * bewertet wurden; `leech`: Schwelle für Problemkarten je Karte (siehe leechThreshold).
  */
 export function filterItems(
   filter: StudyFilter,
   cards: Card[],
   states: StateMap,
-  opts: { again?: ReadonlySet<string>; limit?: number } = {},
+  opts: { again?: ReadonlySet<string>; limit?: number; leech?: (card: Card) => number } = {},
 ): StudyItem[] {
   const items = allItems(cards)
-  if (filter === 'problem') return items.filter((i) => isProblemCard(i.card, states))
+  if (filter === 'problem') return items.filter((i) => isProblemCard(i.card, states, opts.leech?.(i.card)))
   if (filter === 'again-today') return items.filter((i) => opts.again?.has(itemKey(i)))
   // Schwerste: nur schon gelernte Seiten, bei Gleichstand die öfter vergessenen
   return items

@@ -36,6 +36,7 @@ async function upload(name: string, data: Uint8Array, cookie = token) {
 function annotation(over: Partial<PdfAnnotation> = {}): Omit<PdfAnnotation, 'attachmentId'> {
   return {
     id: crypto.randomUUID(),
+    kind: 'text',
     page: 1,
     rects: [[60, 750, 300, 776]],
     quote: 'Erster Hauptsatz',
@@ -105,6 +106,27 @@ describe('Anmerkungen in PDFs', () => {
     expect(r.status).toBe(400)
     expect(r.data.message).toMatch(/^Höchstens 500 Anmerkungen auf einmal/)
     expect((await list(pdf.id)).data.annotations).toEqual([])
+  })
+
+  it('speichert Bereiche mit genau einem Rechteck – ohne Angabe der Art gilt Textmarkierung', async () => {
+    const pdf = await upload('Scan.pdf', makePdf([[]]))
+    const area = annotation({ kind: 'area', rects: [[50, 300, 400, 600]], quote: '' })
+    // Geräte mit älterem Stand senden keine Art
+    const legacy: Partial<PdfAnnotation> = annotation({ quote: 'Vom alten Gerät' })
+    delete legacy.kind
+    expect((await save(pdf.id, [area, legacy])).data).toEqual({ saved: 2 })
+    const listed = (await list(pdf.id)).data.annotations as PdfAnnotation[]
+    expect(listed.find((a) => a.id === area.id)).toMatchObject({ kind: 'area', quote: '', rects: [[50, 300, 400, 600]] })
+    expect(listed.find((a) => a.id === legacy.id)?.kind).toBe('text')
+
+    for (const [bad, message] of [
+      [annotation({ kind: 'area', rects: [[0, 0, 10, 10], [0, 20, 10, 30]] }), 'Ein Bereich besteht aus genau einem Rechteck.'],
+      [{ ...annotation(), kind: 'kreis' }, 'Unbekannte Art der Anmerkung.'],
+    ] as const) {
+      const r = await save(pdf.id, [bad])
+      expect(r.status, message).toBe(400)
+      expect(r.data.message).toBe(message)
+    }
   })
 
   it('gibt es nur für PDFs', async () => {

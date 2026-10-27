@@ -22,6 +22,11 @@ const settings: DeckSettings = {
   typeAnswer: true,
   scheduler: 'fsrs',
   retention: 0.85,
+  learningSteps: [10, 60, 1440],
+  relearningSteps: [30],
+  reviewPerDay: 150,
+  leechLapses: 4,
+  leechAction: 'suspend',
 }
 
 const card = (c: Partial<PackageCard> & Pick<PackageCard, 'type' | 'front'>, position: number): PackageCard => ({
@@ -84,6 +89,19 @@ describe('Stapel-Datei', () => {
     expect([...parsed.media.keys()]).toEqual(['Herz.png', 'kammer.png'])
     expect(parsed.media.get('Herz.png')).toEqual(png)
     expect(parsed.missing).toEqual(['skript.pdf'])
+  })
+
+  it('liest ältere Pakete ohne Optionen der Stapel mit den Standardwerten', () => {
+    const old = { name: 'Alt', description: '', newPerDay: 20, typeAnswer: false, scheduler: 'sm2', retention: 0.9 }
+    const parsed = parseDeckPackage(zipSync({ 'deck.json': strToU8(JSON.stringify({ noted: 1, deck: old, cards: [] })) }), LIMITS)
+    expect(parsed.deck).toEqual({
+      ...old,
+      learningSteps: [1, 10],
+      relearningSteps: [10],
+      reviewPerDay: 9999,
+      leechLapses: 6,
+      leechAction: 'mark',
+    })
   })
 
   it('findet die Dateien einer Karte', () => {

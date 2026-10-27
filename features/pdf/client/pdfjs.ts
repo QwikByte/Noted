@@ -4,6 +4,8 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { errorMessage } from '@/shared/client/api'
 import { inTurns } from '@/shared/lib/in-turns'
 import { defaultFileUrl } from '@/shared/markdown/syntax'
+import { toViewRect } from '../geometry'
+import type { PdfRect } from '../types'
 
 type Lib = { pdfjs: typeof import('pdfjs-dist/legacy/build/pdf.mjs'); viewer: typeof import('pdfjs-dist/legacy/web/pdf_viewer.mjs') }
 let lib: Promise<Lib> | null = null
@@ -139,6 +141,34 @@ export async function renderPdfDataPages(
     return { images, pages: doc.numPages }
   } finally {
     void task.destroy()
+  }
+}
+
+/**
+ * Ausschnitt einer Seite als PNG – aus dem schon geladenen Dokument, die längere Seite höchstens `maxSize` Pixel
+ * (kleine Bereiche höchstens vierfach vergrößert)
+ */
+export async function renderPdfRegion(
+  doc: PDFDocumentProxy,
+  page: number,
+  rect: PdfRect,
+  maxSize = 1600,
+): Promise<Blob> {
+  const p = await doc.getPage(page)
+  const [x1, y1, x2, y2] = rect
+  const viewport = p.getViewport({ scale: Math.min(4, maxSize / Math.max(1, x2 - x1, y2 - y1)) })
+  const { left, top, width, height } = toViewRect(viewport.transform, rect)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(width))
+  canvas.height = Math.max(1, Math.round(height))
+  try {
+    // Die Seite so verschieben, dass der Ausschnitt in der Ecke des Canvas liegt
+    await p.render({ canvas, viewport, transform: [1, 0, 0, 1, -left, -top] }).promise
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('Der Ausschnitt konnte nicht als Bild gespeichert werden.')
+    return blob
+  } finally {
+    releaseCanvas(canvas)
   }
 }
 

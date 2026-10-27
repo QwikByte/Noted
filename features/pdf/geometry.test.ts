@@ -7,6 +7,7 @@ import {
   joinSelection,
   mergeLineRects,
   sortAnnotations,
+  textInRect,
   toPdfRect,
   toViewRect,
 } from './geometry'
@@ -21,6 +22,7 @@ const rotated = (scale: number) => [0, scale, scale, 0, 0, 0]
 const annotation = (id: string, page: number, rects: PdfAnnotation['rects'], extra: Partial<PdfAnnotation> = {}): PdfAnnotation => ({
   id,
   attachmentId: 'a',
+  kind: 'text',
   page,
   rects,
   quote: id,
@@ -148,6 +150,59 @@ describe('Markierungen', () => {
         '',
       ].join('\n'),
     )
+  })
+
+  it('schreibt Bereiche als „Bereich“ – mit dem Text darunter, falls es einen gibt', () => {
+    const areas = [
+      annotation('scan', 1, [[50, 400, 300, 600]], { kind: 'area', quote: '', comment: 'Schaltplan' }),
+      annotation('formel', 2, [[50, 400, 300, 600]], { kind: 'area', quote: 'E = mc²' }),
+    ]
+    expect(annotationsMarkdown('Scan.pdf', areas)).toBe(
+      [
+        '# Anmerkungen zu Scan.pdf',
+        '',
+        '## Seite 1',
+        '',
+        '_Bereich_',
+        '',
+        'Schaltplan',
+        '',
+        '## Seite 2',
+        '',
+        '_Bereich_',
+        '',
+        '> E = mc²',
+        '',
+      ].join('\n'),
+    )
+  })
+})
+
+describe('Text unter einem Bereich', () => {
+  // Stücke der Textebene wie von pdf.js: transform[4], transform[5] = linke Grundlinie, Breite und Höhe in Punkten
+  const piece = (str: string, x: number, y: number, width: number, hasEOL = false) => ({
+    str,
+    transform: [12, 0, 0, 12, x, y],
+    width,
+    height: 12,
+    hasEOL,
+  })
+  const items = [
+    piece('Kapitel 3', 72, 760, 60, true),
+    piece('Die Formel', 72, 700, 55),
+    piece(' E = mc²', 127, 700, 45, true),
+    { type: 'beginMarkedContent' },
+    piece('Abbildung 2', 72, 400, 70, true),
+  ]
+
+  it('nimmt die Stücke, deren Mitte im Rechteck liegt, in der Reihenfolge der Seite', () => {
+    expect(textInRect(items, [60, 690, 300, 720])).toBe('Die Formel E = mc²\n')
+    expect(textInRect(items, [60, 390, 300, 780])).toBe('Kapitel 3\nDie Formel E = mc²\nAbbildung 2\n')
+  })
+
+  it('liefert nichts für Bereiche ohne Text, etwa in Scans', () => {
+    expect(textInRect(items, [300, 100, 500, 300])).toBe('')
+    expect(textInRect([], [0, 0, 595, 842])).toBe('')
   })
 })
 

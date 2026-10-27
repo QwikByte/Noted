@@ -578,14 +578,26 @@ function NoteEditor({
     else sync.update(note.id, version, { title: value.trim() })
   }
 
-  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
-  const addAttachment = useCallback((att: Attachment) => {
-    const handle = editorHandle()
-    if (handle) return handle.insertAttachment(att)
-    const { content: cur, format: f, onChange: change } = latest.current
-    if (f === 'richtext') change(cur + attachmentHtml(att))
-    else change(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
+  /**
+   * Ohne Editor (Lesemodus) den Inhalt ändern – sofort auch in `latest`, damit eine zweite Einfügung direkt danach
+   * (z. B. Bild und Seitenlink aus dem PDF-Viewer) auf der ersten aufbaut statt sie zu überschreiben
+   */
+  const changeContent = useCallback((next: string) => {
+    latest.current.content = next
+    latest.current.onChange(next)
   }, [])
+
+  /** Anhang an der Cursorposition einfügen – im Lesemodus ans Ende */
+  const addAttachment = useCallback(
+    (att: Attachment) => {
+      const handle = editorHandle()
+      if (handle) return handle.insertAttachment(att)
+      const { content: cur, format: f } = latest.current
+      if (f === 'richtext') changeContent(cur + attachmentHtml(att))
+      else changeContent(cur + (cur.endsWith('\n') || !cur ? '' : '\n') + attachmentMarkdown(att) + '\n')
+    },
+    [changeContent],
+  )
 
   // Seitenlinks und Zitate aus dem PDF-Viewer an der Cursorposition einfügen – im Lesemodus ans Ende
   useEffect(
@@ -598,10 +610,10 @@ function NoteEditor({
         insert: (insertion) => {
           const handle = editorHandle()
           if (handle) return handle.insert(insertion)
-          const { content: cur, format: f, onChange: change } = latest.current
-          if (f === 'richtext') return change(cur + insertionToHtml(insertion))
+          const { content: cur, format: f } = latest.current
+          if (f === 'richtext') return changeContent(cur + insertionToHtml(insertion))
           const sep = cur === '' || cur.endsWith('\n\n') ? '' : cur.endsWith('\n') ? '\n' : '\n\n'
-          change(cur + sep + insertionToMarkdown(insertion) + '\n')
+          changeContent(cur + sep + insertionToMarkdown(insertion) + '\n')
         },
         // Im Tresor keine Dateien, einfacher Text kennt keine Einbettung, ein Canvas nur im Editor
         attach: (att) => {
@@ -611,7 +623,7 @@ function NoteEditor({
           return true
         },
       }),
-    [note.id, addAttachment],
+    [note.id, addAttachment, changeContent],
   )
 
   const upload = useCallback(

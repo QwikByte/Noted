@@ -17,6 +17,7 @@ import {
   FileText,
   Highlighter,
   ImageIcon,
+  ImagePlus,
   Layers,
   Link2,
   Loader2,
@@ -32,6 +33,7 @@ import {
   Quote,
   RotateCw,
   Search,
+  SquareDashed,
   Trash2,
   Upload,
   WholeWord,
@@ -50,14 +52,15 @@ import { defaultFileUrl } from '@/shared/markdown/syntax'
 import { getActiveEditor, insertionToMarkdown, pdfPageLink, type Insertion } from '@/features/notes/client/active-editor'
 import { copyText } from '@/shared/client/clipboard'
 import { attachmentsKey, attachmentsQuery, useAttachments } from '@/features/attachments/client/queries'
-import { niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
+import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
+import type { Attachment } from '@/features/attachments/types'
 import { errorMessage } from '@/shared/client/api'
 import { usePref } from '@/shared/client/prefs'
-import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, pdfErrorMessage, renderPdfPage } from '../client/pdfjs'
+import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, pdfErrorMessage, renderPdfPage, renderPdfRegion } from '../client/pdfjs'
 import { pdfAnnotations, useAnnotations } from '../client/annotations'
 import { downloadAnnotatedPdf } from '../client/annotated-download'
-import { annotationAtPoint, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
-import { cleanQuote, joinSelection, sortAnnotations, type SelectionPart } from '../geometry'
+import { annotationAtPoint, areaOnPage, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
+import { cleanQuote, joinSelection, sortAnnotations, textInRect, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
 import { pdfKeyAction } from '../keyboard'
 import {
@@ -70,7 +73,7 @@ import {
   type OutlineEntry,
   type ViewPosition,
 } from '../navigation'
-import type { AnnotationColor, PdfAnnotation } from '../types'
+import type { AnnotationColor, PdfAnnotation, PdfRect } from '../types'
 import AnnotationBar, { ANNOTATION_COLORS } from './AnnotationBar'
 import AnnotationList from './AnnotationList'
 import PdfSidebar, { type SidebarTab } from './PdfSidebar'
@@ -187,6 +190,12 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   // page: erste Seite der Auswahl (für Seitenlinks), parts: je Seite Text und Rechtecke
   const [selection, setSelection] = useState<{ text: string; page: number; parts: SelectionPart[] } | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  // „Bereich markieren“: der nächste Zug mit Maus, Stift oder Finger zieht ein Rechteck auf
+  const [areaMode, setAreaMode] = useState(false)
+  const areaModeRef = useRef(false)
+  useEffect(() => {
+    areaModeRef.current = areaMode
+  }, [areaMode])
   // Folienmodus: eine Seite füllt die Fläche, Wischen oder Pfeiltasten blättern
   const [slides, setSlides] = useState(false)
   const slidesRef = useRef(false)
@@ -470,7 +479,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       if (e.touches.length === 2) {
         pinch = { dist: distance(e.touches), applied: 1 }
         swipe = null
-      } else if (e.touches.length === 1 && slidesRef.current) swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      } else if (e.touches.length === 1 && slidesRef.current && !areaModeRef.current) {
+        swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      }
     }
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length > 1) swipe = null
@@ -509,6 +520,67 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       container.removeEventListener('touchend', onTouchEnd)
     }
   }, [])
+
+  // Bereich markieren: Ein Zug mit Maus, Stift oder Finger zieht ein Rechteck auf (gestrichelt, auf die Seite
+  // beschnitten). Danach endet der Modus – außer der Bereich war zu klein für eine Markierung.
+  const markAreaRef = useRef<(page: number, rect: PdfRect) => void>(() => {})
+  useEffect(() => {
+    const container = containerRef.current
+    if (!areaMode || !container) return
+    type Drag = { page: number; view: PageView; from: { x: number; y: number }; el: HTMLElement; pointerId: number }
+    let drag: Drag | null = null
+    const stop = () => {
+      drag?.el.remove()
+      drag = null
+    }
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 || drag) return
+      const pageEl = e.target instanceof Element ? e.target.closest<HTMLElement>('.page') : null
+      const page = Number(pageEl?.dataset.pageNumber)
+      const view = page ? (viewerRef.current?.getPageView(page - 1) as PageView | undefined) : undefined
+      if (!view?.div) return
+      e.preventDefault()
+      container.setPointerCapture(e.pointerId)
+      const el = document.createElement('div')
+      el.className = 'pdf-area-draft'
+      view.div.append(el)
+      drag = { page, view, from: { x: e.clientX, y: e.clientY }, el, pointerId: e.pointerId }
+    }
+    const onMove = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      e.preventDefault()
+      const { percent } = areaOnPage(drag.view, drag.from, { x: e.clientX, y: e.clientY })
+      Object.assign(drag.el.style, {
+        left: `${percent.left}%`,
+        top: `${percent.top}%`,
+        width: `${percent.width}%`,
+        height: `${percent.height}%`,
+      })
+    }
+    const onUp = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      const { page, view, from } = drag
+      stop()
+      const area = areaOnPage(view, from, { x: e.clientX, y: e.clientY })
+      if (!area.big) return
+      setAreaMode(false)
+      markAreaRef.current(page, area.rect)
+    }
+    const onCancel = (e: PointerEvent) => {
+      if (drag?.pointerId === e.pointerId) stop()
+    }
+    container.addEventListener('pointerdown', onDown)
+    container.addEventListener('pointermove', onMove)
+    container.addEventListener('pointerup', onUp)
+    container.addEventListener('pointercancel', onCancel)
+    return () => {
+      container.removeEventListener('pointerdown', onDown)
+      container.removeEventListener('pointermove', onMove)
+      container.removeEventListener('pointerup', onUp)
+      container.removeEventListener('pointercancel', onCancel)
+      stop()
+    }
+  }, [areaMode])
 
   // Ausgewählter Text im PDF → Aktionen (Markieren, Kommentieren, Zitat, Karteikarte, Kopieren)
   useEffect(() => {
@@ -683,16 +755,22 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
 
   const canMark = !!attachment && !!selection?.parts.some((p) => p.rects.length > 0)
 
+  /** Farbe für neue Markierungen: die zuletzt gewählte */
+  const newColor = () => {
+    const pref = Number(colorPref)
+    return (pref >= 1 && pref <= 6 ? pref : DEFAULT_ANNOTATION_COLOR) as AnnotationColor
+  }
+
   /** Ausgewählten Text markieren – mit Kommentar: gleich das Kommentarfeld öffnen */
   function markSelection(withComment: boolean) {
     const parts = selection?.parts.filter((p) => p.rects.length > 0) ?? []
     if (!selection || !attachment || parts.length === 0) return
-    const pref = Number(colorPref)
-    const color = (pref >= 1 && pref <= 6 ? pref : DEFAULT_ANNOTATION_COLOR) as AnnotationColor
+    const color = newColor()
     // Über Seitengrenzen: eine Markierung je Seite (Rechtecke gelten immer für eine Seite)
     const created = parts.map((p) =>
       pdfAnnotations.create({
         attachmentId: attachment.id,
+        kind: 'text',
         page: p.page,
         rects: p.rects,
         quote: cleanQuote(p.text || selection.text),
@@ -704,6 +782,129 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     setSelection(null)
     setActiveId(withComment ? created[0].id : null)
     setFocusComment(withComment)
+  }
+
+  /** Aufgezogenen Bereich als Markierung speichern – mit dem Text darunter, falls die Seite eine Textebene hat */
+  async function markArea(page: number, rect: PdfRect) {
+    if (!attachment) return
+    let quote = ''
+    try {
+      const p = await pdfDoc?.getPage(page)
+      if (p) quote = cleanQuote(textInRect((await p.getTextContent()).items, rect))
+    } catch {
+      // Ohne lesbare Textebene bleibt der Bereich ohne Text
+    }
+    const created = pdfAnnotations.create({
+      attachmentId: attachment.id,
+      kind: 'area',
+      page,
+      rects: [rect],
+      quote,
+      comment: '',
+      color: newColor(),
+    })
+    setActiveId(created.id)
+    setFocusComment(false)
+  }
+  useEffect(() => {
+    markAreaRef.current = (page, rect) => void markArea(page, rect)
+  })
+
+  /** Bereich markieren an oder aus – eine offene Textauswahl gilt dann nicht mehr */
+  function toggleAreaMode() {
+    if (!areaMode) {
+      document.getSelection()?.removeAllRanges()
+      setSelection(null)
+      setActiveId(null)
+    }
+    setAreaMode(!areaMode)
+  }
+
+  // Bild eines Bereichs: erst beim Einfügen hochgeladen und je Bereich (und Position) nur einmal – so entstehen keine
+  // ungenutzten oder doppelten Dateien
+  const areaImages = useRef(new Map<string, Promise<Attachment>>())
+  function areaImage(a: PdfAnnotation): Promise<Attachment> {
+    const key = `${a.id}:${a.rects[0].join(',')}`
+    let image = areaImages.current.get(key)
+    if (!image) {
+      image = (async () => {
+        if (!pdfDoc) throw new Error('Das PDF ist noch nicht geladen.')
+        const blob = await renderPdfRegion(pdfDoc, a.page, a.rects[0])
+        const name = `${baseName(file)} S. ${a.page} Ausschnitt.png`
+        const att = await uploadAttachment(new File([blob], name, { type: 'image/png' }))
+        await qc.invalidateQueries({ queryKey: attachmentsKey })
+        return att
+      })()
+      areaImages.current.set(key, image)
+      image.catch(() => areaImages.current.delete(key))
+    }
+    return image
+  }
+
+  /** Bereich als Bild mit Seitenlink in die geöffnete Notiz einfügen – ohne offene Notiz in eine neue */
+  async function insertAreaImage(a: PdfAnnotation) {
+    const ref = { file, page: a.page }
+    const editor = getActiveEditor()
+    if (!editor) {
+      toast.show('Öffne zuerst eine Notiz, um etwas einzufügen.', {
+        action: {
+          label: 'Neue Notiz',
+          onClick: () =>
+            void areaImage(a)
+              .then((att) =>
+                app.createNote({
+                  title: baseName(file),
+                  folderId: null,
+                  format: 'markdown',
+                  content: `${attachmentMarkdown(att)}\n\n${pdfPageLink(ref, `S. ${a.page}`)}\n`,
+                }),
+              )
+              .catch((err) => toast.error(errorMessage(err))),
+        },
+      })
+      return
+    }
+    try {
+      const att = await areaImage(a)
+      if (!editor.attach(att)) {
+        toast.error('In diese Notiz lassen sich keine Bilder einfügen.')
+        return
+      }
+      editor.insert({ kind: 'page-link', ref })
+      toast.success(`Ausschnitt in „${editor.title}“ eingefügt.`)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+
+  /** Karteikarte mit dem Bild des Bereichs (auf der Rückseite, mit Seitenlink) */
+  async function areaToCard(a: PdfAnnotation) {
+    try {
+      const att = await areaImage(a)
+      app.openCardEditor({
+        back: `${attachmentMarkdown(att)}\n\n${pageLink(a.page, `${baseName(file)}, S. ${a.page}`)}`,
+        noteId: getActiveEditor()?.noteId ?? null,
+        deckName: baseName(file),
+      })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+
+  /** Bild des Bereichs als Bildverdeckung lernen – wie „Seite als Bildverdeckung“, nur der Ausschnitt */
+  async function areaToOcclusion(a: PdfAnnotation) {
+    try {
+      const att = await areaImage(a)
+      app.openCardEditor({
+        type: 'occlusion',
+        occlusion: { image: att.filename, masks: [], hideAll: false },
+        front: `${baseName(file)}, S. ${a.page}`,
+        noteId: getActiveEditor()?.noteId ?? null,
+        deckName: baseName(file),
+      })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
   }
 
   function quoteSelection() {
@@ -750,7 +951,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     })
   }
 
-  const quoteOf = (a: PdfAnnotation) => ({ text: a.quote, ref: { file, page: a.page } })
+  const quoteOf = (a: PdfAnnotation) => ({ text: a.quote || 'Bereich', ref: { file, page: a.page } })
   const insertQuote = (a: PdfAnnotation) => insert({ kind: 'quote', ...quoteOf(a) }, 'Zitat')
 
   /** Gewählte Farbe auch für neue Markierungen übernehmen */
@@ -853,7 +1054,8 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         pageInputRef.current?.select()
         break
       case 'escape':
-        if (findOpen) closeFind()
+        if (areaMode) setAreaMode(false)
+        else if (findOpen) closeFind()
         else if (activeId) setActiveId(null)
         else if (selection) {
           document.getSelection()?.removeAllRanges()
@@ -932,6 +1134,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         {night === '1' ? 'Nachtmodus ausschalten' : 'Nachtmodus'}
       </MenuItem>
       <MenuSeparator />
+      <MenuItem icon={<SquareDashed />} onSelect={toggleAreaMode} disabled={!ready || !attachment}>
+        {areaMode ? 'Bereich markieren beenden' : 'Bereich markieren'}
+      </MenuItem>
       <MenuItem
         icon={<Link2 />}
         onSelect={() => insert({ kind: 'page-link', ref: { file, page } }, `Link auf Seite ${page}`)}
@@ -1034,9 +1239,23 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             Kommentieren
           </MenuItem>
         )}
-        <MenuItem icon={<Quote />} onSelect={() => insertQuote(a)}>
-          Als Zitat einfügen
-        </MenuItem>
+        {a.kind === 'area' ? (
+          <>
+            <MenuItem icon={<ImagePlus />} onSelect={() => void insertAreaImage(a)}>
+              Als Bild einfügen
+            </MenuItem>
+            <MenuItem icon={<Layers />} onSelect={() => void areaToCard(a)}>
+              Karteikarte mit Bild
+            </MenuItem>
+            <MenuItem icon={<ImageIcon />} onSelect={() => void areaToOcclusion(a)}>
+              Als Bildverdeckung …
+            </MenuItem>
+          </>
+        ) : (
+          <MenuItem icon={<Quote />} onSelect={() => insertQuote(a)}>
+            Als Zitat einfügen
+          </MenuItem>
+        )}
         <MenuSeparator />
         <MenuLabel>Farbe</MenuLabel>
         {ANNOTATION_COLORS.map((c) => (
@@ -1212,6 +1431,18 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           <Button
             variant="ghost"
             size="icon-sm"
+            onClick={toggleAreaMode}
+            disabled={!ready || !attachment}
+            aria-label="Bereich markieren"
+            aria-pressed={areaMode}
+            title="Bereich markieren – ein Rechteck über Formel, Abbildung oder Scan ziehen"
+            className="@max-md:hidden"
+          >
+            <SquareDashed className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={toggleNotes}
             disabled={!attachment}
             aria-label="Notizen zu diesem PDF"
@@ -1342,7 +1573,11 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         <div className="relative min-w-0 flex-1">
           <div
             ref={containerRef}
-            className={cn('pdf-container absolute inset-0 overflow-auto', night === '1' && 'pdf-night')}
+            className={cn(
+              'pdf-container absolute inset-0 overflow-auto',
+              night === '1' && 'pdf-night',
+              areaMode && 'pdf-area-mode',
+            )}
             tabIndex={0}
             onContextMenu={onPagesContextMenu}
           >
@@ -1409,8 +1644,19 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         ) : null}
       </div>
 
-      {/* Aktionen für ausgewählten Text – oder die angeklickte Markierung */}
-      {selection ? (
+      {/* Hinweis beim Bereich markieren, Aktionen für ausgewählten Text – oder die angeklickte Markierung */}
+      {areaMode ? (
+        <div
+          className="flex items-center gap-2 border-t border-border bg-bg px-3 py-1.5 text-xs text-muted"
+          data-testid="pdf-area-hint"
+        >
+          <SquareDashed className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">Ziehe ein Rechteck über die Stelle, die du markieren willst.</span>
+          <Button size="sm" variant="ghost" onClick={() => setAreaMode(false)}>
+            Abbrechen
+          </Button>
+        </div>
+      ) : selection ? (
         <div className="flex items-center gap-1 border-t border-border bg-bg px-2 py-1.5" data-testid="pdf-selection">
           <span className="min-w-0 flex-1 truncate text-xs text-muted" title={selection.text}>
             „{selection.text}“
@@ -1474,6 +1720,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           annotation={active}
           focusComment={focusComment}
           onInsert={() => insertQuote(active)}
+          onImage={() => void insertAreaImage(active)}
+          onCard={() => void areaToCard(active)}
+          onOcclusion={() => void areaToOcclusion(active)}
           onColor={rememberColor}
           onDelete={() => deleteAnnotation(active)}
           onClose={() => setActiveId(null)}

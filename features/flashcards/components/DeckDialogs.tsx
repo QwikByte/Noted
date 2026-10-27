@@ -6,15 +6,28 @@ import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
 import { AutoTextarea } from './CardEditor'
-import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, importDeckPackage, updateDeck, useFlashcards } from '../client/flashcards'
+import {
+  CARD_TYPE_LABELS,
+  createCards,
+  createDeck,
+  importAnki,
+  importDeckPackage,
+  updateDayStartHour,
+  updateDeck,
+  useFlashcards,
+} from '../client/flashcards'
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
-import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from '../srs'
-import { MAX_NEW_PER_DAY } from '../limits'
-import type { AnkiImportResult, Deck, DeckImportResult } from '../types'
+import { DEFAULT_LEARNING_STEPS, DEFAULT_NEW_PER_DAY, DEFAULT_RELEARNING_STEPS, DEFAULT_RETENTION, LEECH_LAPSES } from '../srs'
+import { MAX_LEECH_LAPSES, MAX_NEW_PER_DAY, MAX_REVIEW_PER_DAY } from '../limits'
+import { formatSteps, parseSteps } from '../steps'
+import type { AnkiImportResult, Deck, DeckImportResult, LeechAction } from '../types'
 
-/** Neuen Stapel anlegen oder Name, Beschreibung, Tageslimit, „Antwort eintippen“ und Wiederholungsplan ändern. */
+/**
+ * Neuen Stapel anlegen oder Name, Beschreibung, Tageslimits, „Antwort eintippen“ und Wiederholungsplan ändern – unter
+ * „Erweitert“ Lernschritte, Problemkarten und den Beginn des Lerntags (gilt für alle Stapel).
+ */
 export function DeckSettingsDialog({
   deck,
   onClose,
@@ -28,12 +41,25 @@ export function DeckSettingsDialog({
   const [name, setName] = useState(deck?.name ?? '')
   const [description, setDescription] = useState(deck?.description ?? '')
   const [limit, setLimit] = useState(String(deck?.newPerDay ?? DEFAULT_NEW_PER_DAY))
+  // Leer = ohne Grenze
+  const [reviewLimit, setReviewLimit] = useState(
+    deck && deck.reviewPerDay < MAX_REVIEW_PER_DAY ? String(deck.reviewPerDay) : '',
+  )
   const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
   const [scheduler, setScheduler] = useState<Deck['scheduler']>(deck?.scheduler ?? 'sm2')
-  // Eigene FSRS-Parameter gelten für alle Stapel des Kontos
-  const fsrs = useFlashcards().data?.fsrs ?? null
+  // Eigene FSRS-Parameter und der Beginn des Lerntags gelten für alle Stapel des Kontos
+  const flashcards = useFlashcards().data
+  const fsrs = flashcards?.fsrs ?? null
+  const savedDayStart = flashcards?.dayStartHour ?? 0
+  // null: nicht angefasst – so überschreibt ein früh geöffneter Dialog den Wert nicht, bevor die Daten da sind
+  const [dayStart, setDayStart] = useState<number | null>(null)
   const [retention, setRetention] = useState(String(Math.round((deck?.retention ?? DEFAULT_RETENTION) * 100)))
+  const [learningSteps, setLearningSteps] = useState(formatSteps(deck?.learningSteps ?? DEFAULT_LEARNING_STEPS))
+  const [relearningSteps, setRelearningSteps] = useState(formatSteps(deck?.relearningSteps ?? DEFAULT_RELEARNING_STEPS))
+  const [leechLapses, setLeechLapses] = useState(String(deck?.leechLapses ?? LEECH_LAPSES))
+  const [leechAction, setLeechAction] = useState<LeechAction>(deck?.leechAction ?? 'mark')
   const [error, setError] = useState<string | null>(null)
+  const [advancedError, setAdvancedError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   async function submit() {
@@ -42,13 +68,41 @@ export function DeckSettingsDialog({
     if (!Number.isInteger(newPerDay) || newPerDay < 0 || newPerDay > MAX_NEW_PER_DAY) {
       return setError(`Das Tageslimit muss zwischen 0 und ${MAX_NEW_PER_DAY} liegen.`)
     }
+    const reviewPerDay = reviewLimit.trim() ? Number(reviewLimit) : MAX_REVIEW_PER_DAY
+    if (!Number.isInteger(reviewPerDay) || reviewPerDay < 0 || reviewPerDay > MAX_REVIEW_PER_DAY) {
+      return setError(`Das Tageslimit für Wiederholungen muss zwischen 0 und ${MAX_REVIEW_PER_DAY} liegen – leer heißt ohne Grenze.`)
+    }
     const percent = Number(retention)
     if (scheduler === 'fsrs' && (!Number.isInteger(percent) || percent < 70 || percent > 99)) {
       return setError('Die Behaltensrate muss zwischen 70 und 99 % liegen.')
     }
+    const leech = Number(leechLapses)
+    let steps: { learningSteps: number[]; relearningSteps: number[] }
+    try {
+      steps = { learningSteps: parseSteps(learningSteps), relearningSteps: parseSteps(relearningSteps) }
+      if (!Number.isInteger(leech) || leech < 1 || leech > MAX_LEECH_LAPSES) {
+        throw new Error(`Die Schwelle für Problemkarten liegt zwischen 1 und ${MAX_LEECH_LAPSES}.`)
+      }
+    } catch (err) {
+      setError(null)
+      return setAdvancedError(errorMessage(err))
+    }
+    setAdvancedError(null)
     setSaving(true)
     try {
-      const input = { name: name.trim(), description, newPerDay, typeAnswer, scheduler, ...(scheduler === 'fsrs' ? { retention: percent / 100 } : {}) }
+      const input = {
+        name: name.trim(),
+        description,
+        newPerDay,
+        reviewPerDay,
+        typeAnswer,
+        scheduler,
+        ...(scheduler === 'fsrs' ? { retention: percent / 100 } : {}),
+        ...steps,
+        leechLapses: leech,
+        leechAction,
+      }
+      if (dayStart !== null && dayStart !== savedDayStart) await updateDayStartHour(qc, dayStart)
       const saved = deck ? await updateDeck(qc, deck.id, input) : await createDeck(qc, input)
       onSaved?.(saved)
       onClose()
@@ -89,9 +143,26 @@ export function DeckSettingsDialog({
           {(id) => <AutoTextarea id={id} value={description} onChange={(e) => setDescription(e.target.value)} minRows={2} />}
         </Field>
         {/* w-32! hier und bei der Behaltensrate – cn führt Klassen nicht zusammen, sonst gewinnt w-full von Input */}
-        <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
-          {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32!" />}
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Neue Karten pro Tag" hint="Gilt nur fürs Lernen – Üben geht immer mit allen Karten.">
+            {(id) => <Input id={id} type="number" inputMode="numeric" min={0} max={MAX_NEW_PER_DAY} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32!" />}
+          </Field>
+          <Field label="Wiederholungen pro Tag" hint="Leer: ohne Grenze. Was darüber hinaus fällig ist, kommt an den nächsten Tagen dran.">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={MAX_REVIEW_PER_DAY}
+                value={reviewLimit}
+                onChange={(e) => setReviewLimit(e.target.value)}
+                placeholder="ohne Grenze"
+                className="w-32!"
+              />
+            )}
+          </Field>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
             label="Wiederholungsplan"
@@ -126,6 +197,68 @@ export function DeckSettingsDialog({
           label="Antwort eintippen"
           description="Nur bei Grund- und beidseitigen Karten."
         />
+        {/* Offen, solange dort ein Fehler steht – sonst sähe man ihn nicht */}
+        <details className="group rounded-xl border border-border px-3 py-2" open={advancedError ? true : undefined}>
+          <summary className="cursor-pointer text-sm font-medium text-muted hover:text-fg">Erweitert</summary>
+          <div className="mt-3 space-y-4 pb-1">
+            {advancedError ? (
+              <p className="text-sm text-danger" role="alert">
+                {advancedError}
+              </p>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Lernschritte" hint="Neue Karten, z. B. „1m 10m“ oder „10m 1h 1d“.">
+                {(id) => <Input id={id} value={learningSteps} onChange={(e) => setLearningSteps(e.target.value)} />}
+              </Field>
+              <Field label="Nach dem Vergessen" hint="Schritte, bis eine vergessene Karte wieder in Tagen geplant wird.">
+                {(id) => <Input id={id} value={relearningSteps} onChange={(e) => setRelearningSteps(e.target.value)} />}
+              </Field>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Problemkarte ab … mal vergessen">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={MAX_LEECH_LAPSES}
+                    value={leechLapses}
+                    onChange={(e) => setLeechLapses(e.target.value)}
+                    className="w-32!"
+                  />
+                )}
+              </Field>
+              <Field label="Problemkarten">
+                {(id) => (
+                  <Select id={id} value={leechAction} onChange={(e) => setLeechAction(e.target.value as LeechAction)}>
+                    <option value="mark">Nur markieren</option>
+                    <option value="suspend">Gleich aussetzen</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <Field
+              label="Neuer Lerntag beginnt um"
+              hint="Gilt für alle Stapel und die Statistik. Wer oft nach Mitternacht lernt, nimmt z. B. 4 Uhr – dann zählt die Nacht noch zum Vortag."
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={dayStart ?? savedDayStart}
+                  onChange={(e) => setDayStart(Number(e.target.value))}
+                  className="w-48!"
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {hour === 0 ? '0 Uhr (Mitternacht)' : hour === 4 ? '4 Uhr (wie Anki)' : `${hour} Uhr`}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </div>
+        </details>
         <button type="submit" hidden />
       </form>
     </Modal>

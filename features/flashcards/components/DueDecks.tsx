@@ -17,7 +17,7 @@ export function DueDecks({ className }: { className?: string }) {
     if (!data) return []
     const byDeck = cardsByDeck(data.cards)
     return data.decks
-      .map((deck) => ({ deck, due: deckCounts(deck, byDeck.get(deck.id) ?? [], data.states, now).due }))
+      .map((deck) => ({ deck, due: deckCounts(deck, byDeck.get(deck.id) ?? [], data.states, now, data.dayStartHour).due }))
       .filter((r) => r.due > 0)
   }, [data, now])
 

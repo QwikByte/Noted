@@ -25,14 +25,20 @@ export type CardRowActions = {
 }
 
 /** Nächste Abfrage der Karte – vor einer Klausur wie im Lernmodus vorgezogen */
-function dueLabel(card: Card, states: StateMap, now: number, exam: DeckExam | null): { text: string; tone: 'neutral' | 'marker' } {
+function dueLabel(
+  card: Card,
+  states: StateMap,
+  now: number,
+  exam: DeckExam | null,
+  dayStartHour: number,
+): { text: string; tone: 'neutral' | 'marker' } {
   let earliest = Infinity
   for (const side of sidesOf(card)) {
     const s = states.get(reviewKey(card.id, side))
     if (!s) return { text: 'Neu', tone: 'neutral' }
-    earliest = Math.min(earliest, exam ? examDue(s, reviewKey(card.id, side), exam, now) : s.due)
+    earliest = Math.min(earliest, exam ? examDue(s, reviewKey(card.id, side), exam, now, dayStartHour) : s.due)
   }
-  if (earliest <= endOfDay(now)) return { text: 'Heute fällig', tone: 'marker' }
+  if (earliest <= endOfDay(now, dayStartHour)) return { text: 'Heute fällig', tone: 'marker' }
   return { text: `in ${formatInterval(earliest - now)}`, tone: 'neutral' }
 }
 
@@ -41,6 +47,7 @@ export function CardRow({
   states,
   now,
   exam,
+  dayStartHour,
   noteTitle,
   deckName,
   problem,
@@ -53,6 +60,8 @@ export function CardRow({
   states: StateMap
   now: number
   exam: DeckExam | null
+  /** Beginn des Lerntags (Konto) */
+  dayStartHour: number
   noteTitle?: string
   /** Im Browser über alle Stapel: der Stapel der Karte */
   deckName?: string
@@ -66,7 +75,7 @@ export function CardRow({
 }) {
   const app = useApp()
   const openContextMenu = useContextMenu()
-  const due = dueLabel(card, states, now, exam)
+  const due = dueLabel(card, states, now, exam, dayStartHour)
   const learned = sidesOf(card).some((side) => states.has(reviewKey(card.id, side)))
   const selecting = selection.active
   const selected = selection.ids.has(card.id)

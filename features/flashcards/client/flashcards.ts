@@ -462,9 +462,9 @@ const NO_LOG: ReviewLogEntry[] = []
 
 /**
  * Kartenseiten (reviewKey), die heute mit „Nochmal“ bewertet wurden – vom Server und die noch nicht gesendeten dieses
- * Geräts. `offline`: Der Server war nicht erreichbar, es zählen nur die lokalen.
+ * Geräts. `offline`: Der Server war nicht erreichbar, es zählen nur die lokalen. `dayStartHour`: Beginn des Lerntags.
  */
-export function useAgainToday(enabled = true) {
+export function useAgainToday(dayStartHour: number, enabled = true) {
   const query = useQuery({
     queryKey: ['again-today'],
     queryFn: () =>
@@ -474,8 +474,8 @@ export function useAgainToday(enabled = true) {
     retry: false,
   })
   const log = useSyncExternalStore(reviewQueue.subscribe, reviewQueue.getLog, () => NO_LOG)
-  // Nach Mitternacht beginnt ein neuer Tag
-  const today = startOfDay(useNow())
+  // Zum Tagesbeginn fängt ein neuer Tag an
+  const today = startOfDay(useNow(), dayStartHour)
   const keys = useMemo(() => {
     const set = new Set((query.data?.sides ?? []).map((s) => reviewKey(s.cardId, s.side)))
     for (const e of log) if (e.rating === 1 && e.reviewedAt >= today) set.add(reviewKey(e.cardId, e.side))
@@ -492,9 +492,31 @@ function patch(qc: QueryClient, fn: (d: FlashcardData) => FlashcardData) {
   qc.setQueryData<FlashcardData>(flashcardsKey, (d) => (d ? fn(d) : d))
 }
 
+/**
+ * Zur Problemkarte geworden und der Stapel setzt sie aus: im Browser gleich als ausgesetzt zeigen – der Server setzt
+ * sie selbst aus, sobald die Bewertung ankommt (auch offline gesammelt)
+ */
+export function markSuspended(qc: QueryClient, cardId: string) {
+  patch(qc, (d) => ({ ...d, cards: d.cards.map((c) => (c.id === cardId ? { ...c, suspended: true } : c)) }))
+}
+
 const byName = (a: Deck, b: Deck) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
 
-type DeckInput = Partial<Pick<Deck, 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>> & { name: string }
+type DeckInput = Partial<
+  Pick<
+    Deck,
+    | 'description'
+    | 'newPerDay'
+    | 'typeAnswer'
+    | 'scheduler'
+    | 'retention'
+    | 'learningSteps'
+    | 'relearningSteps'
+    | 'reviewPerDay'
+    | 'leechLapses'
+    | 'leechAction'
+  >
+> & { name: string }
 
 export async function createDeck(qc: QueryClient, input: DeckInput): Promise<Deck> {
   const { deck } = await api<{ deck: Deck }>('/api/decks', { method: 'POST', body: input })
@@ -506,6 +528,14 @@ export async function updateDeck(qc: QueryClient, id: string, input: Partial<Dec
   const { deck } = await api<{ deck: Deck }>(`/api/decks/${id}`, { method: 'PATCH', body: input })
   patch(qc, (d) => ({ ...d, decks: d.decks.map((x) => (x.id === id ? deck : x)).sort(byName) }))
   return deck
+}
+
+/** Beginn des Lerntags für alle Stapel – Statistik und „Heute vergessen“ teilen die Tage danach neu ein */
+export async function updateDayStartHour(qc: QueryClient, dayStartHour: number) {
+  const res = await api<{ dayStartHour: number }>('/api/flashcards/settings', { method: 'PATCH', body: { dayStartHour } })
+  patch(qc, (d) => ({ ...d, dayStartHour: res.dayStartHour }))
+  void qc.invalidateQueries({ queryKey: ['stats'] })
+  void qc.invalidateQueries({ queryKey: ['again-today'] })
 }
 
 export async function deleteDeck(qc: QueryClient, id: string) {

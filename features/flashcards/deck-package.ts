@@ -6,8 +6,8 @@ import { strFromU8, strToU8, unzipSync } from 'fflate'
 import { z } from 'zod'
 import { fileReferences } from '@/features/attachments/references'
 import { escapeRegExp } from '@/shared/lib/regexp'
-import { DEFAULT_NEW_PER_DAY, DEFAULT_RETENTION } from './srs'
-import { MAX_NEW_PER_DAY } from './limits'
+import { DEFAULT_LEARNING_STEPS, DEFAULT_NEW_PER_DAY, DEFAULT_RELEARNING_STEPS, DEFAULT_RETENTION, LEECH_LAPSES } from './srs'
+import { MAX_LEECH_LAPSES, MAX_NEW_PER_DAY, MAX_REVIEW_PER_DAY, MAX_STEP_MINUTES, MAX_STEPS } from './limits'
 import type { Card, Deck } from './types'
 
 /** Dateiendung – daran erkennt auch der allgemeine Import ein Paket */
@@ -18,7 +18,20 @@ const MEDIA_DIR = 'media/'
 /** Mehr Einträge hat kein sinnvolles Paket (Anki-Import: 50 000) */
 const MAX_ENTRIES = 50_000
 
-export type DeckSettings = Pick<Deck, 'name' | 'description' | 'newPerDay' | 'typeAnswer' | 'scheduler' | 'retention'>
+export type DeckSettings = Pick<
+  Deck,
+  | 'name'
+  | 'description'
+  | 'newPerDay'
+  | 'typeAnswer'
+  | 'scheduler'
+  | 'retention'
+  | 'learningSteps'
+  | 'relearningSteps'
+  | 'reviewPerDay'
+  | 'leechLapses'
+  | 'leechAction'
+>
 export type PackageCard = Pick<Card, 'type' | 'front' | 'back' | 'options' | 'occlusion' | 'position' | 'suspended'>
 type DeckManifest = { noted: number; deck: DeckSettings; cards: PackageCard[]; media: string[] }
 
@@ -53,10 +66,23 @@ export function createManifest(
     }
   }
   const { name, description, newPerDay, typeAnswer, scheduler, retention } = deck
+  const { learningSteps, relearningSteps, reviewPerDay, leechLapses, leechAction } = deck
   return {
     manifest: {
       noted: VERSION,
-      deck: { name, description, newPerDay, typeAnswer, scheduler, retention },
+      deck: {
+        name,
+        description,
+        newPerDay,
+        typeAnswer,
+        scheduler,
+        retention,
+        learningSteps,
+        relearningSteps,
+        reviewPerDay,
+        leechLapses,
+        leechAction,
+      },
       cards: cards.map(({ type, front, back, options, occlusion, position, suspended }) => ({
         type,
         front,
@@ -96,6 +122,20 @@ const deckSchema = z.object({
   typeAnswer: z.boolean().default(false),
   scheduler: z.enum(['sm2', 'fsrs']).default('sm2'),
   retention: z.number().min(0.7).max(0.99).default(DEFAULT_RETENTION),
+  // Erst seit den Optionen der Stapel im Paket – ältere Pakete planen mit den Standardwerten
+  learningSteps: z
+    .array(z.number().int().min(1).max(MAX_STEP_MINUTES))
+    .min(1)
+    .max(MAX_STEPS)
+    .default([...DEFAULT_LEARNING_STEPS]),
+  relearningSteps: z
+    .array(z.number().int().min(1).max(MAX_STEP_MINUTES))
+    .min(1)
+    .max(MAX_STEPS)
+    .default([...DEFAULT_RELEARNING_STEPS]),
+  reviewPerDay: z.number().int().min(0).max(MAX_REVIEW_PER_DAY).default(MAX_REVIEW_PER_DAY),
+  leechLapses: z.number().int().min(1).max(MAX_LEECH_LAPSES).default(LEECH_LAPSES),
+  leechAction: z.enum(['mark', 'suspend']).default('mark'),
 })
 
 const unit = z.number().min(0).max(1)

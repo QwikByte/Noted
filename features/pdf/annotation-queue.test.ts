@@ -19,6 +19,7 @@ const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const input: Omit<PdfAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
   attachmentId: 'a1',
+  kind: 'text',
   page: 1,
   rects: [[0, 0, 10, 10]],
   quote: 'Zitat',

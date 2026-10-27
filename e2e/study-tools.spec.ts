@@ -235,6 +235,155 @@ test('Jede Karte aussetzen: im Stapel über „⋮“ und mitten in der Lernsitz
   expect([suspended('Nicht klausurrelevant'), suspended('Später überarbeiten'), suspended('Bleibt')]).toEqual([true, true, false])
 })
 
+test('Stapel-Optionen: eigene Lernschritte, und eine Problemkarte wird beim Erreichen der Schwelle ausgesetzt', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Optionen E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const [neu, alt] = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    {
+      cards: [
+        { type: 'basic', front: 'Neue Definition', back: 'a' },
+        { type: 'basic', front: 'Immer wieder vergessen', back: 'b' },
+      ],
+    },
+    'cards',
+  )
+  // Die zweite Karte ist gelernt und heute fällig
+  const now = Date.now()
+  const reviewed = await page.evaluate(
+    async ({ id, now }) => {
+      const me = await (await fetch('/api/auth/me')).json()
+      const day = 86_400_000
+      const review = { cardId: id, side: 0, phase: 'review', step: 0, interval: 3, ease: 2.5, reps: 3, lapses: 0, due: now - day, reviewedAt: now - 3 * day, introducedAt: now - 10 * day }
+      const r = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-noted-request': '1', 'x-noted-user': String(me.user.id) },
+        body: JSON.stringify({ reviews: [review] }),
+      })
+      return (await r.json()).saved
+    },
+    { id: alt.id, now },
+  )
+  expect(reviewed).toBe(1)
+
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByText('Erweitert').click()
+  await dialog.getByLabel('Lernschritte').fill('10m 1x')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('„1x“ ist kein Lernschritt – erlaubt sind z. B. 10m, 2h oder 1d.')
+  await dialog.getByLabel('Lernschritte').fill('10m 1h 1d')
+  await dialog.getByLabel('Problemkarte ab … mal vergessen').fill('1')
+  await dialog.getByLabel('Problemkarten', { exact: true }).selectOption('suspend')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toHaveCount(0)
+  const saved = (await flashcards(page)).decks.find((d: { id: string }) => d.id === deck.id)
+  expect(saved).toMatchObject({ learningSteps: [10, 60, 1440], relearningSteps: [10], leechLapses: 1, leechAction: 'suspend' })
+
+  // Beim Lernen: die fällige Wiederholung zuerst – einmal vergessen genügt jetzt für eine Problemkarte
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  await expect(studyCard).toContainText('Immer wieder vergessen')
+  await page.keyboard.press('Space')
+  await page.getByTestId('rate-1').click()
+  await expect(page.getByText('1-mal vergessen – die Karte ist jetzt ausgesetzt.')).toBeVisible()
+  // Die neue Karte zeigt die eigenen Lernschritte auf den Knöpfen
+  await expect(studyCard).toContainText('Neue Definition')
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('rate-1')).toContainText('10 Min.')
+  await expect(page.getByTestId('rate-3')).toContainText('1 Std.')
+  await page.getByTestId('rate-4').click()
+  await expect(page.getByTestId('study-done')).toBeVisible()
+  // Ausgesetzt auch auf dem Server, sobald die Bewertung ankommt – kommt nicht wieder dran
+  await expect
+    .poll(async () => (await flashcards(page)).cards.find((c: { id: string }) => c.id === alt.id).suspended)
+    .toBe(true)
+  expect((await flashcards(page)).cards.find((c: { id: string }) => c.id === neu.id).suspended).toBe(false)
+})
+
+test('Stapel-Optionen: Tageslimit für Wiederholungen – die übrigen warten bis morgen', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Limit E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const cards = await post<Created[]>(
+    page,
+    `/api/decks/${deck.id}/cards`,
+    { cards: ['Eins', 'Zwei', 'Drei'].map((front) => ({ type: 'basic', front, back: 'x' })) },
+    'cards',
+  )
+  // Alle drei gelernt und heute fällig – „Drei“ am längsten
+  const saved = await page.evaluate(
+    async ({ ids, now }) => {
+      const me = await (await fetch('/api/auth/me')).json()
+      const day = 86_400_000
+      const reviews = ids.map((id, i) => ({ cardId: id, side: 0, phase: 'review', step: 0, interval: 3, ease: 2.5, reps: 3, lapses: 0, due: now - (i + 1) * day, reviewedAt: now - 5 * day, introducedAt: now - 10 * day }))
+      const r = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-noted-request': '1', 'x-noted-user': String(me.user.id) },
+        body: JSON.stringify({ reviews }),
+      })
+      return (await r.json()).saved
+    },
+    { ids: cards.map((c) => c.id), now: Date.now() },
+  )
+  expect(saved).toBe(3)
+
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('Wiederholungen pro Tag')).toHaveValue('')
+  await dialog.getByLabel('Wiederholungen pro Tag').fill('2')
+  await dialog.getByRole('button', { name: 'Speichern' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect((await flashcards(page)).decks.find((d: { id: string }) => d.id === deck.id).reviewPerDay).toBe(2)
+  await expect(page.getByText('2 Wiederholungen · 1 warten')).toBeVisible()
+
+  await page.getByTestId('deck-learn').click()
+  const studyCard = page.getByTestId('study-card')
+  for (const front of ['Drei', 'Zwei']) {
+    await expect(studyCard).toContainText(front)
+    await page.keyboard.press('Space')
+    await page.getByTestId('rate-3').click()
+  }
+  await expect(page.getByTestId('study-done')).toContainText('1 fällige Wiederholung wartet wegen des Tageslimits bis morgen.')
+})
+
+test('Stapel-Optionen: Beginn des Lerntags gilt für das ganze Konto', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Tagesbeginn E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const edit = async () => {
+    await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+    await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByText('Erweitert').click()
+    return dialog
+  }
+  try {
+    await page.goto(`/?d=${deck.id}`)
+    let dialog = await edit()
+    const hour = dialog.getByLabel('Neuer Lerntag beginnt um')
+    await expect(hour).toHaveValue('0')
+    await hour.selectOption({ label: '4 Uhr (wie Anki)' })
+    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await expect(dialog).toHaveCount(0)
+    expect((await flashcards(page)).dayStartHour).toBe(4)
+    // Nach dem Neuladen und in jedem Stapel derselbe Wert
+    await page.reload()
+    dialog = await edit()
+    await expect(dialog.getByLabel('Neuer Lerntag beginnt um')).toHaveValue('4')
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click()
+  } finally {
+    // Die anderen Tests rechnen mit Mitternacht
+    await page.request.patch('/api/flashcards/settings', { headers: await apiHeaders(page), data: { dayStartHour: 0 } })
+  }
+})
+
 test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')
@@ -1482,6 +1631,119 @@ test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und a
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(async () => (await saved()).length, { timeout: 15_000 }).toBe(1)
   await expect.poll(queued).toBe(0)
+})
+
+test('PDF: Bereich in einem Scan markieren, als Bild einfügen und als Karteikarte übernehmen', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  // Seite 1 ohne Textebene (wie ein Scan), Seite 2 mit Text
+  const pdf = makePdf([[], ['Die Formel', 'E = mc2']])
+  const up = await page.request.post('/api/attachments', {
+    headers,
+    multipart: { file: { name: 'Scan Bereich.pdf', mimeType: 'application/pdf', buffer: pdf } },
+  })
+  expect(up.status()).toBe(201)
+  const att = (await up.json()).attachment as { id: string }
+  cleanup.push(`/api/attachments/${att.id}`)
+  const note = await post(page, '/api/notes', { title: 'Bereich Mitschrift', content: 'Siehe [[Scan Bereich.pdf#page=1]]\n', folderId: null }, 'note')
+  cleanup.push(`/api/notes/${note.id}?permanent=1`)
+  type Saved = { kind: string; page: number; quote: string; rects: number[][] }
+  const saved = async () => (await (await page.request.get(`/api/attachments/${att.id}/annotations`)).json()).annotations as Saved[]
+  const images = async () =>
+    ((await (await page.request.get('/api/attachments')).json()).attachments as { id: string; filename: string; mime: string }[]).filter(
+      (f) => f.filename.startsWith('Scan Bereich S. '),
+    )
+
+  await page.goto(`/?n=${note.id}`)
+  await page.getByRole('radio', { name: 'Lesen' }).click()
+  await page.locator('.markdown-body a.file-link-pdf').click()
+  const panel = page.getByTestId('pdf-panel')
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  const page1 = panel.locator('.page[data-page-number="1"]')
+
+  // Ohne Textebene lässt sich nichts auswählen – aber ein Bereich aufziehen
+  await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Bereich markieren' }).click()
+  await expect(panel.getByTestId('pdf-area-hint')).toBeVisible()
+  const p = (await page1.boundingBox())!
+  await page.mouse.move(p.x + 40, p.y + 50)
+  await page.mouse.down()
+  await page.mouse.move(p.x + 240, p.y + 170, { steps: 8 })
+  await expect(page1.locator('.pdf-area-draft')).toBeVisible()
+  await page.mouse.up()
+  const area = page1.locator('.pdf-annotation[data-kind="area"]')
+  await expect(area).toHaveCount(1)
+  await expect(page1.locator('.pdf-area-draft')).toHaveCount(0)
+  await expect(panel.getByTestId('pdf-area-hint')).toHaveCount(0)
+  // Der Bereich liegt, wo er aufgezogen wurde – relativ zur Seite, damit auch nach dem Neuladen vergleichbar
+  const relative = async () => {
+    const [pg, a] = [(await page1.boundingBox())!, (await area.boundingBox())!]
+    return [a.x - pg.x, a.y - pg.y, a.width, a.height].map(Math.round)
+  }
+  const drawn = await relative()
+  expect(drawn.map((v, i) => Math.abs(v - [40, 50, 200, 120][i]) <= 3)).toEqual([true, true, true, true])
+  await expect.poll(saved).toEqual([expect.objectContaining({ kind: 'area', page: 1, quote: '' })])
+  const bar = panel.getByTestId('pdf-annotation')
+  await expect(bar).toContainText('S. 1 · Bereich')
+  await shot(page, '56-pdf-area')
+
+  // Nach dem Neuladen an derselben Stelle
+  await page.reload()
+  await expect(panel.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 15_000 })
+  await expect(area).toHaveCount(1)
+  await expect.poll(relative).toEqual(drawn)
+
+  // Als Bild mit Seitenlink in die offene Notiz – das Bild entsteht erst jetzt
+  expect(await images()).toEqual([])
+  let a = (await area.boundingBox())!
+  await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2)
+  await bar.getByRole('button', { name: 'Als Bild einfügen' }).click()
+  await expect(page.getByText('Ausschnitt in „Bereich Mitschrift“ eingefügt.')).toBeVisible()
+  await expect
+    .poll(async () => (await page.evaluate((id) => fetch(`/api/notes/${id}`).then((r) => r.json()), note.id)).note.content)
+    .toContain('![[Scan Bereich S. 1 Ausschnitt.png]]\n\n[[Scan Bereich.pdf#page=1]]')
+  const [image] = await images()
+  cleanup.unshift(`/api/attachments/${image.id}`)
+  expect(image).toMatchObject({ filename: 'Scan Bereich S. 1 Ausschnitt.png', mime: 'image/png' })
+  // Hoch aufgelöst: ein Ausschnitt von 200 × 120 Punkten auf dem Bildschirm, gerendert mit bis zu 1600 Pixeln
+  const size = await page.evaluate(async (url) => {
+    const bitmap = await createImageBitmap(await (await fetch(url)).blob())
+    return { width: bitmap.width, height: bitmap.height }
+  }, `/api/attachments/${image.id}`)
+  expect(size.width).toBeGreaterThan(400)
+  expect(Math.abs(size.width / size.height - 200 / 120)).toBeLessThan(0.1)
+
+  // Karteikarte mit demselben Bild – keine zweite Datei
+  a = (await area.boundingBox())!
+  await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'Karteikarte mit Bild' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByTestId('card-back')).toHaveValue(/^!\[\[Scan Bereich S\. 1 Ausschnitt\.png\]\]\n\n\[\[Scan Bereich\.pdf#page=1\|Scan Bereich, S\. 1\]\]$/)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  expect(await images()).toHaveLength(1)
+
+  // Ein Bereich über Text übernimmt den Text darunter
+  await panel.getByLabel('Seite', { exact: true }).fill('2')
+  await panel.getByLabel('Seite', { exact: true }).press('Enter')
+  const formula = panel.locator('.page[data-page-number="2"] .textLayer span', { hasText: 'E = mc2' })
+  await expect(formula).toHaveCount(1)
+  await panel.getByRole('button', { name: 'Bereich markieren' }).click()
+  const t = (await panel.locator('.page[data-page-number="2"] .textLayer span', { hasText: 'Die Formel' }).boundingBox())!
+  const f = (await formula.boundingBox())!
+  await page.mouse.move(t.x - 6, t.y - 6)
+  await page.mouse.down()
+  await page.mouse.move(Math.max(t.x + t.width, f.x + f.width) + 6, f.y + f.height + 6, { steps: 6 })
+  await page.mouse.up()
+  await expect(bar).toContainText('S. 2 · Bereich: „Die Formel')
+  await expect.poll(async () => (await saved()).find((s) => s.page === 2)?.quote).toBe('Die Formel\nE = mc2')
+
+  // Esc beendet den Modus, ohne etwas anzulegen
+  await panel.getByRole('button', { name: 'Bereich markieren' }).click()
+  await expect(panel.getByTestId('pdf-area-hint')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(panel.getByTestId('pdf-area-hint')).toHaveCount(0)
+  expect(await saved()).toHaveLength(2)
 })
 
 test('PDF-Rückverweise: Notizen zur offenen Seite und zum ganzen PDF, ein Klick öffnet die Notiz', async ({ page }) => {

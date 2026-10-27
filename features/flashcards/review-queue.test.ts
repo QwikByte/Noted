@@ -61,6 +61,7 @@ describe('Warteschlange für Bewertungen', () => {
       cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], occlusion: null, position: 0, suspended: false, createdAt: 0, updatedAt: 0 }],
       reviews,
       fsrs: null,
+      dayStartHour: 0,
     })
     // Veraltete Daten (z. B. aus dem Offline-Cache): Überlagerung bleibt
     q.prune(data([review('a', 1000)]))
@@ -213,6 +214,7 @@ describe('Bewertung zurücknehmen in der Warteschlange', () => {
     cards: [{ id: 'a', deckId: 'd', noteId: null, type: 'basic', front: 'f', back: 'b', options: [], occlusion: null, position: 0, suspended: false, createdAt: 0, updatedAt: 0 }],
     reviews,
     fsrs: null,
+    dayStartHour: 0,
   })
 
   it('vor dem Senden: Der Stand davor gilt wieder und geht mit der Rücknahme in einer Anfrage raus', async () => {

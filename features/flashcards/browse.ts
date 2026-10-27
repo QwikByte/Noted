@@ -1,7 +1,7 @@
 // Kartenbrowser: Karten aller Stapel durchsuchen, filtern und sortieren – reine Logik ohne Browser. Die Suche gilt
 // auch in der Liste eines Stapels.
 import { cardStatus, endOfDay, type CardStatus } from './srs'
-import { byPosition, cardLapses, hardness, isProblemCard, reviewKey, sidesOf, type StateMap } from './study'
+import { byPosition, cardLapses, hardness, isProblemCard, leechThreshold, reviewKey, sidesOf, type StateMap } from './study'
 import type { Card, CardType, Deck } from './types'
 
 export type BrowseFilter = {
@@ -73,14 +73,16 @@ export function browseCards(
   filter: BrowseFilter,
   sort: BrowseSort,
   now: number,
+  dayStartHour = 0,
 ): Card[] {
-  const eod = endOfDay(now)
+  const eod = endOfDay(now, dayStartHour)
+  const leech = leechThreshold(decks)
   const matching = cards.filter((card) => {
     if (filter.deckId && card.deckId !== filter.deckId) return false
     if (filter.type && card.type !== filter.type) return false
     if (filter.suspended && !card.suspended) return false
     if (filter.fromNote && !card.noteId) return false
-    if (filter.problem && !isProblemCard(card, states)) return false
+    if (filter.problem && !isProblemCard(card, states, leech(card))) return false
     if (filter.status && !statesOf(card, states).some((s) => cardStatus(s) === filter.status)) return false
     if (filter.due && (card.suspended || !statesOf(card, states).some((s) => s && s.due <= eod))) return false
     return cardMatches(card, filter.query)

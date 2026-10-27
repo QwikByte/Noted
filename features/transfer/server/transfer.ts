@@ -17,7 +17,7 @@ import { htmlBody, htmlDocument } from '@/shared/lib/html'
 import type { NoteFormat } from '@/features/notes/types'
 import { canvasForExport, mapCanvasNodes, parseCanvas, type ExportIndex } from '@/features/canvas/canvas'
 import { isMindmapMarkdown } from '@/features/mindmap/mindmap'
-import { annotationsByAttachment } from '@/features/pdf/server/annotations'
+import { annotationsByAttachment, annotationsFile, importAnnotations, readAnnotationsFile } from '@/features/pdf/server/annotations'
 import { annotationsMarkdown } from '@/features/pdf/geometry'
 import { EXPORT_ATTACHMENT_FOLDER, buildExportIndex, exportNotePath } from '../paths'
 import { VAULT_EXPORT_FILE, vaultExport } from '@/features/vault/server/export'
@@ -27,8 +27,10 @@ import { isVaultFolder } from '@/features/vault/server/vault'
 const EXPORT_FLASHCARD_FOLDER = 'Karteikarten'
 /** Alle Termine – lässt sich in jede Kalender-App importieren */
 const EXPORT_CALENDAR_FILE = 'Kalender.ics'
-/** Anmerkungen eines PDFs liegen im Export neben der Datei – nur zum Lesen, der Import übergeht sie */
+/** Anmerkungen eines PDFs liegen im Export neben der Datei: zum Lesen (der Import übergeht sie) … */
 const ANNOTATIONS_SUFFIX = '.anmerkungen.md'
+/** … und mit Positionen und Farben, zum Wiederherstellen beim Import */
+const ANNOTATIONS_FILE_SUFFIX = '.anmerkungen.json'
 
 const ATTACHMENT_DIR_RE = new RegExp(`(\\ssrc=["'])(?:\\.\\./)*(?:${encodeURIComponent(EXPORT_ATTACHMENT_FOLDER)}|${EXPORT_ATTACHMENT_FOLDER})/`, 'gi')
 
@@ -148,17 +150,27 @@ export function exportZipStream(userId: number): ReadableStream<Uint8Array> {
       compress: /^(text\/|application\/(json|xml)|image\/(svg\+xml|bmp))/.test(att.mime),
       data: () => readAttachmentData(userId, att.id),
     })
-    // Markierungen eines PDFs daneben als lesbares Markdown („Skript.pdf.anmerkungen.md“)
+    // Markierungen eines PDFs daneben als lesbares Markdown („Skript.pdf.anmerkungen.md“) und für den Import als JSON
     const list = annotations.get(att.id)
     if (!list) continue
+    const mtime = Math.max(...list.map((a) => a.updatedAt))
     const name = uniqueName(att.filename, attachmentNames, ANNOTATIONS_SUFFIX)
-    attachmentNames.push(name)
-    entries.push({
-      path: `${EXPORT_ATTACHMENT_FOLDER}/${name}`,
-      mtime: Math.max(...list.map((a) => a.updatedAt)),
-      compress: true,
-      data: () => strToU8(annotationsMarkdown(att.filename, list)),
-    })
+    const file = uniqueName(att.filename, attachmentNames, ANNOTATIONS_FILE_SUFFIX)
+    attachmentNames.push(name, file)
+    entries.push(
+      {
+        path: `${EXPORT_ATTACHMENT_FOLDER}/${name}`,
+        mtime,
+        compress: true,
+        data: () => strToU8(annotationsMarkdown(att.filename, list)),
+      },
+      {
+        path: `${EXPORT_ATTACHMENT_FOLDER}/${file}`,
+        mtime,
+        compress: true,
+        data: () => strToU8(annotationsFile(att.filename, list)),
+      },
+    )
   }
 
   return zipStream(entries)
@@ -172,6 +184,8 @@ type ImportResult = {
   /** Neue Karteikarten-Stapel und ihre Karten (aus .noted-deck.zip) */
   decks: number
   cards: number
+  /** Übernommene Anmerkungen in PDFs (aus .anmerkungen.json eines Exports) */
+  annotations: number
   skipped: string[]
 }
 
@@ -188,6 +202,11 @@ const isDeckPackage = (name: string) => name.toLowerCase().endsWith(DECK_PACKAGE
 function isAnnotationsFile(entryPath: string, entries: Record<string, Uint8Array>) {
   if (!entryPath.startsWith(`${EXPORT_ATTACHMENT_FOLDER}/`) || !entryPath.endsWith(ANNOTATIONS_SUFFIX)) return false
   return Object.hasOwn(entries, entryPath.slice(0, -ANNOTATIONS_SUFFIX.length))
+}
+
+/** Anmerkungen mit Positionen aus einem Export von Noted („Anhänge/Skript.pdf.anmerkungen.json“) */
+function isAnnotationsDataFile(segments: string[], filename: string) {
+  return segments[0] === EXPORT_ATTACHMENT_FOLDER && filename.toLowerCase().endsWith(ANNOTATIONS_FILE_SUFFIX)
 }
 
 function isHiddenPath(p: string) {
@@ -224,7 +243,7 @@ export async function importFiles(
   timeZone: string,
 ): Promise<ImportResult> {
   const { maxImportBytes, maxUploadBytes } = getConfig()
-  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, decks: 0, cards: 0, skipped: [] }
+  const result: ImportResult = { notes: 0, attachments: 0, folders: 0, events: 0, decks: 0, cards: 0, annotations: 0, skipped: [] }
   // Im Tresor wird nur verschlüsselt gespeichert – das kann der Server nicht
   if (isVaultFolder(userId, targetFolderId)) throw badRequest('In den Tresor lässt sich noch nichts importieren.')
 
@@ -248,7 +267,7 @@ export async function importFiles(
     return folder.id
   }
 
-  const existingAttachments = new Map(listAttachments(userId).map((a) => [a.filename.toLowerCase(), a.size]))
+  const existingAttachments = new Map(listAttachments(userId).map((a) => [a.filename.toLowerCase(), a]))
 
   const importNote = (folderId: string | null, filename: string, data: Uint8Array) => {
     if (HTML_EXT.test(filename)) {
@@ -279,17 +298,20 @@ export async function importFiles(
     if (n > 0) result.skipped.push(`${filename} (${n} ${n === 1 ? 'Termin' : 'Termine'} nicht lesbar oder abgesagt)`)
   }
 
-  const importAttachment = (filename: string, type: string | null, data: Uint8Array) => {
+  /** Liefert den Anhang, in dem die Datei jetzt liegt – neu, umbenannt oder schon vorhanden */
+  const importAttachment = (filename: string, type: string | null, data: Uint8Array): string | null => {
     if (data.byteLength > maxUploadBytes) {
       result.skipped.push(`${filename} (zu groß)`)
-      return
+      return null
     }
-    if (data.byteLength === 0) return
+    if (data.byteLength === 0) return null
     const clean = sanitizeFilename(filename)
-    if (existingAttachments.get(clean.toLowerCase()) === data.byteLength) return // bereits vorhanden
+    const existing = existingAttachments.get(clean.toLowerCase())
+    if (existing?.size === data.byteLength) return existing.id // bereits vorhanden
     const att = saveAttachment(userId, { name: clean, type, data })
-    existingAttachments.set(att.filename.toLowerCase(), att.size)
+    existingAttachments.set(att.filename.toLowerCase(), att)
     result.attachments++
+    return att.id
   }
 
   const importDeck = (data: Uint8Array) => {
@@ -299,7 +321,7 @@ export async function importFiles(
     result.attachments += r.media
     for (const s of r.skipped) result.skipped.push(`${r.deck.name}: ${s}`)
     // Dateien des Stapels sind jetzt vorhanden – nicht noch einmal aus „Anhänge“ übernehmen
-    for (const a of listAttachments(userId)) existingAttachments.set(a.filename.toLowerCase(), a.size)
+    for (const a of listAttachments(userId)) existingAttachments.set(a.filename.toLowerCase(), a)
   }
 
   let total = 0
@@ -349,12 +371,19 @@ export async function importFiles(
       }
       // Gibt es einen Stapel als Paket und als Markdown (Export aus Noted), zählt nur das verlustfreie Paket
       const packages = new Set(Object.keys(entries).filter((p) => isDeckPackage(p) && !p.startsWith(`${EXPORT_ATTACHMENT_FOLDER}/`)))
+      // Anhang je Pfad im Archiv – Anmerkungen kommen erst danach dazu, die Reihenfolge im ZIP ist beliebig
+      const attachmentAt = new Map<string, string>()
+      const annotationFiles: [string, Uint8Array][] = []
       for (const [entryPath, entryData] of Object.entries(entries)) {
         const segments = entryPath.split('/').filter(Boolean)
         const filename = segments.pop()!
         try {
           if (NOTE_EXT.test(entryPath) && packages.has(entryPath.replace(NOTE_EXT, DECK_PACKAGE_EXT))) continue
           if (isAnnotationsFile(entryPath, entries)) continue
+          if (isAnnotationsDataFile(segments, filename)) {
+            annotationFiles.push([entryPath, entryData])
+            continue
+          }
           if (VAULT_EXT.test(filename)) {
             result.skipped.push(`${entryPath} (der Tresor lässt sich noch nicht importieren)`)
             continue
@@ -368,8 +397,28 @@ export async function importFiles(
           } else if (isCalendarFile(segments, filename)) {
             importCalendar(entryPath, entryData)
           } else {
-            importAttachment(filename, null, entryData)
+            const id = importAttachment(filename, null, entryData)
+            if (id) attachmentAt.set(entryPath, id)
           }
+        } catch (err) {
+          result.skipped.push(`${entryPath} (${err instanceof Error ? err.message : 'Fehler'})`)
+        }
+      }
+      for (const [entryPath, entryData] of annotationFiles) {
+        try {
+          const file = readAnnotationsFile(entryData)
+          // Eine andere JSON-Datei dieses Namens bleibt ein gewöhnlicher Anhang
+          if (!file) {
+            importAttachment(entryPath.split('/').pop()!, null, entryData)
+            continue
+          }
+          // Das PDF liegt im selben Ordner des Archivs – unter dem Namen, den es beim Export hatte
+          const pdf = attachmentAt.get(entryPath.slice(0, entryPath.lastIndexOf('/') + 1) + file.file)
+          if (!pdf) {
+            result.skipped.push(`${entryPath} (das PDF dazu fehlt im Archiv)`)
+            continue
+          }
+          result.annotations += importAnnotations(userId, pdf, file.annotations)
         } catch (err) {
           result.skipped.push(`${entryPath} (${err instanceof Error ? err.message : 'Fehler'})`)
         }

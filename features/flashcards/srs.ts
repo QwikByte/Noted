@@ -1,9 +1,11 @@
 // Wiederholungsplan für Karteikarten (Spaced Repetition) nach dem Vorbild von Anki (SM-2):
 //
-// - Neue Karten durchlaufen kurze Lernschritte (1 und 10 Minuten), danach kommen sie nach einem Tag wieder.
+// - Neue Karten durchlaufen kurze Lernschritte (Standard 1 und 10 Minuten, je Stapel einstellbar), danach kommen sie
+//   nach einem Tag wieder.
 // - Gelernte Karten kommen in wachsenden Abständen (Abstand × Leichtigkeit) wieder.
 // - „Nochmal“ bei einer gelernten Karte zählt als vergessen: Sie wird kurz neu gelernt, der Abstand halbiert
 //   und die Leichtigkeit sinkt. „Schwer“/„Einfach“ verkürzen/verlängern den Abstand und passen die Leichtigkeit an.
+import { localDate } from '@/features/calendar/dates'
 import { fsrsInterval, initialMemory, memoryFromSm2, nextMemory, type Memory } from './fsrs'
 import type { SrsState } from './types'
 
@@ -19,10 +21,10 @@ export const RATINGS: { rating: Rating; label: string; key: string }[] = [
 export const MINUTE = 60_000
 export const DAY = 86_400_000
 
-/** Lernschritte für neue Karten (Minuten) */
-const LEARNING_STEPS = [1, 10]
+/** Lernschritte für neue Karten (Minuten), wenn der Stapel keine eigenen hat */
+export const DEFAULT_LEARNING_STEPS: readonly number[] = [1, 10]
 /** Lernschritte nach dem Vergessen (Minuten) */
-const RELEARNING_STEPS = [10]
+export const DEFAULT_RELEARNING_STEPS: readonly number[] = [10]
 const GRADUATING_INTERVAL = 1
 const EASY_INTERVAL = 4
 const START_EASE = 2.5
@@ -36,7 +38,10 @@ const LAPSE_FACTOR = 0.5
 const MAX_INTERVAL = 36_500
 /** Ab diesem Abstand (Tage) gilt eine Karte als „sicher“ */
 const MATURE_INTERVAL = 21
-/** So oft vergessen, gilt eine Karte als Problemkarte (bei Anki „Leech“) – meist ist die Karte selbst das Problem */
+/**
+ * So oft vergessen, gilt eine Karte als Problemkarte (bei Anki „Leech“) – meist ist die Karte selbst das Problem.
+ * Standard für neue Stapel, je Stapel einstellbar.
+ */
 export const LEECH_LAPSES = 6
 export const DEFAULT_NEW_PER_DAY = 20
 /** Gewünschte Behaltensrate mit FSRS */
@@ -86,30 +91,42 @@ export function fuzzInterval(days: number, seed: number | null, min = 1): number
 const fuzzSeed = (key: string | undefined, reps: number) => (key ? fnv1a(`${key}:${reps}`) / 2 ** 32 : null)
 
 /**
+ * Lernschritte eines Stapels in Minuten – ohne Angabe die Standardwerte. `dayStartHour`: Beginn des Lerntags (Konto),
+ * zählt bei FSRS für die vergangenen Tage.
+ */
+type Steps = { learningSteps?: readonly number[]; relearningSteps?: readonly number[]; dayStartHour?: number }
+
+/**
  * Wiederholungsplan eines Stapels: SM-2 (wie Anki) oder FSRS mit gewünschter Behaltensrate – `weights`: auf den eigenen
  * Lernverlauf optimierte Gewichte (sonst die Standardwerte)
  */
-export type Plan = { kind: 'sm2' } | { kind: 'fsrs'; retention: number; weights?: readonly number[] }
+export type Plan = ({ kind: 'sm2' } | { kind: 'fsrs'; retention: number; weights?: readonly number[] }) & Steps
 
 export const SM2: Plan = { kind: 'sm2' }
 
 /** FSRS: Stabilität und Schwierigkeit nach der Bewertung – bisher mit SM-2 geplante Seiten werden umgerechnet */
-function fsrsMemory(prev: SrsState | null, rating: Rating, now: number, weights?: readonly number[]): Memory {
+function fsrsMemory(
+  prev: SrsState | null,
+  rating: Rating,
+  now: number,
+  weights?: readonly number[],
+  dayStartHour = 0,
+): Memory {
   if (!prev) return initialMemory(rating, weights)
   const memory =
     prev.stability != null && prev.difficulty != null
       ? { stability: prev.stability, difficulty: prev.difficulty }
       : memoryFromSm2(prev.interval, prev.ease, weights)
-  return nextMemory(memory, rating, calendarDays(prev.reviewedAt, now), weights)
+  return nextMemory(memory, rating, calendarDays(prev.reviewedAt, now, dayStartHour), weights)
 }
 
 /**
- * Vergangene Kalendertage (Ortszeit) – wie beim Optimieren der Gewichte (fsrs-dataset.ts). Karten sind ab 0 Uhr ihres
+ * Vergangene Lerntage (Ortszeit) – wie beim Optimieren der Gewichte (fsrs-dataset.ts). Karten sind ab Beginn ihres
  * Fälligkeitstags dran: Abends bewertet und am nächsten Morgen wiederholt ist ein Tag, nicht ein halber.
  */
-function calendarDays(from: number, to: number): number {
+function calendarDays(from: number, to: number, dayStartHour: number): number {
   // Gerundet, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
-  return Math.round((startOfDay(to) - startOfDay(from)) / DAY)
+  return Math.round((startOfDay(to, dayStartHour) - startOfDay(from, dayStartHour)) / DAY)
 }
 
 /**
@@ -136,13 +153,16 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
   // FSRS: Abstand in Tagen aus der Stabilität nach der jeweiligen Bewertung
   const fsrsDays = (r: Rating) => {
     if (plan.kind !== 'fsrs') return 0
-    return clampInterval(fsrsInterval(fsrsMemory(prev, r, now, plan.weights).stability, plan.retention))
+    return clampInterval(fsrsInterval(fsrsMemory(prev, r, now, plan.weights, plan.dayStartHour).stability, plan.retention))
   }
   if (plan.kind === 'fsrs') {
-    const memory = fsrsMemory(prev, rating, now, plan.weights)
+    const memory = fsrsMemory(prev, rating, now, plan.weights, plan.dayStartHour)
     s.stability = memory.stability
     s.difficulty = memory.difficulty
   }
+
+  const learningSteps = plan.learningSteps?.length ? plan.learningSteps : DEFAULT_LEARNING_STEPS
+  const relearningSteps = plan.relearningSteps?.length ? plan.relearningSteps : DEFAULT_RELEARNING_STEPS
 
   if (s.phase === 'review') {
     if (rating === 1) {
@@ -151,7 +171,7 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
       s.interval = plan.kind === 'fsrs' ? fsrsDays(1) : clampInterval(s.interval * LAPSE_FACTOR)
       s.phase = 'relearning'
       s.step = 0
-      s.due = now + RELEARNING_STEPS[0] * MINUTE
+      s.due = now + relearningSteps[0] * MINUTE
       return s
     }
     // Jeder Abstand mit Untergrenze – gestreut bleibt so Schwer ≤ Gut < Einfach
@@ -191,7 +211,7 @@ export function schedule(prev: SrsState | null, rating: Rating, now: number, pla
   }
 
   // Lernphase (neu oder nach dem Vergessen)
-  const steps = s.phase === 'relearning' ? RELEARNING_STEPS : LEARNING_STEPS
+  const steps = s.phase === 'relearning' ? relearningSteps : learningSteps
   const step = Math.min(s.step, steps.length - 1)
   const graduate = (days: number) => {
     s.phase = 'review'
@@ -248,18 +268,27 @@ export function formatInterval(ms: number): string {
   return `${fmt(days / 365)} J.`
 }
 
-/** Ende des Kalendertags (Ortszeit) – gelernte Karten sind den ganzen Fälligkeitstag über dran. */
-export function endOfDay(now: number): number {
+/**
+ * Beginn des Lerntags (Ortszeit). `dayStartHour`: Stunde, zu der ein neuer Lerntag beginnt (Einstellung des Kontos) –
+ * bei 4 Uhr gehört eine Wiederholung um 0:30 noch zum Vortag, wie bei Anki.
+ */
+export function startOfDay(now: number, dayStartHour = 0): number {
   const d = new Date(now)
-  d.setHours(23, 59, 59, 999)
+  if (d.getHours() < dayStartHour) d.setDate(d.getDate() - 1)
+  d.setHours(dayStartHour, 0, 0, 0)
   return d.getTime()
 }
 
-export function startOfDay(now: number): number {
-  const d = new Date(now)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
+/** Ende des Lerntags (Ortszeit) – gelernte Karten sind den ganzen Fälligkeitstag über dran. */
+export function endOfDay(now: number, dayStartHour = 0): number {
+  const d = new Date(startOfDay(now, dayStartHour))
+  // Über das Datum statt + DAY, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
+  d.setDate(d.getDate() + 1)
+  return d.getTime() - 1
 }
+
+/** Datum des Lerntags (YYYY-MM-DD) – kurz nach Mitternacht bei späterem Tagesbeginn noch das von gestern */
+export const studyDate = (now: number, dayStartHour = 0) => localDate(new Date(startOfDay(now, dayStartHour)))
 
 export type CardStatus = 'new' | 'learning' | 'young' | 'mature'
 

@@ -5,8 +5,8 @@ import { AlertTriangle, Dumbbell, Flame, RotateCcw } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import type { StudyScope } from '@/features/workspace/client/nav'
 import { Menu, MenuItem, MenuSeparator } from '@/shared/ui/menu'
-import { useAgainToday } from '../client/flashcards'
-import { HARDEST_COUNT, STUDY_FILTERS, allItems, filterItems, type StateMap, type StudyFilter } from '../study'
+import { useAgainToday, useFlashcards } from '../client/flashcards'
+import { HARDEST_COUNT, STUDY_FILTERS, allItems, filterItems, leechThreshold, type StateMap, type StudyFilter } from '../study'
 import type { Card } from '../types'
 
 /** Titel der eigenen Übungen – im Menü und über der Sitzung */
@@ -34,15 +34,17 @@ export function PracticeMenu({
   trigger: React.ComponentProps<typeof Menu>['trigger']
 }) {
   const app = useApp()
-  const again = useAgainToday()
+  const data = useFlashcards().data
+  const decks = data?.decks
+  const again = useAgainToday(data?.dayStartHour ?? 0)
   const counts = useMemo(
     () => ({
       all: allItems(cards).length,
       'again-today': filterItems('again-today', cards, states, { again: again.keys }).length,
-      problem: filterItems('problem', cards, states).length,
+      problem: filterItems('problem', cards, states, { leech: leechThreshold(decks ?? []) }).length,
       hardest: filterItems('hardest', cards, states).length,
     }),
-    [cards, states, again.keys],
+    [cards, states, again.keys, decks],
   )
   return (
     <Menu trigger={trigger}>

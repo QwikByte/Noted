@@ -32,6 +32,7 @@ export function drawAnnotations(view: PageView, list: PdfAnnotation[], state: { 
       const el = document.createElement('div')
       el.className = 'pdf-annotation'
       el.dataset.annotationId = a.id
+      el.dataset.kind = a.kind === 'area' ? 'area' : 'text'
       el.dataset.color = String(a.color)
       // Kommentar-Hinweis an der ersten Zeile
       if (i === 0 && a.comment) el.classList.add('has-comment')
@@ -85,6 +86,36 @@ export function selectionOnPage(range: Range, view: PageView): { text: string; r
     for (const r of part.getClientRects()) rects.push(convert(r))
   }
   return { text, rects: mergeLineRects(rects).map((r) => toPdfRect(view.viewport.transform, r)) }
+}
+
+/** Kleiner als so viele Bildschirmpunkte ist ein aufgezogener Bereich eher ein versehentlicher Klick */
+const MIN_AREA = 8
+
+type Point = { x: number; y: number }
+
+/**
+ * Bereich zwischen zwei Bildschirmpunkten, auf die Seite beschnitten: in Prozent der Seite (zum Zeichnen beim Ziehen)
+ * und in PDF-Koordinaten; `big`: groß genug für eine Markierung
+ */
+export function areaOnPage(view: PageView, from: Point, to: Point): { percent: ViewRect; rect: PdfRect; big: boolean } {
+  const box = view.div.getBoundingClientRect()
+  const clampX = (x: number) => Math.min(box.right, Math.max(box.left, x))
+  const clampY = (y: number) => Math.min(box.bottom, Math.max(box.top, y))
+  const left = clampX(Math.min(from.x, to.x))
+  const top = clampY(Math.min(from.y, to.y))
+  const width = clampX(Math.max(from.x, to.x)) - left
+  const height = clampY(Math.max(from.y, to.y)) - top
+  const screen = { left, top, width, height }
+  return {
+    percent: {
+      left: ((left - box.left) / box.width) * 100,
+      top: ((top - box.top) / box.height) * 100,
+      width: (width / box.width) * 100,
+      height: (height / box.height) * 100,
+    },
+    rect: toPdfRect(view.viewport.transform, toViewport(view)(screen)),
+    big: width >= MIN_AREA && height >= MIN_AREA,
+  }
 }
 
 /** Markierung unter dem Mauszeiger bzw. Finger */

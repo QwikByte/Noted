@@ -16,7 +16,7 @@ import { NetworkError } from '@/shared/client/api'
 import { CARD_TYPE_LABELS, useFlashcards } from '../client/flashcards'
 import { BROWSE_SORTS, NO_FILTER, browseCards, type BrowseFilter, type BrowseSort } from '../browse'
 import { nextExam } from '../exam'
-import { isProblemCard } from '../study'
+import { isProblemCard, leechThreshold } from '../study'
 import { STATUS_LABELS } from './common'
 import { CardRow } from './CardRow'
 import { useCardActions } from './CardActions'
@@ -56,9 +56,10 @@ export function CardBrowser({ initialQuery }: { initialQuery: string }) {
 
   const decks = useMemo(() => data?.decks ?? [], [data])
   const deckNames = useMemo(() => new Map(decks.map((d) => [d.id, d.name])), [decks])
+  const leech = useMemo(() => leechThreshold(decks), [decks])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
   const cards = useMemo(
-    () => (data ? browseCards(data.cards, data.decks, data.states, filter, sort, now) : []),
+    () => (data ? browseCards(data.cards, data.decks, data.states, filter, sort, now, data.dayStartHour) : []),
     [data, filter, sort, now],
   )
   const order = useMemo(() => cards.map((c) => c.id), [cards])
@@ -178,10 +179,11 @@ export function CardBrowser({ initialQuery }: { initialQuery: string }) {
                   card={card}
                   states={data.states}
                   now={now}
-                  exam={nextExam(deck?.exams, now)}
+                  exam={nextExam(deck?.exams, now, data.dayStartHour)}
+                  dayStartHour={data.dayStartHour}
                   noteTitle={card.noteId ? noteTitles.get(card.noteId) : undefined}
                   deckName={deckNames.get(card.deckId)}
-                  problem={isProblemCard(card, data.states)}
+                  problem={isProblemCard(card, data.states, leech(card))}
                   actions={cardList.rowActions}
                   selection={selection}
                   listOrder={order}

@@ -45,9 +45,8 @@ import { errorMessage } from '@/shared/client/api'
 import { deckToMarkdown } from '../card-markdown'
 import { daysUntil, examNewPerDay, nextExam } from '../exam'
 import { cardMatches } from '../browse'
-import { MAX_NEW_PER_DAY } from '../limits'
+import { MAX_NEW_PER_DAY, MAX_REVIEW_PER_DAY } from '../limits'
 import { longDate } from '@/features/calendar/dates'
-import { LEECH_LAPSES } from '../srs'
 import { byPosition, deckCounts, isProblemCard, type DeckCounts } from '../study'
 import type { Deck, DeckExam } from '../types'
 
@@ -71,11 +70,16 @@ export function DeckView({ id }: { id: string }) {
 
   const deck = data?.decks.find((d) => d.id === id)
   const cards = useMemo(() => (data ? data.cards.filter((c) => c.deckId === id).sort(byPosition) : []), [data, id])
-  const counts = data && deck ? deckCounts(deck, cards, data.states, now) : null
-  const exam = nextExam(deck?.exams, now)
+  const dayStartHour = data?.dayStartHour ?? 0
+  const counts = data && deck ? deckCounts(deck, cards, data.states, now, dayStartHour) : null
+  const exam = nextExam(deck?.exams, now, dayStartHour)
   const status = useMemo(() => statusCounts(cards, data?.states ?? new Map()), [cards, data])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
-  const problems = useMemo(() => new Set(data ? cards.filter((c) => isProblemCard(c, data.states)).map((c) => c.id) : []), [cards, data])
+  const leechLapses = deck?.leechLapses
+  const problems = useMemo(
+    () => new Set(data ? cards.filter((c) => isProblemCard(c, data.states, leechLapses)).map((c) => c.id) : []),
+    [cards, data, leechLapses],
+  )
   const suspended = cards.filter((c) => c.suspended).length
   // Ist der Filter leer geworden (z. B. alle Problemkarten neu gelernt), wieder alle Karten zeigen
   const shownFilter: CardFilter =
@@ -215,6 +219,12 @@ export function DeckView({ id }: { id: string }) {
               <span className="font-medium text-accent-text tabular-nums">{counts.newToday}</span> neu ·{' '}
               <span className="font-medium text-warning tabular-nums">{counts.learning}</span> lernend ·{' '}
               <span className="font-medium text-success tabular-nums">{counts.review}</span> Wiederholungen
+              {counts.reviewWaiting > 0 ? (
+                <span title="Mehr Wiederholungen erlaubt das Tageslimit des Stapels heute nicht – sie kommen morgen dran.">
+                  {' '}
+                  · <span className="tabular-nums">{counts.reviewWaiting}</span> warten
+                </span>
+              ) : null}
             </p>
             <p>
               Morgen fällig: {counts.dueTomorrow} · heute gelernt: {counts.reviewedToday}
@@ -248,7 +258,9 @@ export function DeckView({ id }: { id: string }) {
             <Legend counts={status} />
           </div>
         ) : null}
-        {exam && cards.length > 0 ? <ExamPlan deck={deck} counts={counts} exam={exam} now={now} /> : null}
+        {exam && cards.length > 0 ? (
+          <ExamPlan deck={deck} counts={counts} exam={exam} now={now} dayStartHour={dayStartHour} />
+        ) : null}
       </div>
 
       <div className="mb-3 flex items-center gap-2">
@@ -305,8 +317,8 @@ export function DeckView({ id }: { id: string }) {
       ) : null}
       {shownFilter === 'problem' ? (
         <p className="mb-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-fg" data-testid="problem-hint">
-          Mindestens {LEECH_LAPSES}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile sie und
-          lerne sie neu; bis dahin kannst du sie aussetzen.
+          Mindestens {deck?.leechLapses}-mal vergessen – meist ist die Karte zu umfangreich oder unklar. Überarbeite oder teile
+          sie und lerne sie neu; bis dahin kannst du sie aussetzen.
         </p>
       ) : null}
 
@@ -336,6 +348,7 @@ export function DeckView({ id }: { id: string }) {
                 states={data.states}
                 now={now}
                 exam={exam}
+                dayStartHour={dayStartHour}
                 noteTitle={card.noteId ? noteTitles.get(card.noteId) : undefined}
                 problem={problems.has(card.id)}
                 actions={cardList.rowActions}
@@ -391,12 +404,30 @@ export function DeckView({ id }: { id: string }) {
 }
 
 /** Klausurmodus: Was bis zur Klausur passiert – und wie viele neue Karten pro Tag es braucht, um alle zu schaffen */
-function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts; exam: DeckExam; now: number }) {
+function ExamPlan({
+  deck,
+  counts,
+  exam,
+  now,
+  dayStartHour,
+}: {
+  deck: Deck
+  counts: DeckCounts
+  exam: DeckExam
+  now: number
+  dayStartHour: number
+}) {
   const qc = useQueryClient()
   const toast = useToast()
-  const days = daysUntil(exam, now)
-  const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now))
+  const days = daysUntil(exam, now, dayStartHour)
+  const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now, dayStartHour))
   const short = counts.newTotal > 0 && perDay > deck.newPerDay
+  const reviewsPerDay = Math.min(MAX_REVIEW_PER_DAY, counts.examReviewsPerDay)
+  const reviewsShort = deck.reviewPerDay < MAX_REVIEW_PER_DAY && reviewsPerDay > deck.reviewPerDay
+  const apply = (input: Partial<Pick<Deck, 'newPerDay' | 'reviewPerDay'>>, message: string) =>
+    void updateDeck(qc, deck.id, input)
+      .then(() => toast.success(message))
+      .catch((err: unknown) => toast.error(errorMessage(err)))
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3 text-sm" data-testid="exam-plan">
       <CalendarClock className="size-4 shrink-0 text-accent-text" />
@@ -408,17 +439,21 @@ function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts;
           : short
             ? ` Um alle ${counts.newTotal} neuen Karten rechtzeitig einmal zu lernen, sind ${perDay} pro Tag nötig (Tageslimit: ${deck.newPerDay}).`
             : ` Mit ${deck.newPerDay} neuen Karten pro Tag lernst du alle ${counts.newTotal} neuen rechtzeitig.`}
+        {reviewsShort
+          ? ` Damit bis dahin jede fällige Wiederholung drankommt, sind ${reviewsPerDay} Wiederholungen pro Tag nötig (Tageslimit: ${deck.reviewPerDay}).`
+          : null}
       </p>
       {short ? (
+        <Button size="sm" onClick={() => apply({ newPerDay: perDay }, `Tageslimit: ${perDay} neue Karten.`)}>
+          {perDay} pro Tag übernehmen
+        </Button>
+      ) : null}
+      {reviewsShort ? (
         <Button
           size="sm"
-          onClick={() =>
-            void updateDeck(qc, deck.id, { newPerDay: perDay })
-              .then(() => toast.success(`Tageslimit: ${perDay} neue Karten.`))
-              .catch((err: unknown) => toast.error(errorMessage(err)))
-          }
+          onClick={() => apply({ reviewPerDay: reviewsPerDay }, `Tageslimit: ${reviewsPerDay} Wiederholungen.`)}
         >
-          {perDay} pro Tag übernehmen
+          {reviewsPerDay} Wiederholungen pro Tag übernehmen
         </Button>
       ) : null}
     </div>

@@ -115,7 +115,7 @@ describe('Auswertung', () => {
     // Am selben Tag, an dem der Stapel sie als fällig zählt
     for (let day = 0; day < 5; day++) {
       const at = NOW + day * DAY
-      const today = deckCounts({ newPerDay: 0, exams: decks[0].exams }, cards, states, at)
+      const today = deckCounts({ newPerDay: 0, reviewPerDay: 9999, exams: decks[0].exams }, cards, states, at)
       expect(today.review, `Tag ${day}`).toBe(dueForecast(decks, cards, states, at, 1)[0])
     }
     // Ohne Klausur bleibt es bei Tag 20
