@@ -397,4 +397,17 @@ export const migrations: string[] = [
   );
   CREATE INDEX focus_sessions_user ON focus_sessions(user_id, started_at);
   `,
+
+  /* 2: KI (Claude) */ `
+  -- Eigener Anthropic-API-Schlüssel je Konto, mit encrypt() verschlüsselt wie die MFA-Geheimnisse. key_hint = die
+  -- letzten Zeichen zum Wiedererkennen (der Schlüssel selbst geht nie zurück an den Browser), model = gewähltes
+  -- Claude-Modell. Keine Zeile = KI aus.
+  CREATE TABLE ai_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    api_key TEXT NOT NULL,
+    key_hint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ]

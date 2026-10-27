@@ -34,6 +34,8 @@ const child = spawn(process.execPath, ['server.js'], {
     HOSTNAME: '127.0.0.1',
     ADMIN_USERNAME: 'admin',
     ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'E2E-Admin-Passwort-1',
+    // Statt Anthropic ein Nachbau, den e2e/ai.spec.ts startet
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${process.env.E2E_ANTHROPIC_PORT ?? 3199}`,
   },
 })
 const stop = () => {

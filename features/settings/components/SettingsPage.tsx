@@ -30,6 +30,7 @@ import { useShares } from '@/features/sharing/client/queries'
 import { ShareList } from '@/features/sharing/components/ShareList'
 import { DEFAULT_LANGUAGE, NOTE_LANGUAGES, isLanguageTag } from '@/features/notes/language'
 import { VaultSettings } from '@/features/vault/components/VaultSettings'
+import { AiSettings } from '@/features/ai/components/AiSettings'
 
 export function SettingsPage() {
   const user = useUser()
@@ -46,6 +47,7 @@ export function SettingsPage() {
         <SessionsSection />
         <AppearanceSection />
         <SharesSection />
+        <AiSettings />
         <DataSection />
         <Section title="Abmelden" description={`Angemeldet als @${user.username}.`}>
           <Button onClick={confirmLogout}>
