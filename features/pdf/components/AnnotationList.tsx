@@ -1,5 +1,5 @@
 'use client'
-import { Quote, X } from 'lucide-react'
+import { Quote, Sparkles, X } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/ui/cn'
 import { annotationText } from './AnnotationBar'
@@ -12,6 +12,7 @@ export default function AnnotationList({
   onSelect,
   onContextMenu,
   onInsertAll,
+  onAiCards,
   onClose,
 }: {
   /** Bereits sortiert (sortAnnotations) */
@@ -21,6 +22,8 @@ export default function AnnotationList({
   /** Rechtsklick auf einen Eintrag: dieselben Aktionen wie auf der Markierung im PDF */
   onContextMenu: (e: React.MouseEvent, annotation: PdfAnnotation) => void
   onInsertAll: () => void
+  /** Karteikarten mit KI aus allen Markierungen – nur, wenn die KI eingerichtet ist */
+  onAiCards?: () => void
   onClose: () => void
 }) {
   const pages = [...new Set(annotations.map((a) => a.page))]
@@ -75,10 +78,15 @@ export default function AnnotationList({
           ))}
         </div>
       )}
-      <div className="shrink-0 border-t border-border p-2">
+      <div className="shrink-0 space-y-1.5 border-t border-border p-2">
         <Button size="sm" variant="secondary" className="w-full" onClick={onInsertAll} disabled={annotations.length === 0}>
           <Quote className="size-4" /> Alle als Zitate einfügen
         </Button>
+        {onAiCards ? (
+          <Button size="sm" variant="secondary" className="w-full" onClick={onAiCards} disabled={annotations.length === 0}>
+            <Sparkles className="size-4" /> Karteikarten mit KI …
+          </Button>
+        ) : null}
       </div>
     </aside>
   )

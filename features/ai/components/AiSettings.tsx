@@ -148,8 +148,9 @@ export function AiSettings() {
         </form>
       )}
       <p className="mt-5 text-xs text-muted">
-        Beim Vorschlagen gehen Titel und Text der Notiz an Anthropic, Notizen aus dem Tresor nie. Der Schlüssel liegt
-        verschlüsselt auf diesem Server und wird nicht wieder angezeigt.
+        Nur wenn du eine KI-Aktion startest, geht ihr Inhalt an Anthropic – der Text der Notiz bzw. die PDF-Seiten oder
+        Markierungen als Text und Bild. Notizen aus dem Tresor nie. Der Schlüssel liegt verschlüsselt auf diesem Server
+        und wird nicht wieder angezeigt.
       </p>
       <ConfirmModal
         open={confirmRemove}

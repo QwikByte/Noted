@@ -37,6 +37,15 @@ export function getAiCredentials(userId: number): { apiKey: string; model: AiMod
   }
 }
 
+/** Wie getAiCredentials, aber ohne Schlüssel ein Fehler mit Hinweis auf die Einstellungen */
+export function requireAiCredentials(userId: number): { apiKey: string; model: AiModel } {
+  const credentials = getAiCredentials(userId)
+  if (!credentials) {
+    throw new ApiError(400, 'ai_not_configured', 'Hinterlege zuerst unter Einstellungen → KI deinen Anthropic-API-Schlüssel.')
+  }
+  return credentials
+}
+
 /** Die letzten vier Zeichen zum Wiedererkennen – mehr verrät die Oberfläche nicht */
 const keyHint = (apiKey: string) => `…${apiKey.slice(-4)}`
 

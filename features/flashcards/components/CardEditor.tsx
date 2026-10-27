@@ -1,7 +1,7 @@
 'use client'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Brackets, CheckSquare, Eye, FileText, PenLine, Plus, Square, X } from 'lucide-react'
+import { Brackets, CheckSquare, Eye, FileText, PenLine, Plus, Sparkles, Square, X } from 'lucide-react'
 import type { CardEditorInit } from '@/features/workspace/client/context'
 import { CardMarkdown } from './CardMarkdown'
 import { Button } from '@/shared/ui/button'
@@ -22,6 +22,8 @@ import { OcclusionFields } from './OcclusionFields'
 import { insertAt } from '../card-editor'
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import { attachmentsKey } from '@/features/attachments/client/queries'
+import { useAiReady } from '@/features/ai/client/ai'
+import { AiCardImprove } from '@/features/ai/components/AiCardImprove'
 import type { CardOption, CardType, Occlusion } from '../types'
 
 const NEW_DECK = '__new__'
@@ -158,6 +160,9 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
   const [occlusion, setOcclusion] = useState<Occlusion | null>(editing?.occlusion ?? init.occlusion ?? null)
   const [noteId, setNoteId] = useState<string | null>(editing?.noteId ?? init.noteId ?? null)
   const [preview, setPreview] = useState(false)
+  // Mit KI überarbeiten – nicht bei Bildverdeckungen, deren Inhalt im Bild steckt
+  const aiReady = useAiReady()
+  const [aiOpen, setAiOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   // Name der Datei, die gerade hochgeladen wird – solange ist Speichern gesperrt
@@ -355,6 +360,18 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
           <div className="min-w-0 flex-1">
             <TypeSwitch value={type} onChange={setType} />
           </div>
+          {aiReady && type !== 'occlusion' ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setAiOpen((o) => !o)}
+              aria-pressed={aiOpen}
+              title="Mit KI überarbeiten"
+              aria-label="Mit KI überarbeiten"
+            >
+              <Sparkles className="size-4" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -367,6 +384,20 @@ export function CardEditorDialog({ init, onClose }: { init: CardEditorInit; onCl
             {preview ? <PenLine className="size-4" /> : <Eye className="size-4" />}
           </Button>
         </div>
+
+        {aiOpen && type !== 'occlusion' ? (
+          <AiCardImprove
+            card={{ type, front, back, options: type === 'mc' ? options.filter((o) => o.text.trim()) : [] }}
+            onApply={(c) => {
+              setType(c.type)
+              setFront(c.front)
+              setBack(c.back)
+              if (c.type === 'mc') setOptions(c.options)
+              setAiOpen(false)
+            }}
+            onClose={() => setAiOpen(false)}
+          />
+        ) : null}
 
         {preview ? (
           <div className="space-y-3">

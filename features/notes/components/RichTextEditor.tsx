@@ -2,14 +2,15 @@
 // Editor für formatierten Text. Wird per next/dynamic nachgeladen (TipTap ist groß) und gibt der Notizansicht
 // dieselbe Schnittstelle wie der Markdown-Editor.
 import { useEffect, useImperativeHandle, useRef } from 'react'
+import { getHTMLFromFragment } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
-import { richTextExtensions } from '../client/rich-text'
+import { htmlToMarkdown, markdownToHtml, richTextExtensions } from '../client/rich-text'
 import { useRichSlash } from '../client/rich-slash'
 import { attachmentHtml, insertionToHtml } from '../rich-html'
 import { RichTextToolbar } from './RichTextToolbar'
 import { EditMenuItems } from './EditorMenuItems'
 import { SlashMenu } from './SlashMenu'
-import { Bold, Italic, Layers, Strikethrough, Underline } from 'lucide-react'
+import { Bold, Italic, Layers, Sparkles, Strikethrough, Underline } from 'lucide-react'
 import { MenuItem, MenuSeparator, useContextMenu } from '@/shared/ui/menu'
 import type { RichTextHandle } from '../client/editor-handle'
 
@@ -20,6 +21,8 @@ type Props = {
   onSave: () => void
   onUpload: (files: File[]) => void
   onCreateCard: () => void
+  /** KI-Assistent öffnen – nur, wenn die KI eingerichtet ist */
+  onAi?: () => void
   autoFocus?: boolean
   spellcheck?: boolean
   /** Sprache des Textes (BCP-47) – wirkt sofort */
@@ -157,6 +160,11 @@ export default function RichTextEditor(props: Props) {
         <MenuItem icon={<Layers />} onSelect={props.onCreateCard}>
           {hasSelection ? 'Karteikarte aus Markierung' : 'Karteikarte erstellen'}
         </MenuItem>
+        {props.onAi ? (
+          <MenuItem icon={<Sparkles />} onSelect={props.onAi} hint="Strg+J">
+            {hasSelection ? 'Markierung mit KI bearbeiten …' : 'KI-Assistent …'}
+          </MenuItem>
+        ) : null}
       </>,
       { text: true },
     )
@@ -180,6 +188,20 @@ export default function RichTextEditor(props: Props) {
         const { from, to } = editor.state.selection
         return editor.state.doc.textBetween(from, to, '\n')
       },
+      aiSelection: () => {
+        if (!editor || editor.state.selection.empty) return null
+        const { from, to } = editor.state.selection
+        const html = getHTMLFromFragment(editor.state.doc.slice(from, to).content, editor.schema)
+        return { from, to, markdown: htmlToMarkdown(html), check: editor.state.doc.textBetween(from, to, '\n') }
+      },
+      applyAi: (span, markdown, how) => {
+        if (!editor || editor.state.doc.textBetween(span.from, span.to, '\n') !== span.check) return false
+        const html = markdownToHtml(markdown)
+        const at = how === 'replace' ? { from: span.from, to: span.to } : span.to
+        editor.chain().focus().insertContentAt(at, html).run()
+        return true
+      },
+      replaceDoc: (html) => editor?.chain().setContent(html, { emitUpdate: false }).run(),
       revealHeading: (index, focus) => {
         if (!editor) return
         let n = 0
@@ -205,7 +227,7 @@ export default function RichTextEditor(props: Props) {
       <div className="border-b border-border">
         {/* Erst mit Editor rendern – sonst zeigt die Leiste bis zur ersten Eingabe nichts an */}
         {editor ? (
-          <RichTextToolbar editor={editor} onUpload={props.onUpload} onCreateCard={props.onCreateCard} />
+          <RichTextToolbar editor={editor} onUpload={props.onUpload} onCreateCard={props.onCreateCard} onAi={props.onAi} />
         ) : (
           <div className="h-11" />
         )}

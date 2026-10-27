@@ -52,6 +52,7 @@ import { NoteOutline, OUTLINE_BESIDE_WIDTH } from './NoteOutline'
 import { PlainTextView, RichTextView } from './ReadView'
 import { FormatDialog } from './FormatPicker'
 import { HistoryDialog } from './dialogs'
+import { useNoteAi } from './NoteAi'
 import { ShareDialog } from '@/features/sharing/components/ShareDialog'
 import { useSharingEnabled } from '@/features/sharing/client/enabled'
 import { Button } from '@/shared/ui/button'
@@ -578,6 +579,31 @@ function NoteEditor({
     else sync.update(note.id, version, { title: value.trim() })
   }
 
+  /** Inhalt ersetzen wie eine Bearbeitung – wo ein Editor offen ist, mit Strg+Z rückgängig – und speichern */
+  const replaceContent = (next: string) => {
+    const f = latest.current.format
+    if (f === 'richtext') richRef.current?.replaceDoc(next)
+    else if (isVisualFormat(f)) {
+      visualRef.current?.setDoc(next)
+      // Mindmap in der geteilten Ansicht: auch die Gliederung daneben
+      if (f === 'mindmap') cmRef.current?.setDoc(next)
+    } else cmRef.current?.replaceDoc(next)
+    onChange(next)
+  }
+
+  const ai = useNoteAi({
+    noteId: note.id,
+    title,
+    format,
+    content,
+    inVault,
+    reading: effectiveMode === 'read',
+    rootRef,
+    editorHandle,
+    replaceContent,
+    onTitleChange,
+  })
+
   /**
    * Ohne Editor (Lesemodus) den Inhalt ändern – sofort auch in `latest`, damit eine zweite Einfügung direkt danach
    * (z. B. Bild und Seitenlink aus dem PDF-Viewer) auf der ersten aufbaut statt sie zu überschreiben
@@ -962,6 +988,7 @@ function NoteEditor({
         pos={pos ?? undefined}
         linkItems={linkItems}
         onCreateCard={createCard}
+        onAi={ai.canAssist ? ai.openAssistant : undefined}
       />
     ) : null
     openContextMenu(e, items, { text: true })
@@ -1047,6 +1074,7 @@ function NoteEditor({
               {linkedCards} {linkedCards === 1 ? 'Karte' : 'Karten'} lernen
             </MenuItem>
           ) : null}
+          {ai.menuItems}
         </>
       )}
       <MenuSeparator />
@@ -1338,6 +1366,7 @@ function NoteEditor({
                   getView={() => cmRef.current?.view() ?? null}
                   onUpload={upload}
                   onCreateCard={createCard}
+                  onAi={ai.canAssist ? ai.openAssistant : undefined}
                 />
               </div>
             </div>
@@ -1359,6 +1388,7 @@ function NoteEditor({
                 onSave={() => void sync.flush(note.id)}
                 onUpload={upload}
                 onCreateCard={createCard}
+                onAi={ai.canAssist ? ai.openAssistant : undefined}
                 autoFocus={autoFocus}
                 spellcheck={spellcheck === '1' && !inVault}
                 lang={lang}
@@ -1455,6 +1485,7 @@ function NoteEditor({
         />
       ) : null}
       {shareOpen ? <ShareDialog noteId={note.id} title={title} onClose={() => setShareOpen(false)} /> : null}
+      {ai.dialogs}
       <HistoryDialog
         noteId={note.id}
         title={title}
