@@ -1,4 +1,5 @@
 import 'server-only'
+import { randomBytes } from 'node:crypto'
 import { hash, hashSync, verify, type Algorithm } from '@node-rs/argon2'
 
 // OWASP-Empfehlung für Argon2id (19 MiB, 2 Iterationen)
@@ -26,7 +27,7 @@ export async function verifyPassword(hashValue: string, password: string): Promi
 // Gültiger Hash eines zufälligen Passworts, damit unbekannte Benutzer genauso lange brauchen
 let dummyHash: string | null = null
 export async function verifyDummy(password: string): Promise<void> {
-  dummyHash ??= await hashPassword('dummy-password-for-timing-' + Math.random())
+  dummyHash ??= await hashPassword(randomBytes(32).toString('base64'))
   await verifyPassword(dummyHash, password)
 }
 

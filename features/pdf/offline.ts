@@ -3,7 +3,7 @@
 // Reine Logik; die Cache-API kennt keine Zeitangaben, „zuletzt geöffnet“ führt der Browser selbst.
 
 /** So viel Platz dürfen PDFs belegen, die nicht als „Offline verfügbar“ markiert sind */
-export const OFFLINE_BUDGET = 300 * 1024 * 1024
+const OFFLINE_BUDGET = 300 * 1024 * 1024
 
 export type CacheEntry = {
   /** Schlüssel im Cache (Adresse) */

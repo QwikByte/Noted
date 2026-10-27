@@ -5,6 +5,20 @@ import { DAY } from './srs'
 import type { CardType, SrsState } from './types'
 
 const CLOZE_RE = /\{\{c(\d+)::([\s\S]*?)(?:::[\s\S]*?)?\}\}/g
+const TAG_RE = /<(?!\/?(sub|sup)\b)[^>]*>/gi
+
+/**
+ * Alle Tags außer <sub> und <sup> entfernen – Hoch- und Tiefstellung bleiben als HTML (Markdown kennt sie nicht).
+ * Wiederholt, bis nichts mehr wegfällt: Aus „<scr<b>ipt>“ darf kein neues Tag entstehen.
+ */
+function stripTags(html: string): string {
+  let out = html
+  for (let prev = ''; prev !== out; ) {
+    prev = out
+    out = out.replace(TAG_RE, '')
+  }
+  return out
+}
 
 /** Nummern der Lücken ({{c1::…}}) in der Reihenfolge des Texts */
 export function ankiClozeNumbers(field: string): number[] {
@@ -28,27 +42,24 @@ export function ankiFieldToMarkdown(html: string, media: (name: string) => strin
     const file = media(decodeEntities(name).trim())
     return file ? `![[${file}]]` : ''
   }
-  return decodeEntities(
-    html
-      .replace(/\r\n?/g, '\n')
-      .replace(CLOZE_RE, (_, _n, inner: string) => `==${inner}==`)
-      .replace(/\\\[([\s\S]*?)\\\]/g, (_, tex: string) => `$$${tex}$$`)
-      .replace(/\\\(([\s\S]*?)\\\)/g, (_, tex: string) => `$${tex.trim()}$`)
-      .replace(/\[latex\]([\s\S]*?)\[\/latex\]/gi, (_, tex: string) => `$$${tex.trim()}$$`)
-      .replace(/\[\$\$\]([\s\S]*?)\[\/\$\$\]/g, (_, tex: string) => `$$${tex.trim()}$$`)
-      .replace(/\[\$\]([\s\S]*?)\[\/\$\]/g, (_, tex: string) => `$${tex.trim()}$`)
-      .replace(/\[sound:([^\]]+)\]/g, (_, name: string) => embed(name))
-      .replace(/<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi, (_, a, b, c) => embed(a ?? b ?? c))
-      // Anki setzt jede weitere Zeile in ein <div> – ein neues Element beginnt also eine neue Zeile
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<(div|p|h[1-6]|tr|blockquote)\b[^>]*>/gi, '\n')
-      .replace(/<li\b[^>]*>/gi, '\n- ')
-      .replace(/<\/(p|ul|ol|h[1-6]|blockquote)>/gi, '\n')
-      .replace(/<\/?(b|strong)\b[^>]*>/gi, '**')
-      .replace(/<\/?(i|em)\b[^>]*>/gi, '*')
-      // Hoch- und Tiefstellung bleiben als HTML (Markdown kennt sie nicht), alle anderen Tags fallen weg
-      .replace(/<(?!\/?(sub|sup)\b)[^>]*>/gi, ''),
-  )
+  const text = html
+    .replace(/\r\n?/g, '\n')
+    .replace(CLOZE_RE, (_, _n, inner: string) => `==${inner}==`)
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, tex: string) => `$$${tex}$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, tex: string) => `$${tex.trim()}$`)
+    .replace(/\[latex\]([\s\S]*?)\[\/latex\]/gi, (_, tex: string) => `$$${tex.trim()}$$`)
+    .replace(/\[\$\$\]([\s\S]*?)\[\/\$\$\]/g, (_, tex: string) => `$$${tex.trim()}$$`)
+    .replace(/\[\$\]([\s\S]*?)\[\/\$\]/g, (_, tex: string) => `$${tex.trim()}$`)
+    .replace(/\[sound:([^\]]+)\]/g, (_, name: string) => embed(name))
+    .replace(/<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi, (_, a, b, c) => embed(a ?? b ?? c))
+    // Anki setzt jede weitere Zeile in ein <div> – ein neues Element beginnt also eine neue Zeile
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<(div|p|h[1-6]|tr|blockquote)\b[^>]*>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<\/(p|ul|ol|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<\/?(b|strong)\b[^>]*>/gi, '**')
+    .replace(/<\/?(i|em)\b[^>]*>/gi, '*')
+  return decodeEntities(stripTags(text))
     .replace(/ /g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\*\*\s*\*\*/g, '')

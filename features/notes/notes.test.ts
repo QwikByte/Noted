@@ -20,7 +20,7 @@ import * as decks from '@/app/api/decks/route'
 import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import { getDb } from '@/shared/server/db'
 import { MAX_VERSIONS_PER_NOTE, VERSION_MAX_AGE, purgeVersions } from './server/versions'
-import { purgeTrash, reindexLinkPaths } from './server/notes'
+import { purgeTrash } from './server/notes'
 
 let env: Awaited<ReturnType<typeof setupTestEnv>>
 let token = ''
@@ -196,21 +196,6 @@ describe('Ordner und Notizen', () => {
       const r2 = await call(note.PUT, '/', { method: 'PUT', cookie: token, params: { id: la.id }, body: { title: 'Matrizen' } })
       expect(r2.data).toMatchObject({ linksUpdated: 2, linksSkipped: 0 })
       expect(await content(all.id)).toBe('Siehe [[Matrizen]] und [[Umbenannter Ordner/Matrizen]]')
-    })
-
-    it('liest nach dem Update vorhandene Links mit Ordner einmal neu ein', () => {
-      const db = getDb()
-      // Stand direkt nach der Migration: je Ziel eine Zeile ohne Ordnerteil, Merker gesetzt
-      db.prepare('DELETE FROM note_links WHERE note_id = ?').run(plan.id)
-      db.prepare("INSERT INTO note_links (note_id, target) VALUES (?, 'folgen')").run(plan.id)
-      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('reindex_link_paths', '1')").run()
-      expect(reindexLinkPaths()).toBeGreaterThan(0)
-      expect(db.prepare('SELECT target, path FROM note_links WHERE note_id = ? ORDER BY path').all(plan.id)).toEqual([
-        { target: 'folgen', path: 'analysis' },
-        { target: 'folgen', path: 'uni 66/analysis' },
-      ])
-      // Nur einmal
-      expect(reindexLinkPaths()).toBe(0)
     })
   })
 

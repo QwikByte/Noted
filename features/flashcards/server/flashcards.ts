@@ -657,7 +657,7 @@ export function saveReviews(
  * kein neuerer Stand vorliegt – wurde auf einem anderen Gerät inzwischen weitergelernt, bleibt alles, wie es ist.
  * Liefert die Zahl der Rücknahmen, die etwas geändert haben.
  */
-export function undoReviews(userId: number, items: ReviewUndo[]): number {
+function undoReviews(userId: number, items: ReviewUndo[]): number {
   const db = getDb()
   const current = db.prepare('SELECT reviewed_at FROM card_reviews WHERE card_id = ? AND side = ? AND user_id = ?')
   const remove = db.prepare('DELETE FROM card_reviews WHERE card_id = ? AND side = ? AND user_id = ?')
@@ -788,7 +788,7 @@ const time = z.number().int().min(0).max(8_640_000_000_000_000)
 
 const side = z.number().int().min(0).max(MAX_CLOZES - 1)
 
-export const reviewSchema = z.object({
+const reviewSchema = z.object({
   cardId: z.string().uuid(),
   side,
   phase: z.enum(['learning', 'review', 'relearning']),
@@ -804,7 +804,7 @@ export const reviewSchema = z.object({
   difficulty: z.number().min(1).max(10).nullable().optional(),
 })
 
-export const reviewLogSchema = z.object({
+const reviewLogSchema = z.object({
   cardId: z.string().uuid(),
   side,
   rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),

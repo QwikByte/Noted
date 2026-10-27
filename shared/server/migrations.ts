@@ -109,10 +109,13 @@ export const migrations: string[] = [
   );
   CREATE INDEX note_tags_tag ON note_tags(tag);
 
+  -- Wikilinks: target = Titel-Schlüssel, path = Ordnerteil des Links, klein geschrieben ('' ohne Ordner) –
+  -- [[Analysis/Übung 1]] meint die „Übung 1“ im Ordner Analysis.
   CREATE TABLE note_links (
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
     target TEXT NOT NULL,
-    PRIMARY KEY (note_id, target)
+    path TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (note_id, target, path)
   );
   CREATE INDEX note_links_target ON note_links(target);
 
@@ -215,13 +218,15 @@ export const migrations: string[] = [
     indexed_at INTEGER NOT NULL
   );
 
-  -- Anmerkungen in PDFs. rects ist eine JSON-Liste von Rechtecken [x1, y1, x2, y2] in PDF-Koordinaten der Seite
-  -- (unabhängig von Zoom und Gerät), quote der markierte Text. Die ID vergibt der Browser, damit Markierungen auch
-  -- offline entstehen und später gesendet werden können.
+  -- Anmerkungen in PDFs. kind: 'text' markiert ausgewählten Text (ein Rechteck je Zeile), 'area' einen aufgezogenen
+  -- Bereich (genau ein Rechteck – für Scans, Formeln und Abbildungen). rects ist eine JSON-Liste von Rechtecken
+  -- [x1, y1, x2, y2] in PDF-Koordinaten der Seite (unabhängig von Zoom und Gerät), quote der markierte Text. Die ID
+  -- vergibt der Browser, damit Markierungen auch offline entstehen und später gesendet werden können.
   CREATE TABLE pdf_annotations (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'area')),
     page INTEGER NOT NULL,
     rects TEXT NOT NULL,
     quote TEXT NOT NULL,
@@ -234,7 +239,10 @@ export const migrations: string[] = [
 
   -- Karteikarten -----------------------------------------------------------------------------------------------------
   -- type_answer: bei Grund- und beidseitigen Karten erscheint beim Lernen ein Eingabefeld. scheduler: Wiederholungsplan
-  -- des Stapels, retention = gewünschte Behaltensrate bei FSRS.
+  -- des Stapels, retention = gewünschte Behaltensrate bei FSRS. learning_steps/relearning_steps: Lernschritte in
+  -- Minuten, durch Leerzeichen getrennt (neu bzw. nach dem Vergessen); review_per_day: höchstens so viele
+  -- Wiederholungen pro Tag (9999: ohne Grenze); leech_*: Problemkarten ab so vielen Malen vergessen – nur markiert oder
+  -- gleich ausgesetzt.
 
   CREATE TABLE decks (
     id TEXT PRIMARY KEY,
@@ -242,6 +250,11 @@ export const migrations: string[] = [
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     new_per_day INTEGER NOT NULL DEFAULT 20,
+    review_per_day INTEGER NOT NULL DEFAULT 9999 CHECK (review_per_day BETWEEN 0 AND 9999),
+    learning_steps TEXT NOT NULL DEFAULT '1 10',
+    relearning_steps TEXT NOT NULL DEFAULT '10',
+    leech_lapses INTEGER NOT NULL DEFAULT 6 CHECK (leech_lapses BETWEEN 1 AND 99),
+    leech_action TEXT NOT NULL DEFAULT 'mark' CHECK (leech_action IN ('mark', 'suspend')),
     type_answer INTEGER NOT NULL DEFAULT 0 CHECK (type_answer IN (0, 1)),
     scheduler TEXT NOT NULL DEFAULT 'sm2' CHECK (scheduler IN ('sm2', 'fsrs')),
     retention REAL NOT NULL DEFAULT 0.9 CHECK (retention BETWEEN 0.7 AND 0.99),
@@ -249,6 +262,13 @@ export const migrations: string[] = [
     updated_at INTEGER NOT NULL
   );
   CREATE INDEX decks_user ON decks(user_id);
+
+  -- Einstellungen der Karteikarten je Konto: Stunde, zu der ein neuer Lerntag beginnt (0 = Mitternacht). Gilt für alle
+  -- Stapel, die Statistik und die Serie.
+  CREATE TABLE flashcard_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    day_start_hour INTEGER NOT NULL DEFAULT 0 CHECK (day_start_hour BETWEEN 0 AND 23)
+  );
 
   -- occlusion: Flächen einer Bildverdeckung als JSON ({ masks: [{ x, y, w, h, label }], hideAll }, Werte relativ zur
   -- Bildgröße). suspended: ausgesetzte Karten (z. B. Problemkarten bis zur Überarbeitung) kommen beim Lernen und Üben
@@ -376,46 +396,5 @@ export const migrations: string[] = [
     created_at INTEGER NOT NULL
   );
   CREATE INDEX focus_sessions_user ON focus_sessions(user_id, started_at);
-  `,
-
-  /* 2: Wikilinks mit Ordnerpfad */ `
-  -- [[Analysis/Übung 1]] meint die „Übung 1“ im Ordner Analysis: path = Ordnerteil des Links, klein geschrieben
-  -- ('' ohne Ordner). Den Primärschlüssel kann SQLite nicht ändern, daher eine neue Tabelle. Die Pfade vorhandener
-  -- Links trägt reindexLinkPaths() beim nächsten Start nach, solange der Merker in settings steht.
-  CREATE TABLE note_links_new (
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    target TEXT NOT NULL,
-    path TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (note_id, target, path)
-  );
-  INSERT INTO note_links_new (note_id, target) SELECT note_id, target FROM note_links;
-  DROP TABLE note_links;
-  ALTER TABLE note_links_new RENAME TO note_links;
-  CREATE INDEX note_links_target ON note_links(target);
-  INSERT OR REPLACE INTO settings (key, value) VALUES ('reindex_link_paths', '1');
-  `,
-
-  /* 3: Bereiche in PDFs */ `
-  -- Art einer Anmerkung: 'text' markiert ausgewählten Text (ein Rechteck je Zeile), 'area' einen aufgezogenen Bereich
-  -- (genau ein Rechteck – für Scans, Formeln und Abbildungen). Vorhandene Anmerkungen sind Textmarkierungen.
-  ALTER TABLE pdf_annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'area'));
-  `,
-
-  /* 4: Optionen der Stapel und Tagesbeginn */ `
-  -- Lernschritte in Minuten, durch Leerzeichen getrennt (neu bzw. nach dem Vergessen); höchstens so viele
-  -- Wiederholungen pro Tag (9999: ohne Grenze); Problemkarten ab so vielen Malen vergessen – nur markiert oder
-  -- gleich ausgesetzt. Die Standardwerte planen genau wie bisher.
-  ALTER TABLE decks ADD COLUMN learning_steps TEXT NOT NULL DEFAULT '1 10';
-  ALTER TABLE decks ADD COLUMN relearning_steps TEXT NOT NULL DEFAULT '10';
-  ALTER TABLE decks ADD COLUMN review_per_day INTEGER NOT NULL DEFAULT 9999 CHECK (review_per_day BETWEEN 0 AND 9999);
-  ALTER TABLE decks ADD COLUMN leech_lapses INTEGER NOT NULL DEFAULT 6 CHECK (leech_lapses BETWEEN 1 AND 99);
-  ALTER TABLE decks ADD COLUMN leech_action TEXT NOT NULL DEFAULT 'mark' CHECK (leech_action IN ('mark', 'suspend'));
-
-  -- Einstellungen der Karteikarten je Konto: Stunde, zu der ein neuer Lerntag beginnt (0 = Mitternacht wie bisher).
-  -- Gilt für alle Stapel, die Statistik und die Serie.
-  CREATE TABLE flashcard_settings (
-    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    day_start_hour INTEGER NOT NULL DEFAULT 0 CHECK (day_start_hour BETWEEN 0 AND 23)
-  );
   `,
 ]
