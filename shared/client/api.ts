@@ -34,7 +34,8 @@ export function setApiUser(id: number) {
   currentUserId = id
 }
 
-export async function api<T = unknown>(url: string, opts: Options = {}): Promise<T> {
+/** Anfrage mit CSRF- und Konto-Header schicken; Fehler (auch die Anmeldung betreffend) werden zu ApiError */
+async function request(url: string, opts: Options): Promise<Response> {
   const headers = new Headers(opts.headers)
   headers.set('x-noted-request', '1')
   if (currentUserId !== null) headers.set('x-noted-user', String(currentUserId))
@@ -55,10 +56,9 @@ export async function api<T = unknown>(url: string, opts: Options = {}): Promise
   }
   // Antwort aus dem Offline-Cache des Service Workers
   if (res.status === 503 && res.headers.get('x-noted-offline') === '1') throw new NetworkError()
-
-  const type = res.headers.get('content-type') ?? ''
-  const data = type.includes('application/json') ? await res.json().catch(() => null) : null
   if (!res.ok) {
+    const type = res.headers.get('content-type') ?? ''
+    const data = type.includes('application/json') ? await res.json().catch(() => null) : null
     const err = new ApiError(
       res.status,
       (data?.error as string) ?? 'error',
@@ -68,7 +68,19 @@ export async function api<T = unknown>(url: string, opts: Options = {}): Promise
     handleAuthError(err)
     throw err
   }
+  return res
+}
+
+export async function api<T = unknown>(url: string, opts: Options = {}): Promise<T> {
+  const res = await request(url, opts)
+  const type = res.headers.get('content-type') ?? ''
+  const data = type.includes('application/json') ? await res.json().catch(() => null) : null
   return data as T
+}
+
+/** Wie api, liefert aber die Antwort selbst – für Antworten, die Stück für Stück kommen (KI-Assistent) */
+export function apiResponse(url: string, opts: Options = {}): Promise<Response> {
+  return request(url, opts)
 }
 
 let redirecting = false

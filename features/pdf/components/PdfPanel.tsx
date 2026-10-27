@@ -40,6 +40,7 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  Sparkles,
 } from 'lucide-react'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
@@ -55,10 +56,15 @@ import { attachmentsKey, attachmentsQuery, useAttachments } from '@/features/att
 import { attachmentMarkdown, niceFileName, uploadAttachment } from '@/features/attachments/client/upload'
 import type { Attachment } from '@/features/attachments/types'
 import { errorMessage } from '@/shared/client/api'
+import { blobToAiImage, useAiReady } from '@/features/ai/client/ai'
+import { AiAssistant, type AssistScope } from '@/features/ai/components/AiAssistant'
+import { AiCardsDialog } from '@/features/ai/components/AiCardsDialog'
+import type { CardSource } from '@/features/ai/types'
 import { usePref } from '@/shared/client/prefs'
 import { DOCUMENT_OPTIONS, fetchPdf, loadPdfjs, pdfErrorMessage, renderPdfPage, renderPdfRegion } from '../client/pdfjs'
 import { pdfAnnotations, useAnnotations } from '../client/annotations'
 import { downloadAnnotatedPdf } from '../client/annotated-download'
+import { marksForAi, pageImage, pageText, pagesForAi } from '../client/ai-input'
 import { annotationAtPoint, areaOnPage, drawAnnotations, selectionOnPage, type PageView } from '../client/overlay'
 import { cleanQuote, joinSelection, sortAnnotations, textInRect, type SelectionPart } from '../geometry'
 import { DEFAULT_ANNOTATION_COLOR } from '../limits'
@@ -217,6 +223,13 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
   const [activeId, setActiveId] = useState<string | null>(null)
   const [focusComment, setFocusComment] = useState(false)
   const [colorPref, setColorPref] = usePref(COLOR_KEY, String(DEFAULT_ANNOTATION_COLOR))
+  // KI: Karten aus Seiten oder Markierungen, Erklären – nur mit hinterlegtem Schlüssel
+  const aiReady = useAiReady()
+  const [aiCards, setAiCards] = useState<{
+    pages?: { initial: number[]; count: number }
+    source: (pages: number[] | null) => Promise<CardSource>
+  } | null>(null)
+  const [aiExplain, setAiExplain] = useState<{ scope: AssistScope; page: number } | null>(null)
   const active = annotations.find((a) => a.id === activeId) ?? null
   const sorted = sortAnnotations(annotations)
 
@@ -920,6 +933,46 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
     })
   }
 
+  /** Karten mit KI aus Seiten – welche, lässt sich im Dialog ändern */
+  function aiCardsFromPages(page: number) {
+    const doc = pdfDoc
+    if (!doc) return
+    setAiCards({
+      pages: { initial: [page], count: doc.numPages },
+      source: async (pages) => ({ kind: 'pdf', file, pages: await pagesForAi(doc, pages ?? [page]), marks: [] }),
+    })
+  }
+
+  /** Karten mit KI aus Markierungen bzw. dem ausgewählten Text */
+  function aiCardsFromMarks(marks: Pick<PdfAnnotation, 'kind' | 'page' | 'rects' | 'quote' | 'comment'>[]) {
+    const doc = pdfDoc
+    if (!doc || !marks.length) return
+    setAiCards({ source: async () => ({ kind: 'pdf', file, pages: [], marks: await marksForAi(doc, marks) }) })
+  }
+
+  /**
+   * Seite, Markierung oder Auswahl von Claude erklären lassen – mit dem Bild der Seite (bei Bereichen dem Ausschnitt),
+   * damit Formeln und Abbildungen mitzählen. Ohne `text` der Text der ganzen Seite.
+   */
+  async function aiExplainOn(page: number, label: string, text: string | null, area?: PdfRect) {
+    const doc = pdfDoc
+    if (!doc) return
+    try {
+      const image = area ? await blobToAiImage(await renderPdfRegion(doc, page, area)) : await pageImage(doc, page)
+      setAiExplain({ page, scope: { label, text: text ?? (await pageText(doc, page)), images: [image] } })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
+  }
+
+  const aiSelectionCards = () => {
+    if (selection) aiCardsFromMarks([{ kind: 'text', page: selection.page, rects: [], quote: selection.text, comment: '' }])
+  }
+  const aiSelectionExplain = () => {
+    if (selection) void aiExplainOn(selection.page, 'Ausgewählter Text', selection.text)
+  }
+  const markText = (a: PdfAnnotation) => [a.quote, a.comment ? `Kommentar: ${a.comment}` : ''].filter(Boolean).join('\n')
+
   async function copySelection() {
     if (selection && (await copyText(selection.text))) toast.success('Kopiert.')
   }
@@ -1070,9 +1123,9 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
 
   // Eine neue Auswahl meldet der Browser erst nach dem Rechtsklick (z. B. das Wort, das der Mac dabei markiert) –
   // die Einträge wirken daher auf die Auswahl, die gilt, wenn sie gewählt werden
-  const latest = useRef({ markSelection, quoteSelection, selectionToCard, copySelection })
+  const latest = useRef({ markSelection, quoteSelection, selectionToCard, copySelection, aiSelectionCards, aiSelectionExplain })
   useEffect(() => {
-    latest.current = { markSelection, quoteSelection, selectionToCard, copySelection }
+    latest.current = { markSelection, quoteSelection, selectionToCard, copySelection, aiSelectionCards, aiSelectionExplain }
   })
 
   /** Folienmodus an oder aus – die Seite bleibt, eingepasst wird ganze Seite bzw. Seitenbreite */
@@ -1147,6 +1200,16 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
       <MenuItem icon={<ImageIcon />} onSelect={() => void pageToOcclusion(page)} disabled={!ready}>
         Seite {page} als Bildverdeckung …
       </MenuItem>
+      {aiReady ? (
+        <>
+          <MenuItem icon={<Sparkles />} onSelect={() => void aiExplainOn(page, `Seite ${page}`, null)} disabled={!ready}>
+            Seite {page} mit KI erklären
+          </MenuItem>
+          <MenuItem icon={<Sparkles />} onSelect={() => aiCardsFromPages(page)} disabled={!ready}>
+            Karteikarten mit KI …
+          </MenuItem>
+        </>
+      ) : null}
       <MenuItem
         icon={<Copy />}
         onSelect={async () => {
@@ -1220,6 +1283,17 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         <MenuItem icon={<Layers />} onSelect={() => latest.current.selectionToCard()}>
           Karteikarte anlegen
         </MenuItem>
+        {aiReady ? (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<Sparkles />} onSelect={() => latest.current.aiSelectionExplain()}>
+              Mit KI erklären
+            </MenuItem>
+            <MenuItem icon={<Sparkles />} onSelect={() => latest.current.aiSelectionCards()}>
+              Karteikarten mit KI …
+            </MenuItem>
+          </>
+        ) : null}
       </>
     )
   }
@@ -1256,6 +1330,20 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             Als Zitat einfügen
           </MenuItem>
         )}
+        {aiReady ? (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              icon={<Sparkles />}
+              onSelect={() => void aiExplainOn(a.page, 'Markierung', markText(a), a.kind === 'area' ? a.rects[0] : undefined)}
+            >
+              Mit KI erklären
+            </MenuItem>
+            <MenuItem icon={<Sparkles />} onSelect={() => aiCardsFromMarks([a])}>
+              Karteikarten mit KI …
+            </MenuItem>
+          </>
+        ) : null}
         <MenuSeparator />
         <MenuLabel>Farbe</MenuLabel>
         {ANNOTATION_COLORS.map((c) => (
@@ -1590,6 +1678,7 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
             activeId={activeId}
             onSelect={showAnnotation}
             onContextMenu={(e, a) => openContextMenu(e, annotationMenu(a))}
+            onAiCards={aiReady ? () => aiCardsFromMarks(sorted) : undefined}
             onInsertAll={() =>
               insert(
                 { kind: 'quotes', quotes: sorted.map(quoteOf) },
@@ -1703,6 +1792,23 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
           >
             <Layers className="size-4" />
           </Button>
+          {aiReady ? (
+            <Menu
+              side="top"
+              trigger={(p) => (
+                <Button size="icon-sm" variant="ghost" onMouseDown={(e) => e.preventDefault()} aria-label="KI" title="KI" {...p}>
+                  <Sparkles className="size-4" />
+                </Button>
+              )}
+            >
+              <MenuItem icon={<Sparkles />} onSelect={aiSelectionExplain}>
+                Mit KI erklären
+              </MenuItem>
+              <MenuItem icon={<Sparkles />} onSelect={aiSelectionCards}>
+                Karteikarten mit KI …
+              </MenuItem>
+            </Menu>
+          ) : null}
           <Button
             size="icon-sm"
             variant="ghost"
@@ -1729,6 +1835,19 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         />
       ) : null}
 
+      {aiCards ? (
+        <AiCardsDialog
+          subject={file.split('/').pop() ?? file}
+          pages={aiCards.pages}
+          source={aiCards.source}
+          deckName={baseName(file)}
+          noteId={getActiveEditor()?.noteId ?? null}
+          link={(n) => pageLink(n, `${baseName(file)}, S. ${n}`)}
+          onClose={() => setAiCards(null)}
+        />
+      ) : null}
+      {aiExplain ? <PdfExplain explain={aiExplain} title={file.split('/').pop() ?? file} link={pageLink} onClose={() => setAiExplain(null)} /> : null}
+
       <input
         ref={uploadRef}
         type="file"
@@ -1741,5 +1860,38 @@ export default function PdfPanel({ file, page, find: findTerms, nonce, full, onT
         }}
       />
     </section>
+  )
+}
+
+/** Erklärung von Claude zu einer Stelle im PDF – einfügen in die geöffnete Notiz, mit Seitenlink */
+function PdfExplain({
+  explain,
+  title,
+  link,
+  onClose,
+}: {
+  explain: { scope: AssistScope; page: number }
+  title: string
+  link: (page: number, label?: string) => string
+  onClose: () => void
+}) {
+  const editor = getActiveEditor()
+  return (
+    <AiAssistant
+      title={title}
+      scopes={[explain.scope]}
+      answerOnly
+      initialAction="explain"
+      insertLabel={editor ? `In „${editor.title}“ einfügen` : undefined}
+      onInsert={
+        editor
+          ? (_, markdown) => {
+              editor.insert({ kind: 'text', text: `${markdown}\n\n${link(explain.page, `S. ${explain.page}`)}` })
+              return true
+            }
+          : undefined
+      }
+      onClose={onClose}
+    />
   )
 }

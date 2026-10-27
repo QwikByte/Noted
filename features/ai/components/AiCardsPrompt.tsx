@@ -2,7 +2,6 @@
 // „Karteikarten aus Notiz“: Claude Karten vorschlagen lassen. Die Vorschläge landen im Dialog wie erkannte Karten –
 // gespeichert wird erst, was man dort übernimmt.
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -12,6 +11,7 @@ import { suggestCards, useAiSettings } from '../client/ai'
 import { MAX_AI_EXISTING, MAX_AI_NOTE_CHARS, MAX_AI_WISHES } from '../limits'
 import { modelLabel } from '../models'
 import type { SuggestedCard } from '../types'
+import { AiSetupHint } from './AiSetupHint'
 
 export function AiCardsPrompt({
   note,
@@ -36,20 +36,7 @@ export function AiCardsPrompt({
   useEffect(() => () => running.current?.abort(), [])
 
   if (!settings) return null
-  if (!settings.configured) {
-    return (
-      <p className="flex items-start gap-2 text-sm text-muted">
-        <Sparkles className="mt-0.5 size-4 shrink-0" />
-        <span>
-          Karten von Claude vorschlagen lassen: Hinterlege dafür unter{' '}
-          <Link href="/settings#ki" className="text-accent-text hover:underline">
-            Einstellungen → KI
-          </Link>{' '}
-          deinen Anthropic-API-Schlüssel.
-        </span>
-      </p>
-    )
-  }
+  if (!settings.configured) return <AiSetupHint what="Karten von Claude vorschlagen lassen" />
 
   const tooLong = note.content.length > MAX_AI_NOTE_CHARS
 
@@ -61,7 +48,11 @@ export function AiCardsPrompt({
     setEmpty(false)
     try {
       const cards = await suggestCards(
-        { noteId: note.id, title: note.title, content: note.content, existing: existing.slice(0, MAX_AI_EXISTING), wishes },
+        {
+          source: { kind: 'note', noteId: note.id, title: note.title, content: note.content },
+          existing: existing.slice(0, MAX_AI_EXISTING),
+          wishes,
+        },
         controller.signal,
       )
       setEmpty(cards.length === 0)

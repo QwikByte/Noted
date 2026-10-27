@@ -1,6 +1,6 @@
 'use client'
 // Eine Karte in einer Kartenliste (Stapel und „Alle Karten“): Vorder- und Rückseite, Fälligkeit, Hinweise und Aktionen
-import { AlertTriangle, FileText, Layers, MoreVertical, Pause, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, Layers, MoreVertical, Pause, Pencil, Play, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
@@ -22,6 +22,8 @@ export type CardRowActions = {
   toggleSuspended: (card: Card) => void
   relearn: (card: Card) => void
   remove: (card: Card) => void
+  /** Mit KI in kleinere Karten aufteilen – nur, wenn die KI eingerichtet ist */
+  split?: (card: Card) => void
 }
 
 /** Nächste Abfrage der Karte – vor einer Klausur wie im Lernmodus vorgezogen */
@@ -102,6 +104,11 @@ export function CardRow({
       {learned ? (
         <MenuItem icon={<RotateCcw />} onSelect={() => actions.relearn(card)}>
           Neu lernen
+        </MenuItem>
+      ) : null}
+      {actions.split && card.type !== 'occlusion' ? (
+        <MenuItem icon={<Sparkles />} onSelect={() => actions.split?.(card)}>
+          Mit KI aufteilen …
         </MenuItem>
       ) : null}
       <MenuSeparator />

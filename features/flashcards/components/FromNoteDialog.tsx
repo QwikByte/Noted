@@ -16,7 +16,8 @@ import { AiCardsPrompt } from '@/features/ai/components/AiCardsPrompt'
 import type { SuggestedCard } from '@/features/ai/types'
 import { EXPLICIT_SOURCES, SOURCE_LABELS, parseCardsFromNote, type CandidateSource } from '../card-markdown'
 import { changedParts, noteCards, normFront as norm, syncCards } from '../note-sync'
-import type { Card, CardOption, CardType } from '../types'
+import type { Card } from '../types'
+import { CardText } from './common'
 
 const NEW_DECK = '__new__'
 /** Herkunft einer Karte im Dialog: aus der Notiz erkannt oder von Claude vorgeschlagen */
@@ -34,18 +35,6 @@ const ORPHAN_ACTIONS: { value: OrphanAction; label: string }[] = [
 ]
 
 const PART_LABELS = { front: 'Frage', back: 'Antwort', type: 'Kartentyp' }
-
-/** Vorder- und Rückseite in zwei Zeilen – bei Multiple Choice die Antworten, die richtigen mit ✓ */
-function CardText({ card }: { card: { type: CardType; front: string; back: string; options: CardOption[] } }) {
-  return (
-    <>
-      <span className="line-clamp-2 text-sm font-medium whitespace-pre-line">{card.front}</span>
-      <span className="line-clamp-2 text-sm whitespace-pre-line text-muted">
-        {card.type === 'mc' ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ') : card.back}
-      </span>
-    </>
-  )
-}
 
 function SyntaxHelp() {
   return (

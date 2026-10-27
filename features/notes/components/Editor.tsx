@@ -83,6 +83,29 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
       const view = viewRef.current
       return view ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) : ''
     },
+    aiSelection: () => {
+      const view = viewRef.current
+      const { from, to } = view?.state.selection.main ?? { from: 0, to: 0 }
+      if (!view || from === to) return null
+      const text = view.state.sliceDoc(from, to)
+      return { from, to, markdown: text, check: text }
+    },
+    applyAi: (span, markdown, how) => {
+      const view = viewRef.current
+      if (!view || view.state.sliceDoc(span.from, span.to) !== span.check) return false
+      // Dahinter als eigener Absatz. Das Ergebnis bleibt markiert, damit man sieht, was neu ist.
+      const change =
+        how === 'replace' ? { from: span.from, to: span.to, insert: markdown } : { from: span.to, insert: `\n\n${markdown}` }
+      const start = how === 'replace' ? span.from : span.to + 2
+      view.dispatch({
+        changes: change,
+        selection: { anchor: start, head: start + markdown.length },
+        scrollIntoView: true,
+        userEvent: 'input.ai',
+      })
+      view.focus()
+      return true
+    },
   }))
 
   useEffect(() => {

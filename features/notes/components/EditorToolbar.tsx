@@ -9,6 +9,7 @@ import {
   Highlighter,
   Italic,
   Layers,
+  Sparkles,
   Link2,
   List,
   ListChecks,
@@ -53,11 +54,14 @@ export function EditorToolbar({
   getView,
   onUpload,
   onCreateCard,
+  onAi,
 }: {
   getView: () => EditorView | null
   onUpload: (files: File[]) => void
   /** Karteikarte aus der Markierung erstellen */
   onCreateCard: () => void
+  /** KI-Assistent öffnen – nur, wenn die KI eingerichtet ist */
+  onAi?: () => void
 }) {
   const run = (fn: (view: EditorView) => void) => () => {
     const view = getView()
@@ -160,6 +164,11 @@ export function EditorToolbar({
       <ToolButton label="Karteikarte aus Markierung" onClick={onCreateCard}>
         <Layers />
       </ToolButton>
+      {onAi ? (
+        <ToolButton label="KI-Assistent (Strg+J)" onClick={onAi}>
+          <Sparkles />
+        </ToolButton>
+      ) : null}
       <Divider />
       <ToolButton label="Rückgängig" onClick={run((v) => undo(v))}>
         <Undo2 />

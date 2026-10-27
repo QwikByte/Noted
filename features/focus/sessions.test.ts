@@ -115,6 +115,8 @@ describe('Runden zählen im Browser', () => {
     focusSessions.confirm(pending[0].id)
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(focusSessions.getSnapshot().outbox).toHaveLength(1))
+    // Den gescheiterten Versuch erst ganz abschließen lassen – sonst läuft er noch und flush() kehrt sofort zurück
+    await new Promise((resolve) => setTimeout(resolve))
     await focusSessions.flush()
     expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).sessions[0]).toMatchObject({ subject: 'Analysis I', durationMs: 25 * MIN })
     expect(focusSessions.getSnapshot()).toEqual({ pending: [], outbox: [] })

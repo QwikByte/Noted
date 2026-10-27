@@ -12,6 +12,7 @@ import {
   Highlighter,
   Italic,
   Layers,
+  Sparkles,
   Link2,
   List,
   ListChecks,
@@ -83,10 +84,13 @@ export function RichTextToolbar({
   editor,
   onUpload,
   onCreateCard,
+  onAi,
 }: {
   editor: Editor
   onUpload: (files: File[]) => void
   onCreateCard: () => void
+  /** KI-Assistent öffnen – nur, wenn die KI eingerichtet ist */
+  onAi?: () => void
 }) {
   const [linkOpen, setLinkOpen] = useState(false)
   const state = useEditorState({
@@ -318,6 +322,11 @@ export function RichTextToolbar({
       <ToolButton label="Karteikarte aus Markierung" onClick={onCreateCard}>
         <Layers />
       </ToolButton>
+      {onAi ? (
+        <ToolButton label="KI-Assistent (Strg+J)" onClick={onAi}>
+          <Sparkles />
+        </ToolButton>
+      ) : null}
 
       <LinkDialog
         open={linkOpen}

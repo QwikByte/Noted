@@ -2,7 +2,7 @@
 import { cn } from '@/shared/ui/cn'
 import { cardStatus, type CardStatus } from '../srs'
 import { reviewKey, sidesOf, type StateMap } from '../study'
-import type { Card } from '../types'
+import type { Card, CardOption, CardType } from '../types'
 
 export const STATUS_LABELS: Record<CardStatus, string> = {
   new: 'Neu',
@@ -52,5 +52,17 @@ export function Legend({ counts }: { counts: Record<CardStatus, number> }) {
         </span>
       ))}
     </div>
+  )
+}
+
+/** Vorder- und Rückseite in zwei Zeilen – bei Multiple Choice die Antworten, die richtigen mit ✓ */
+export function CardText({ card }: { card: { type: CardType; front: string; back: string; options: CardOption[] } }) {
+  return (
+    <>
+      <span className="line-clamp-2 text-sm font-medium whitespace-pre-line">{card.front}</span>
+      <span className="line-clamp-2 text-sm whitespace-pre-line text-muted">
+        {card.type === 'mc' ? card.options.map((o) => (o.correct ? `✓ ${o.text}` : o.text)).join(' · ') : card.back}
+      </span>
+    </>
   )
 }

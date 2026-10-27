@@ -11,6 +11,8 @@ import { SelectionBar, SelectionMenuItems, type SelectionAction } from '@/shared
 import { useToast } from '@/shared/ui/toast'
 import type { ListSelectionState } from '@/shared/client/list-selection'
 import { errorMessage } from '@/shared/client/api'
+import { useAiReady } from '@/features/ai/client/ai'
+import { AiCardsDialog } from '@/features/ai/components/AiCardsDialog'
 import { batchCards, deleteCard, resetCardProgress, updateCard, useFlashcards } from '../client/flashcards'
 import { MAX_BATCH_CARDS } from '../limits'
 import type { Card, CardBatchAction } from '../types'
@@ -74,6 +76,29 @@ function MoveCardsDialog({ count: n, onMove, onClose }: { count: number; onMove:
   )
 }
 
+/** Karte mit KI in kleinere aufteilen – oft die Lösung für eine Problemkarte. Die alte wird danach ausgesetzt. */
+function SplitDialog({ card, onClose }: { card: Card; onClose: () => void }) {
+  const qc = useQueryClient()
+  if (card.type === 'occlusion') return null
+  const { type, front, back, options } = card
+  return (
+    <AiCardsDialog
+      subject={front.length > 60 ? `${front.slice(0, 60)} …` : front}
+      source={async () => ({ kind: 'card', mode: 'split', card: { type, front, back, options } })}
+      autoStart
+      deckId={card.deckId}
+      deckName=""
+      noteId={card.noteId}
+      extra={
+        card.suspended
+          ? undefined
+          : { label: 'Die bisherige Karte aussetzen', checked: true, run: () => updateCard(qc, card.id, { suspended: true }).then(() => {}) }
+      }
+      onClose={onClose}
+    />
+  )
+}
+
 /**
  * Aktionen je Karte und für die Auswahl. `bar` und `menu` gehören über die Liste bzw. in das Kontextmenü einer
  * ausgewählten Karte, `dialogs` irgendwo in die Seite.
@@ -82,6 +107,8 @@ export function useCardActions(selection: ListSelectionState) {
   const qc = useQueryClient()
   const toast = useToast()
   const [toDelete, setToDelete] = useState<Card | null>(null)
+  const [splitting, setSplitting] = useState<Card | null>(null)
+  const aiReady = useAiReady()
   const [dialog, setDialog] = useState<'move' | 'reset' | 'delete' | null>(null)
   const [busy, setBusy] = useState(false)
   const ids = selection.order.filter((id) => selection.ids.has(id))
@@ -100,6 +127,7 @@ export function useCardActions(selection: ListSelectionState) {
       void cardAction(() => updateCard(qc, card.id, { suspended: !card.suspended }), card.suspended ? 'Karte fortgesetzt.' : 'Karte ausgesetzt.'),
     relearn: (card) => void cardAction(() => resetCardProgress(qc, card.id), 'Die Karte gilt wieder als neu.'),
     remove: setToDelete,
+    split: aiReady ? setSplitting : undefined,
   }
 
   async function batch(action: CardBatchAction, deckId?: string) {
@@ -131,6 +159,7 @@ export function useCardActions(selection: ListSelectionState) {
     menu: <SelectionMenuItems selection={selection} actions={batchActions} max={MAX_BATCH_CARDS} noun={CARDS_NOUN} />,
     dialogs: (
       <>
+        {splitting ? <SplitDialog card={splitting} onClose={() => setSplitting(null)} /> : null}
         {dialog === 'move' ? <MoveCardsDialog count={ids.length} onMove={(deckId) => batch('move', deckId)} onClose={() => setDialog(null)} /> : null}
         <ConfirmModal
           open={dialog === 'reset'}

@@ -26,6 +26,7 @@ import {
   Highlighter,
   Italic,
   Layers,
+  Sparkles,
   Link2,
   PenLine,
   Redo2,
@@ -112,6 +113,7 @@ export function MarkdownEditorMenu({
   pos,
   linkItems,
   onCreateCard,
+  onAi,
 }: {
   view: EditorView
   markdown: boolean
@@ -120,6 +122,8 @@ export function MarkdownEditorMenu({
   /** Rechtsklick auf einen Link: was er kann (EditorLinkMenuItems) */
   linkItems?: React.ReactNode
   onCreateCard: () => void
+  /** KI-Assistent öffnen – nur, wenn die KI eingerichtet ist */
+  onAi?: () => void
 }) {
   const run = (fn: (v: EditorView) => unknown) => () => {
     fn(view)
@@ -230,6 +234,11 @@ export function MarkdownEditorMenu({
       <MenuItem icon={<Layers />} onSelect={onCreateCard}>
         {hasSelection ? 'Karteikarte aus Markierung' : 'Karteikarte erstellen'}
       </MenuItem>
+      {onAi ? (
+        <MenuItem icon={<Sparkles />} onSelect={onAi} hint="Strg+J">
+          {hasSelection ? 'Markierung mit KI bearbeiten …' : 'KI-Assistent …'}
+        </MenuItem>
+      ) : null}
     </>
   )
 }

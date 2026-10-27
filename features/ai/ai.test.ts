@@ -4,11 +4,14 @@ import type { AddressInfo } from 'node:net'
 import { ADMIN_PASSWORD, call, loginAs, setupTestEnv } from '@/tests/helpers'
 import * as settingsRoute from '@/app/api/ai/settings/route'
 import * as cardsRoute from '@/app/api/ai/cards/route'
+import * as assistRoute from '@/app/api/ai/assist/route'
+import * as metaRoute from '@/app/api/ai/meta/route'
 import * as notes from '@/app/api/notes/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
 import { getDb } from '@/shared/server/db'
 import { MAX_AI_NOTE_CHARS } from './limits'
+import { readAssistEvents } from './assist'
 
 // Ein kleiner Nachbau der Anthropic-API: Das echte SDK spricht mit ihm (ANTHROPIC_BASE_URL), ohne dass ein Test ins
 // Netz geht oder etwas kostet.
@@ -18,7 +21,8 @@ type Received = { method: string; path: string; key: string | null; beta: string
 type Reply = { status: number; body: unknown } | { events: Record<string, unknown>[] }
 
 const received: Received[] = []
-let messagesReply: () => Reply = () => success([])
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let messagesReply: (body: Record<string, any>) => Reply = () => success([])
 
 const server = http.createServer((req, res) => {
   let raw = ''
@@ -27,13 +31,14 @@ const server = http.createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
     const key = (req.headers['x-api-key'] as string | undefined) ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null
     const beta = (req.headers['anthropic-beta'] as string | undefined) ?? null
-    received.push({ method: req.method ?? '', path, key, beta, body: raw ? JSON.parse(raw) : null })
+    const body = raw ? JSON.parse(raw) : null
+    received.push({ method: req.method ?? '', path, key, beta, body })
     let reply: Reply
     if (key !== GOOD_KEY) reply = apiError(401, 'authentication_error', 'invalid x-api-key')
     else if (path.startsWith('/v1/models/')) {
       const id = path.slice('/v1/models/'.length)
       reply = id === 'claude-fable-5-1' ? apiError(404, 'not_found_error', `model: ${id}`) : { status: 200, body: { id, type: 'model' } }
-    } else reply = messagesReply()
+    } else reply = messagesReply(body)
     if ('events' in reply) {
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       for (const e of reply.events) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
@@ -113,7 +118,12 @@ async function newNote(content: string, title = 'Thermodynamik') {
   return r.data.note.id as string
 }
 
-const suggest = (body: Record<string, unknown>, cookie = token) => call(cardsRoute.POST, '/api/ai/cards', { cookie, body })
+const cards = (body: Record<string, unknown>, cookie = token) => call(cardsRoute.POST, '/api/ai/cards', { cookie, body })
+/** Karten aus einer Notiz */
+const suggest = (
+  { noteId, title, content, existing, wishes }: { noteId: string; title?: string; content?: string; existing?: string[]; wishes?: string },
+  cookie = token,
+) => cards({ source: { kind: 'note', noteId, title, content }, existing, wishes }, cookie)
 
 describe('KI-Einstellungen', () => {
   it('ist ohne Schlüssel aus', async () => {
@@ -174,6 +184,161 @@ describe('KI-Einstellungen', () => {
   })
 })
 
+const IMAGE = { mediaType: 'image/jpeg', data: 'AAAA' }
+
+/** Tresor-Notiz des Admins – direkt in der Datenbank, der Server sieht nur den Umschlag */
+function vaultNote() {
+  const id = '11111111-2222-4333-8444-555555555555'
+  const userId = getDb().prepare("SELECT id FROM users WHERE username = 'admin'").pluck().get()
+  getDb()
+    .prepare(`INSERT OR IGNORE INTO notes (id, user_id, title, content, vault, created_at, updated_at) VALUES (?, ?, '', 'nv1.x', 1, 0, 0)`)
+    .run(id, userId)
+  return id
+}
+/** Inhaltsblöcke der letzten Anfrage an Claude */
+const lastContent = () => (received.at(-1)?.body?.messages[0].content ?? []) as { type: string; text?: string; source?: { data: string } }[]
+const lastPrompt = () =>
+  lastContent()
+    .map((b) => b.text ?? '[Bild]')
+    .join('\n\n')
+
+describe('Karten aus PDFs und vorhandenen Karten', () => {
+  it('schickt Seiten als Bild und Text, Markierungen mit Kommentar und behält nur bekannte Seiten', async () => {
+    messagesReply = () => success([{ ...basic('Aus Seite 2'), page: 2 }, { ...basic('Erfundene Seite'), page: 9 }])
+    const r = await cards({
+      source: {
+        kind: 'pdf',
+        file: 'Physik/Skript.pdf',
+        pages: [{ page: 2, text: 'Entropie nimmt zu.', image: IMAGE }],
+        marks: [{ page: 3, quote: 'Energie bleibt erhalten', comment: 'wichtig' }],
+      },
+      wishes: 'nur das Wichtigste',
+    })
+    expect(r.status).toBe(200)
+    expect(r.data.cards.map((c: { front: string; page: number | null }) => [c.front, c.page])).toEqual([
+      ['Aus Seite 2', 2],
+      ['Erfundene Seite', null],
+    ])
+    expect(lastContent().filter((b) => b.type === 'image')).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } },
+    ])
+    expect(lastPrompt()).toContain('<text seite="2">\nEntropie nimmt zu.\n</text>')
+    expect(lastPrompt()).toContain('Zitat: Energie bleibt erhalten\nKommentar: wichtig')
+    expect(received.at(-1)?.body?.system).toContain('Skript, ihren Folien')
+  })
+
+  it('lehnt leere Auswahl, zu viele und kaputte Bilder ab, ohne Claude zu fragen', async () => {
+    const pdf = (pages: unknown[]) => cards({ source: { kind: 'pdf', file: 'a.pdf', pages, marks: [] } })
+    expect((await pdf([])).data.message).toBe('Wähle Seiten oder Markierungen aus.')
+    expect((await pdf([{ page: 1, text: '', image: { mediaType: 'image/jpeg', data: '<script>' } }])).status).toBe(400)
+    const many = Array.from({ length: 21 }, (_, i) => ({ page: i + 1, text: 'x' }))
+    expect((await pdf(many)).data.message).toContain('Höchstens 20 Seiten')
+    expect(received).toEqual([])
+  })
+
+  it('überarbeitet eine Karte zu genau einer und teilt eine in mehrere auf', async () => {
+    const card = { type: 'basic', front: 'Nenne alle Hauptsätze und erkläre sie', back: 'Viel Text', options: [] }
+    messagesReply = () => success([basic('Erste'), basic('Zweite'), basic('Dritte')])
+    const improved = await cards({ source: { kind: 'card', mode: 'improve', card }, wishes: 'kürzer' })
+    expect(improved.data.cards).toEqual([{ ...basic('Erste'), page: null }])
+    expect(lastPrompt()).toContain('Vorderseite:\nNenne alle Hauptsätze und erkläre sie')
+    expect(lastPrompt()).toContain('Wünsche zu den Karten: kürzer')
+    const split = await cards({ source: { kind: 'card', mode: 'split', card } })
+    expect(split.data.cards).toHaveLength(3)
+    expect(received.at(-1)?.body?.system).toContain('kleinere Karten')
+  })
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function assistCall(body: Record<string, any>, cookie = token) {
+  const r = await call(assistRoute.POST, '/api/ai/assist', { cookie, body })
+  const type = r.res.headers.get('content-type') ?? ''
+  return { ...r, events: type.includes('ndjson') ? readAssistEvents((await r.res.text()) + '\n').events : [] }
+}
+
+const textBlock = (index: number, ...deltas: string[]) => [
+  { type: 'content_block_start', index, content_block: { type: 'text', text: '' } },
+  ...deltas.map((text) => ({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } })),
+  { type: 'content_block_stop', index },
+]
+
+describe('Assistent', () => {
+  it('streamt den geänderten Abschnitt Stück für Stück', async () => {
+    const id = await newNote('# Thermo\nEin sehr langer Absatz über Wärme.')
+    messagesReply = () => stream(textBlock(0, 'Kurzer ', 'Absatz.'))
+    const r = await assistCall({
+      task: 'edit',
+      instruction: 'Kürzen',
+      title: 'Thermo',
+      text: 'Ein sehr langer Absatz über Wärme.',
+      context: '# Thermo\nEin sehr langer Absatz über Wärme.',
+      noteId: id,
+    })
+    expect(r.status).toBe(200)
+    expect(r.events).toEqual([{ text: 'Kurzer ' }, { text: 'Absatz.' }, { done: true, truncated: false }])
+    const request = received.at(-1)?.body
+    expect(request).toMatchObject({ stream: true, output_config: { effort: 'low' }, fallbacks: 'default' })
+    expect(request?.output_config).not.toHaveProperty('format')
+    expect(request?.system).toContain('Antworte ausschließlich mit dem neuen Text')
+    expect(lastPrompt()).toContain('Auftrag: Kürzen')
+  })
+
+  it('beginnt nach einem Fallback neu und meldet Abbruch an der Längengrenze', async () => {
+    const fallback = {
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-5' }, trigger: { type: 'refusal', category: 'bio' } },
+    }
+    messagesReply = () => stream([...textBlock(0, 'Anfang'), fallback, { type: 'content_block_stop', index: 1 }, ...textBlock(2, 'Neu')], 'max_tokens')
+    const r = await assistCall({ task: 'answer', instruction: 'Erkläre das', title: 'Skript.pdf', text: '', images: [IMAGE] })
+    expect(r.events).toEqual([{ text: 'Anfang' }, { reset: true }, { text: 'Neu' }, { done: true, truncated: true }])
+    expect(lastContent()[1]).toMatchObject({ type: 'image' })
+  })
+
+  it('meldet Ablehnung im Strom und Fehler von Anthropic vorher als normale Antwort', async () => {
+    const body = { task: 'answer', instruction: 'Erkläre das', title: 'x', text: 'Inhalt' }
+    messagesReply = () => stream([], 'refusal')
+    expect((await assistCall(body)).events).toEqual([expect.objectContaining({ code: 'ai_refused' })])
+
+    messagesReply = () => apiError(529, 'overloaded_error', 'overloaded')
+    const overloaded = await assistCall(body)
+    expect([overloaded.status, overloaded.data.error]).toEqual([503, 'ai_overloaded'])
+  })
+
+  it('lehnt Tresor-Notizen, leere Aufträge und fehlenden Text ab', async () => {
+    const vault = await assistCall({ task: 'edit', instruction: 'Kürzen', title: 'x', text: 'Geheim', noteId: vaultNote() })
+    expect([vault.status, vault.data.error]).toEqual([400, 'vault'])
+    expect((await assistCall({ task: 'edit', instruction: ' ', title: 'x', text: 'Text' })).status).toBe(400)
+    expect((await assistCall({ task: 'answer', instruction: 'Was?', title: 'x', text: ' ' })).status).toBe(400)
+    expect(received.filter((r) => r.path === '/v1/messages')).toEqual([])
+  })
+})
+
+describe('Titel und Tags', () => {
+  it('schlägt einen Titel und Tags vor – bevorzugt vorhandene, ohne die der Notiz', async () => {
+    await newNote('Wärme #physik', 'Wärmelehre')
+    const id = await newNote('Energie bleibt erhalten. #mechanik', 'Unbenannt')
+    messagesReply = () => stream(textBlock(0, JSON.stringify({ title: 'Energieerhaltung', tags: ['physik', 'mechanik', 'Erhaltungs Sätze'] })))
+    const r = await call(metaRoute.POST, '/api/ai/meta', {
+      cookie: token,
+      body: { noteId: id, title: 'Unbenannt', content: 'Energie bleibt erhalten. #mechanik' },
+    })
+    expect(r.status).toBe(200)
+    expect(r.data).toEqual({ title: 'Energieerhaltung', tags: ['physik', 'erhaltungs-sätze'] })
+    expect(lastPrompt()).toMatch(/Vorhandene Tags der Person: .*physik/)
+    expect(lastPrompt()).toContain('Tags der Notiz: mechanik')
+    expect(received.at(-1)?.body?.output_config.format.schema.required).toEqual(['title', 'tags'])
+  })
+
+  it('lehnt Tresor-Notizen ab', async () => {
+    const r = await call(metaRoute.POST, '/api/ai/meta', {
+      cookie: token,
+      body: { noteId: vaultNote(), title: 'x', content: 'Geheim' },
+    })
+    expect([r.status, r.data.error]).toEqual([400, 'vault'])
+  })
+})
+
 describe('Karten vorschlagen', () => {
   it('schickt die Notiz mit Schema, Fallback und Wünschen und liefert geprüfte Karten', async () => {
     const id = await newNote('---\ntags: [physik]\n---\n# Hauptsätze\nEnergie bleibt erhalten.')
@@ -193,8 +358,8 @@ describe('Karten vorschlagen', () => {
     })
     expect(r.status).toBe(200)
     expect(r.data.cards).toEqual([
-      { type: 'basic', front: 'Was besagt der erste Hauptsatz?', back: 'Energie bleibt erhalten.', options: [] },
-      { type: 'cloze', front: 'Die ==Entropie== nimmt nicht ab.', back: '', options: [] },
+      { type: 'basic', front: 'Was besagt der erste Hauptsatz?', back: 'Energie bleibt erhalten.', options: [], page: null },
+      { type: 'cloze', front: 'Die ==Entropie== nimmt nicht ab.', back: '', options: [], page: null },
     ])
 
     expect(received).toHaveLength(1)
@@ -214,7 +379,7 @@ describe('Karten vorschlagen', () => {
       'mc',
     ])
     expect(request.body?.system).toContain('Karteikarten')
-    const prompt = request.body?.messages[0].content as string
+    const prompt = (request.body?.messages[0].content as { text: string }[]).map((b) => b.text).join('\n\n')
     expect(prompt).toContain('# Hauptsätze\nEnergie bleibt erhalten.')
     expect(prompt).not.toContain('tags: [physik]')
     expect(prompt).toContain('- Was ist Wärme?')
@@ -241,7 +406,7 @@ describe('Karten vorschlagen', () => {
       ])
     const r = await suggest({ noteId: id, title: 'Biologie', content: 'Viren und Bakterien' })
     expect(r.status).toBe(200)
-    expect(r.data.cards).toEqual([basic('Was unterscheidet Viren von Bakterien?')])
+    expect(r.data.cards).toEqual([{ ...basic('Was unterscheidet Viren von Bakterien?'), page: null }])
   })
 
   it('schickt bei Haiku keinen Fallback mit', async () => {
@@ -290,11 +455,7 @@ describe('Karten vorschlagen', () => {
   })
 
   it('schickt keine Tresor-Notizen, keine leeren und keine zu langen Notizen', async () => {
-    const userId = getDb().prepare("SELECT id FROM users WHERE username = 'admin'").pluck().get()
-    getDb()
-      .prepare(`INSERT INTO notes (id, user_id, title, content, vault, created_at, updated_at) VALUES (?, ?, '', 'nv1.x', 1, 0, 0)`)
-      .run('11111111-2222-4333-8444-555555555555', userId)
-    const vault = await suggest({ noteId: '11111111-2222-4333-8444-555555555555', title: 'Geheim', content: 'Klartext' })
+    const vault = await suggest({ noteId: vaultNote(), title: 'Geheim', content: 'Klartext' })
     expect(vault.status).toBe(400)
     expect(vault.data.error).toBe('vault')
     // Unbekannt kann auch heißen: offline im Tresor angelegt
