@@ -73,8 +73,9 @@ export function browseCards(
   filter: BrowseFilter,
   sort: BrowseSort,
   now: number,
+  dayStartHour = 0,
 ): Card[] {
-  const eod = endOfDay(now)
+  const eod = endOfDay(now, dayStartHour)
   const leech = leechThreshold(decks)
   const matching = cards.filter((card) => {
     if (filter.deckId && card.deckId !== filter.deckId) return false

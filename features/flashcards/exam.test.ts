@@ -121,6 +121,18 @@ describe('Vorschlag für neue Karten', () => {
   })
 })
 
+describe('Klausur und Beginn des Lerntags', () => {
+  it('zählt die Nacht vor der Klausur noch zum Vortag', () => {
+    const night = new Date('2026-10-15T01:00:00').getTime()
+    const exams = [exam('2026-10-15')]
+    expect(nextExam(exams, night)).toBeNull()
+    expect(nextExam(exams, night, 4)?.date).toBe('2026-10-15')
+    // Erst nach der Klausur fällig: rückt auf den Lerntag davor, der um 4 Uhr begann
+    const state = learned(10, 20)
+    expect(examDue(state, 'c1:0', exams[0], night, 4)).toBe(new Date('2026-10-14T04:00:00').getTime())
+  })
+})
+
 describe('Vorschlag für Wiederholungen', () => {
   it('richtet sich nach dem engsten Rest bis zur Klausur – meist den Tagen mit den vorgezogenen Wiederholungen', () => {
     const dues = [

@@ -6,7 +6,16 @@ import { Modal } from '@/shared/ui/modal'
 import { Button } from '@/shared/ui/button'
 import { useToast } from '@/shared/ui/toast'
 import { AutoTextarea } from './CardEditor'
-import { CARD_TYPE_LABELS, createCards, createDeck, importAnki, importDeckPackage, updateDeck, useFlashcards } from '../client/flashcards'
+import {
+  CARD_TYPE_LABELS,
+  createCards,
+  createDeck,
+  importAnki,
+  importDeckPackage,
+  updateDayStartHour,
+  updateDeck,
+  useFlashcards,
+} from '../client/flashcards'
 import { attachmentsKey } from '@/features/attachments/client/queries'
 import { errorMessage } from '@/shared/client/api'
 import { parseCardsFromNote } from '../card-markdown'
@@ -17,7 +26,7 @@ import type { AnkiImportResult, Deck, DeckImportResult, LeechAction } from '../t
 
 /**
  * Neuen Stapel anlegen oder Name, Beschreibung, Tageslimits, „Antwort eintippen“ und Wiederholungsplan ändern – unter
- * „Erweitert“ Lernschritte und Problemkarten.
+ * „Erweitert“ Lernschritte, Problemkarten und den Beginn des Lerntags (gilt für alle Stapel).
  */
 export function DeckSettingsDialog({
   deck,
@@ -38,8 +47,12 @@ export function DeckSettingsDialog({
   )
   const [typeAnswer, setTypeAnswer] = useState(deck?.typeAnswer ?? false)
   const [scheduler, setScheduler] = useState<Deck['scheduler']>(deck?.scheduler ?? 'sm2')
-  // Eigene FSRS-Parameter gelten für alle Stapel des Kontos
-  const fsrs = useFlashcards().data?.fsrs ?? null
+  // Eigene FSRS-Parameter und der Beginn des Lerntags gelten für alle Stapel des Kontos
+  const flashcards = useFlashcards().data
+  const fsrs = flashcards?.fsrs ?? null
+  const savedDayStart = flashcards?.dayStartHour ?? 0
+  // null: nicht angefasst – so überschreibt ein früh geöffneter Dialog den Wert nicht, bevor die Daten da sind
+  const [dayStart, setDayStart] = useState<number | null>(null)
   const [retention, setRetention] = useState(String(Math.round((deck?.retention ?? DEFAULT_RETENTION) * 100)))
   const [learningSteps, setLearningSteps] = useState(formatSteps(deck?.learningSteps ?? DEFAULT_LEARNING_STEPS))
   const [relearningSteps, setRelearningSteps] = useState(formatSteps(deck?.relearningSteps ?? DEFAULT_RELEARNING_STEPS))
@@ -89,6 +102,7 @@ export function DeckSettingsDialog({
         leechLapses: leech,
         leechAction,
       }
+      if (dayStart !== null && dayStart !== savedDayStart) await updateDayStartHour(qc, dayStart)
       const saved = deck ? await updateDeck(qc, deck.id, input) : await createDeck(qc, input)
       onSaved?.(saved)
       onClose()
@@ -224,6 +238,25 @@ export function DeckSettingsDialog({
                 )}
               </Field>
             </div>
+            <Field
+              label="Neuer Lerntag beginnt um"
+              hint="Gilt für alle Stapel und die Statistik. Wer oft nach Mitternacht lernt, nimmt z. B. 4 Uhr – dann zählt die Nacht noch zum Vortag."
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={dayStart ?? savedDayStart}
+                  onChange={(e) => setDayStart(Number(e.target.value))}
+                  className="w-48!"
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {hour === 0 ? '0 Uhr (Mitternacht)' : hour === 4 ? '4 Uhr (wie Anki)' : `${hour} Uhr`}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           </div>
         </details>
         <button type="submit" hidden />

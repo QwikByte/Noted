@@ -34,8 +34,9 @@ export function PracticeMenu({
   trigger: React.ComponentProps<typeof Menu>['trigger']
 }) {
   const app = useApp()
-  const again = useAgainToday()
-  const decks = useFlashcards().data?.decks
+  const data = useFlashcards().data
+  const decks = data?.decks
+  const again = useAgainToday(data?.dayStartHour ?? 0)
   const counts = useMemo(
     () => ({
       all: allItems(cards).length,

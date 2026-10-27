@@ -353,6 +353,37 @@ test('Stapel-Optionen: Tageslimit für Wiederholungen – die übrigen warten bi
   await expect(page.getByTestId('study-done')).toContainText('1 fällige Wiederholung wartet wegen des Tageslimits bis morgen.')
 })
 
+test('Stapel-Optionen: Beginn des Lerntags gilt für das ganze Konto', async ({ page }) => {
+  await login(page)
+  const deck = await post(page, '/api/decks', { name: 'Tagesbeginn E2E' }, 'deck')
+  cleanup.push(`/api/decks/${deck.id}`)
+  const edit = async () => {
+    await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+    await page.getByRole('menuitem', { name: 'Stapel bearbeiten …' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByText('Erweitert').click()
+    return dialog
+  }
+  try {
+    await page.goto(`/?d=${deck.id}`)
+    let dialog = await edit()
+    const hour = dialog.getByLabel('Neuer Lerntag beginnt um')
+    await expect(hour).toHaveValue('0')
+    await hour.selectOption({ label: '4 Uhr (wie Anki)' })
+    await dialog.getByRole('button', { name: 'Speichern' }).click()
+    await expect(dialog).toHaveCount(0)
+    expect((await flashcards(page)).dayStartHour).toBe(4)
+    // Nach dem Neuladen und in jedem Stapel derselbe Wert
+    await page.reload()
+    dialog = await edit()
+    await expect(dialog.getByLabel('Neuer Lerntag beginnt um')).toHaveValue('4')
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click()
+  } finally {
+    // Die anderen Tests rechnen mit Mitternacht
+    await page.request.patch('/api/flashcards/settings', { headers: await apiHeaders(page), data: { dayStartHour: 0 } })
+  }
+})
+
 test('Lernen: letzte Bewertung rückgängig – mehrfach und auch nach der letzten Karte', async ({ page }) => {
   await login(page)
   const deck = await post(page, '/api/decks', { name: 'Vertippt' }, 'deck')

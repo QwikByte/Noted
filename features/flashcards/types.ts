@@ -106,8 +106,17 @@ export type SrsState = {
 /** side 0: Vorderseite wird abgefragt, side 1: Rückseite (nur bei beidseitigen Karten) – bei Lückentexten die Lücke */
 export type CardReview = SrsState & { cardId: string; side: number }
 
-/** `fsrs`: auf den eigenen Lernverlauf optimierte FSRS-Gewichte des Kontos – `null`: Standardwerte */
-export type FlashcardData = { decks: Deck[]; cards: Card[]; reviews: CardReview[]; fsrs: FsrsParams | null }
+/**
+ * `fsrs`: auf den eigenen Lernverlauf optimierte FSRS-Gewichte des Kontos – `null`: Standardwerte. `dayStartHour`:
+ * Stunde, zu der ein neuer Lerntag beginnt (0 = Mitternacht)
+ */
+export type FlashcardData = {
+  decks: Deck[]
+  cards: Card[]
+  reviews: CardReview[]
+  fsrs: FsrsParams | null
+  dayStartHour: number
+}
 
 /** Vorhersagefehler von FSRS-Gewichten auf dem Bewertungsprotokoll – rmse: RMSE(bins) wie bei Anki (0–1) */
 export type FsrsMetrics = { logLoss: number; rmse: number }

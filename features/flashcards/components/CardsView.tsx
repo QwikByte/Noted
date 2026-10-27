@@ -20,7 +20,10 @@ export function useDueTotal(): number {
   return useMemo(() => {
     if (!data) return 0
     const byDeck = cardsByDeck(data.cards)
-    return data.decks.reduce((sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now).due, 0)
+    return data.decks.reduce(
+      (sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now, data.dayStartHour).due,
+      0,
+    )
   }, [data, now])
 }
 
@@ -38,7 +41,8 @@ export function CardsView() {
     const byDeck = cardsByDeck(data.cards)
     return data.decks.map((deck) => {
       const cards = byDeck.get(deck.id) ?? []
-      return { deck, cards, counts: deckCounts(deck, cards, data.states, now), status: statusCounts(cards, data.states) }
+      const counts = deckCounts(deck, cards, data.states, now, data.dayStartHour)
+      return { deck, cards, counts, status: statusCounts(cards, data.states) }
     })
   }, [data, now])
 

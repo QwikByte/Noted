@@ -92,7 +92,7 @@ export function StudyView({ scope, mode, filter }: { scope: StudyScope; mode: St
   const titleOf = useCallback((id: string) => notes.find((n) => n.id === id)?.title, [notes])
   const practiceFilter = mode === 'practice' ? filter : undefined
   // „Heute vergessen“ braucht das Protokoll vom Server – ohne Verbindung nur die Bewertungen dieses Geräts
-  const again = useAgainToday(practiceFilter === 'again-today')
+  const again = useAgainToday(data?.dayStartHour ?? 0, practiceFilter === 'again-today')
   // Sitzung einmalig aus dem Stand beim Öffnen aufbauen – spätere Änderungen (z. B. gesendete Bewertungen)
   // sollen die laufende Reihenfolge nicht durcheinanderbringen
   const [snapshot, setSnapshot] = useState<{ data: Flashcards; scope: Scope; items?: StudyItem[] } | null>(null)
@@ -191,7 +191,14 @@ function StudySession({
   const create = useCallback(
     (items?: StudyItem[]): LearnSession | PracticeSession =>
       mode === 'learn'
-        ? new LearnSession(snapshot.scope.decks, snapshot.scope.pool, snapshot.data.states, Date.now(), inScope(snapshot.scope))
+        ? new LearnSession(
+            snapshot.scope.decks,
+            snapshot.scope.pool,
+            snapshot.data.states,
+            Date.now(),
+            inScope(snapshot.scope),
+            snapshot.data.dayStartHour,
+          )
         : new PracticeSession(items ?? snapshot.items ?? allItems(snapshot.scope.cards)),
     [mode, snapshot],
   )
@@ -251,8 +258,9 @@ function StudySession({
       ...(scheduler === 'fsrs' && retention ? { kind: 'fsrs', retention, weights } : SM2),
       learningSteps,
       relearningSteps,
+      dayStartHour: live.dayStartHour,
     }),
-    [scheduler, retention, weights, learningSteps, relearningSteps],
+    [scheduler, retention, weights, learningSteps, relearningSteps, live.dayStartHour],
   )
   const leechLapses = deck?.leechLapses ?? LEECH_LAPSES
   const leechAction = deck?.leechAction
@@ -933,6 +941,7 @@ function Finished({
       cards.filter((c) => c.deckId === d.id),
       live.states,
       now,
+      live.dayStartHour,
     ),
   )
   const dueTomorrow = counts.reduce((s, c) => s + c.dueTomorrow, 0)

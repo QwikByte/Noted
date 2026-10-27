@@ -14,6 +14,7 @@ import * as exportRoute from '@/app/api/export/route'
 import * as stats from '@/app/api/stats/route'
 import * as statsExport from '@/app/api/stats/export/route'
 import * as statsAgain from '@/app/api/stats/again/route'
+import * as settings from '@/app/api/flashcards/settings/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
 import * as deckExport from '@/app/api/decks/[id]/export/route'
@@ -668,7 +669,7 @@ describe('Trennung der Konten und Export', () => {
     const tom = await loginAs('tom', 'Tom-Passwort-1234')
     await call(password.POST, '/', { cookie: tom, body: { currentPassword: 'Tom-Passwort-1234', newPassword: 'Tom-Passwort-5678' } })
     const theirs = await data(tom)
-    expect(theirs).toEqual({ decks: [], cards: [], reviews: [], fsrs: null })
+    expect(theirs).toEqual({ decks: [], cards: [], reviews: [], fsrs: null, dayStartHour: 0 })
     expect((await addCards(d.id, [{ type: 'basic', front: 'x', back: 'y' }], tom)).status).toBe(404)
     expect((await call(card.PATCH, '/', { method: 'PATCH', cookie: tom, params: { id: c.id }, body: { front: 'x' } })).status).toBe(404)
     expect((await call(deck.DELETE, '/', { method: 'DELETE', cookie: tom, params: { id: d.id } })).status).toBe(404)
@@ -942,5 +943,60 @@ describe('Sammelaktionen im Kartenbrowser', () => {
     expect((await batch({ action: 'suspend', ids: Array.from({ length: 5001 }, () => crypto.randomUUID()) })).status).toBe(400)
     expect((await batch({ action: 'suspend', ids: [x.id] }, null)).status).toBe(401)
     expect((await call(cardBatch.POST, '/', { cookie: token, csrf: false, body: { action: 'suspend', ids: [x.id] } })).status).toBe(403)
+  })
+})
+
+describe('Beginn des Lerntags', () => {
+  it('gilt je Konto, wird geprüft und teilt Statistik und „Heute vergessen“ ab dieser Stunde ein', async () => {
+    const created = await call(users.POST, '/api/admin/users', { cookie: token, body: { username: 'nachteule', password: 'Kennwort-Xyz-111' } })
+    expect(created.status).toBe(201)
+    const owl = await loginAs('nachteule', 'Kennwort-Xyz-111')
+    await call(password.POST, '/', { cookie: owl, body: { currentPassword: 'Kennwort-Xyz-111', newPassword: 'Kennwort-Xyz-222' } })
+    const setHour = (dayStartHour: unknown, cookie: string | null = owl) =>
+      call(settings.PATCH, '/api/flashcards/settings', { method: 'PATCH', cookie, body: { dayStartHour } })
+
+    expect((await data(owl)).dayStartHour).toBe(0)
+    for (const bad of [24, -1, 1.5, '4']) expect((await setHour(bad)).status).toBe(400)
+    expect((await setHour(24)).data.message).toBe('Der Tag beginnt zwischen 0 und 23 Uhr.')
+    expect((await setHour(4, null)).status).toBe(401)
+    const saved = await setHour(4)
+    expect(saved.status).toBe(200)
+    expect(saved.data).toEqual({ dayStartHour: 4 })
+    expect((await data(owl)).dayStartHour).toBe(4)
+    // Andere Konten behalten Mitternacht
+    expect((await data()).dayStartHour).toBe(0)
+
+    // Gestern um 23 Uhr und heute um 1:30 (UTC) vergessen – mit Tagesbeginn 4 Uhr derselbe Lerntag
+    const d = (await call(decks.POST, '/api/decks', { cookie: owl, body: { name: 'Nachts' } })).data.deck as Deck
+    const [c] = (await addCards(d.id, [{ type: 'basic', front: 'N', back: '1' }], owl)).data.cards as Card[]
+    const entry = (iso: string): ReviewLogEntry => ({
+      cardId: c.id,
+      side: 0,
+      rating: 1,
+      phase: 'review',
+      intervalBefore: 3,
+      intervalAfter: 1,
+      durationMs: 2000,
+      reviewedAt: Date.parse(iso),
+    })
+    const log = [entry('2026-10-13T23:00:00Z'), entry('2026-10-14T01:30:00Z')]
+    expect((await call(reviews.POST, '/api/reviews', { cookie: owl, body: { reviews: [], log } })).data.logged).toBe(2)
+    const userId = (getDb().prepare("SELECT id FROM users WHERE username = 'nachteule'").get() as { id: number }).id
+    const statsOf = async () => ((await call(stats.GET, '/', { cookie: owl, query: { tz: 'UTC' } })).data as StudyStats).days
+    expect((await statsOf()).filter((x) => x.date.startsWith('2026-10-1'))).toEqual([
+      { date: '2026-10-13', reviews: 2, again: 2, ms: 4000 },
+    ])
+    expect(againToday(userId, 'UTC', Date.parse('2026-10-14T02:00:00Z'))).toEqual([{ cardId: c.id, side: 0 }])
+    expect(againToday(userId, 'UTC', Date.parse('2026-10-14T05:00:00Z'))).toEqual([])
+
+    await setHour(0)
+    expect((await statsOf()).filter((x) => x.date.startsWith('2026-10-1')).map((x) => [x.date, x.reviews])).toEqual([
+      ['2026-10-13', 1],
+      ['2026-10-14', 1],
+    ])
+    expect(againToday(userId, 'UTC', Date.parse('2026-10-14T02:00:00Z'))).toEqual([{ cardId: c.id, side: 0 }])
+    // Konto gelöscht: die Einstellung verschwindet mit
+    getDb().prepare('DELETE FROM users WHERE id = ?').run(userId)
+    expect(getDb().prepare('SELECT COUNT(*) AS n FROM flashcard_settings WHERE user_id = ?').get(userId)).toEqual({ n: 0 })
   })
 })

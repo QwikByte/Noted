@@ -18,6 +18,7 @@ import { addDays, isoWeek, localDate, shortDate, startOfWeek, weekday, weekdaySh
 import { useFocusSessions } from '@/features/focus/client/sessions'
 import { formatStudyTime, weeklyBySubject } from '@/features/focus/sessions'
 import { dueForecast, streaks } from '../stats'
+import { studyDate } from '../srs'
 import type { StudyDay, StudyStats } from '../types'
 
 const WEEKS = 53
@@ -47,7 +48,9 @@ export function StatsView() {
   const app = useApp()
   const { data: flashcards } = useFlashcards()
   const now = useNow()
-  const today = localDate(new Date(now))
+  // Lerntag wie auf dem Server – bei späterem Tagesbeginn zählt die Nacht zum Vortag
+  const today = studyDate(now, flashcards?.dayStartHour ?? 0)
+  const focusToday = localDate(new Date(now))
   const { data, isLoading, error } = useQuery({
     queryKey: ['stats'],
     queryFn: () => api<StudyStats>(`/api/stats?tz=${encodeURIComponent(timeZone())}`),
@@ -98,7 +101,7 @@ export function StatsView() {
             <FsrsPanel fsrs={flashcards.fsrs} usesFsrs={flashcards.decks.some((d) => d.scheduler === 'fsrs')} />
           ) : null}
           <DeckTable stats={data} />
-          <FocusTime today={today} />
+          <FocusTime today={focusToday} />
         </div>
       ) : isLoading ? null : (
         <p className="rounded-xl border border-border p-4 text-sm text-muted">
@@ -261,10 +264,13 @@ function Heatmap({ days, today }: { days: StudyDay[]; today: string }) {
 function Forecast({ now, className }: { now: number; className?: string }) {
   const { data } = useFlashcards()
   const [range, setRange] = useState<7 | 30>(7)
-  const counts = useMemo(() => (data ? dueForecast(data.decks, data.cards, data.states, now, range) : []), [data, now, range])
+  const counts = useMemo(
+    () => (data ? dueForecast(data.decks, data.cards, data.states, now, range, data.dayStartHour) : []),
+    [data, now, range],
+  )
   const max = Math.max(1, ...counts)
   const total = counts.reduce((s, n) => s + n, 0)
-  const today = localDate(new Date(now))
+  const today = studyDate(now, data?.dayStartHour ?? 0)
   const label = (i: number) => {
     const date = addDays(today, i)
     return i === 0 ? 'Heute' : i === 1 ? 'Morgen' : `${weekdayShort(date)}, ${shortDate(date)}`

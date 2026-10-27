@@ -165,12 +165,19 @@ type PlannedDeck = Pick<Deck, 'newPerDay' | 'reviewPerDay' | 'exams'>
 /**
  * Ermittelt für einen Stapel, was heute zu lernen ist. `inScope` grenzt die Karten ein (z. B. nur die einer Notiz) –
  * die Tageslimits für neue Karten und Wiederholungen zählen trotzdem über den ganzen Stapel. Ausgesetzte Karten kommen
- * nicht dran. Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts).
+ * nicht dran. Steht eine Klausur an, rücken Wiederholungen davor (siehe exam.ts). `dayStartHour`: Beginn des Lerntags.
  */
-function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, inScope?: (card: Card) => boolean): Plan {
-  const today = startOfDay(now)
-  const exam = nextExam(deck.exams, now)
-  const eod = endOfDay(now)
+function planDeck(
+  deck: PlannedDeck,
+  cards: Card[],
+  states: StateMap,
+  now: number,
+  dayStartHour: number,
+  inScope?: (card: Card) => boolean,
+): Plan {
+  const today = startOfDay(now, dayStartHour)
+  const exam = nextExam(deck.exams, now, dayStartHour)
+  const eod = endOfDay(now, dayStartHour)
   const eot = eod + 86_400_000
   const fresh: StudyItem[] = []
   const learning: StudyItem[] = []
@@ -187,7 +194,7 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
 
   // Geschwister zurückstellen (wie „bury siblings“ bei Anki): Seiten derselben Karte verraten sich sonst gegenseitig –
   // bei Lücke 2 steht Lücke 1 schon ausgefüllt im Satz. Nicht am Tag vor der Klausur, da muss alles drankommen.
-  const bury = !exam || daysUntil(exam, now) > 1
+  const bury = !exam || daysUntil(exam, now, dayStartHour) > 1
 
   for (const card of [...cards].sort(byPosition)) {
     const counted = !card.suspended && (!inScope || inScope(card))
@@ -217,7 +224,7 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
         continue
       }
       if (state.reviewedAt >= today) reviewedToday++
-      const due = exam ? examDue(state, reviewKey(card.id, side), exam, now) : state.due
+      const due = exam ? examDue(state, reviewKey(card.id, side), exam, now, dayStartHour) : state.due
       if (exam && state.phase === 'review') examDues.push(due)
       if (due <= eod) {
         if (state.phase === 'review') dueReviews.push({ item: { card, side, kind: 'review' }, due })
@@ -259,13 +266,14 @@ function planDeck(deck: PlannedDeck, cards: Card[], states: StateMap, now: numbe
       reviewedToday,
       introducedToday,
       dueTomorrow,
-      examReviewsPerDay: exam ? examReviewsPerDay(examDues, reviewsToday, exam, now) : 0,
+      examReviewsPerDay: exam ? examReviewsPerDay(examDues, reviewsToday, exam, now, dayStartHour) : 0,
     },
   }
 }
 
-export function deckCounts(deck: PlannedDeck, cards: Card[], states: StateMap, now: number): DeckCounts {
-  return planDeck(deck, cards, states, now).counts
+/** Zahlen für einen Stapel – `dayStartHour`: Beginn des Lerntags (Einstellung des Kontos) */
+export function deckCounts(deck: PlannedDeck, cards: Card[], states: StateMap, now: number, dayStartHour = 0): DeckCounts {
+  return planDeck(deck, cards, states, now, dayStartHour).counts
 }
 
 /** Neue Karten gleichmäßig zwischen die Wiederholungen verteilen. */
@@ -294,20 +302,24 @@ export class LearnSession {
   /** Nach „Rückgängig“ zurückgelegte Karten – kommen vor allen anderen dran, die zuletzt zurückgelegte zuerst */
   private front: StudyItem[] = []
 
-  /** `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden */
+  /**
+   * `cards`: alle Karten der Stapel (für das Tageslimit), `inScope`: welche davon gelernt werden, `dayStartHour`: Beginn
+   * des Lerntags
+   */
   constructor(
     decks: (PlannedDeck & Pick<Deck, 'id'>)[],
     cards: Card[],
     states: StateMap,
     now: number,
     inScope?: (card: Card) => boolean,
+    private readonly dayStartHour = 0,
   ) {
     const byDeck = cardsByDeck(cards)
     const review: StudyItem[] = []
     const fresh: StudyItem[] = []
     const learning: { item: StudyItem; due: number }[] = []
     for (const deck of decks) {
-      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now, inScope)
+      const plan = planDeck(deck, byDeck.get(deck.id) ?? [], states, now, dayStartHour, inScope)
       review.push(...plan.review)
       fresh.push(...plan.fresh)
       for (const item of plan.learning) learning.push({ item, due: states.get(itemKey(item))?.due ?? now })
@@ -328,7 +340,7 @@ export class LearnSession {
 
   /** Nach der Bewertung: Karten, die heute noch einmal drankommen, wieder einreihen. */
   answered(item: StudyItem, state: SrsState, now: number) {
-    if (state.phase === 'review' || state.due > endOfDay(now)) return
+    if (state.phase === 'review' || state.due > endOfDay(now, this.dayStartHour)) return
     const entry = { item: { ...item, kind: 'learning' as const }, due: state.due }
     const idx = this.learning.findIndex((l) => l.due > state.due)
     if (idx < 0) this.learning.push(entry)

@@ -51,7 +51,7 @@ function ExamRow({ exam, days, data, now }: { exam: CalendarEvent; days: number;
   let due = 0
   if (data) {
     const byDeck = cardsByDeck(data.cards)
-    due = decks.reduce((sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now).due, 0)
+    due = decks.reduce((sum, d) => sum + deckCounts(d, byDeck.get(d.id) ?? [], data.states, now, data.dayStartHour).due, 0)
   }
   const canStudy = decks.length > 0 && total > 0
   const learn = () => app.go({ kind: 'study', scope: `exam:${exam.id}`, mode: 'learn' })

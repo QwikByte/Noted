@@ -59,7 +59,7 @@ export function CardBrowser({ initialQuery }: { initialQuery: string }) {
   const leech = useMemo(() => leechThreshold(decks), [decks])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
   const cards = useMemo(
-    () => (data ? browseCards(data.cards, data.decks, data.states, filter, sort, now) : []),
+    () => (data ? browseCards(data.cards, data.decks, data.states, filter, sort, now, data.dayStartHour) : []),
     [data, filter, sort, now],
   )
   const order = useMemo(() => cards.map((c) => c.id), [cards])
@@ -179,7 +179,8 @@ export function CardBrowser({ initialQuery }: { initialQuery: string }) {
                   card={card}
                   states={data.states}
                   now={now}
-                  exam={nextExam(deck?.exams, now)}
+                  exam={nextExam(deck?.exams, now, data.dayStartHour)}
+                  dayStartHour={data.dayStartHour}
                   noteTitle={card.noteId ? noteTitles.get(card.noteId) : undefined}
                   deckName={deckNames.get(card.deckId)}
                   problem={isProblemCard(card, data.states, leech(card))}

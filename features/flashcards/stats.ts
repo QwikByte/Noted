@@ -86,7 +86,7 @@ export function streaks(dates: Iterable<string>, today: string): { current: numb
 /**
  * Vorschau: fällige Kartenseiten je Tag ab heute (Index 0 = heute, Überfälliges eingeschlossen). Neue Karten zählen
  * nicht mit – wie viele davon dazukommen, regelt das Tageslimit je Stapel. Ausgesetzte Karten zählen nicht. Steht für
- * einen der `decks` eine Klausur an, gelten die vorgezogenen Tage wie beim Lernen.
+ * einen der `decks` eine Klausur an, gelten die vorgezogenen Tage wie beim Lernen. `dayStartHour`: Beginn des Lerntags.
  */
 export function dueForecast(
   decks: Pick<Deck, 'id' | 'exams'>[],
@@ -94,11 +94,12 @@ export function dueForecast(
   states: StateMap,
   now: number,
   days: number,
+  dayStartHour = 0,
 ): number[] {
   const out = new Array<number>(days).fill(0)
-  const today = startOfDay(now)
+  const today = startOfDay(now, dayStartHour)
   // Wie im Stapel: Vor einer Klausur rücken spätere Wiederholungen auf die Tage davor (exam.ts)
-  const exams = new Map(decks.map((d) => [d.id, nextExam(d.exams, now)]))
+  const exams = new Map(decks.map((d) => [d.id, nextExam(d.exams, now, dayStartHour)]))
   for (const card of cards) {
     if (card.suspended) continue
     const exam = exams.get(card.deckId) ?? null
@@ -106,9 +107,9 @@ export function dueForecast(
       const key = reviewKey(card.id, side)
       const state = states.get(key)
       if (!state) continue
-      const due = exam ? examDue(state, key, exam, now) : state.due
+      const due = exam ? examDue(state, key, exam, now, dayStartHour) : state.due
       // Gerundet, weil Tage mit Zeitumstellung 23 oder 25 Stunden haben
-      const index = Math.max(0, Math.round((startOfDay(due) - today) / DAY))
+      const index = Math.max(0, Math.round((startOfDay(due, dayStartHour) - today) / DAY))
       if (index < days) out[index]++
     }
   }

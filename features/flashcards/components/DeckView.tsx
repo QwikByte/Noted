@@ -70,8 +70,9 @@ export function DeckView({ id }: { id: string }) {
 
   const deck = data?.decks.find((d) => d.id === id)
   const cards = useMemo(() => (data ? data.cards.filter((c) => c.deckId === id).sort(byPosition) : []), [data, id])
-  const counts = data && deck ? deckCounts(deck, cards, data.states, now) : null
-  const exam = nextExam(deck?.exams, now)
+  const dayStartHour = data?.dayStartHour ?? 0
+  const counts = data && deck ? deckCounts(deck, cards, data.states, now, dayStartHour) : null
+  const exam = nextExam(deck?.exams, now, dayStartHour)
   const status = useMemo(() => statusCounts(cards, data?.states ?? new Map()), [cards, data])
   const noteTitles = useMemo(() => new Map(notes.map((n) => [n.id, n.title])), [notes])
   const leechLapses = deck?.leechLapses
@@ -257,7 +258,9 @@ export function DeckView({ id }: { id: string }) {
             <Legend counts={status} />
           </div>
         ) : null}
-        {exam && cards.length > 0 ? <ExamPlan deck={deck} counts={counts} exam={exam} now={now} /> : null}
+        {exam && cards.length > 0 ? (
+          <ExamPlan deck={deck} counts={counts} exam={exam} now={now} dayStartHour={dayStartHour} />
+        ) : null}
       </div>
 
       <div className="mb-3 flex items-center gap-2">
@@ -345,6 +348,7 @@ export function DeckView({ id }: { id: string }) {
                 states={data.states}
                 now={now}
                 exam={exam}
+                dayStartHour={dayStartHour}
                 noteTitle={card.noteId ? noteTitles.get(card.noteId) : undefined}
                 problem={problems.has(card.id)}
                 actions={cardList.rowActions}
@@ -400,11 +404,23 @@ export function DeckView({ id }: { id: string }) {
 }
 
 /** Klausurmodus: Was bis zur Klausur passiert – und wie viele neue Karten pro Tag es braucht, um alle zu schaffen */
-function ExamPlan({ deck, counts, exam, now }: { deck: Deck; counts: DeckCounts; exam: DeckExam; now: number }) {
+function ExamPlan({
+  deck,
+  counts,
+  exam,
+  now,
+  dayStartHour,
+}: {
+  deck: Deck
+  counts: DeckCounts
+  exam: DeckExam
+  now: number
+  dayStartHour: number
+}) {
   const qc = useQueryClient()
   const toast = useToast()
-  const days = daysUntil(exam, now)
-  const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now))
+  const days = daysUntil(exam, now, dayStartHour)
+  const perDay = Math.min(MAX_NEW_PER_DAY, examNewPerDay(counts.newTotal, counts.introducedToday, exam, now, dayStartHour))
   const short = counts.newTotal > 0 && perDay > deck.newPerDay
   const reviewsPerDay = Math.min(MAX_REVIEW_PER_DAY, counts.examReviewsPerDay)
   const reviewsShort = deck.reviewPerDay < MAX_REVIEW_PER_DAY && reviewsPerDay > deck.reviewPerDay

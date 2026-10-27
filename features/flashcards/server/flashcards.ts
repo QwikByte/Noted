@@ -28,6 +28,7 @@ import {
   LEECH_LAPSES,
 } from '../srs'
 import { getFsrsParams } from './fsrs-params'
+import { getDayStartHour } from './settings'
 import type {
   Card,
   CardBatchAction,
@@ -177,7 +178,7 @@ export function getFlashcardData(userId: number): FlashcardData {
     db.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY deck_id, position, created_at').all(userId) as CardRow[]
   ).map(toCard)
   const reviews = (db.prepare('SELECT * FROM card_reviews WHERE user_id = ?').all(userId) as ReviewRow[]).map(toReview)
-  return { decks, cards, reviews, fsrs: getFsrsParams(userId) }
+  return { decks, cards, reviews, fsrs: getFsrsParams(userId), dayStartHour: getDayStartHour(userId) }
 }
 
 // ---------------------------------------------------------------------------

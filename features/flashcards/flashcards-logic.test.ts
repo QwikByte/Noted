@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { localDate } from '@/features/calendar/dates'
-import { DAY, MINUTE, formatInterval, fuzzInterval, previewIntervals, schedule, cardStatus, type Plan, type Rating } from './srs'
+import {
+  DAY,
+  MINUTE,
+  cardStatus,
+  endOfDay,
+  formatInterval,
+  fuzzInterval,
+  previewIntervals,
+  schedule,
+  startOfDay,
+  studyDate,
+  type Plan,
+  type Rating,
+} from './srs'
 import {
   LearnSession,
   PracticeSession,
@@ -495,6 +508,75 @@ describe('Lernsitzung', () => {
     expect(byDeck.get('d2')?.map((c) => c.id)).toEqual(Array.from({ length: 50 }, (_, i) => `c${i * 1000}`))
     expect(byDeck.get('d1')?.slice(0, 2).map((c) => c.id)).toEqual(['c1', 'c2'])
     expect(byDeck.has('d3')).toBe(false)
+  })
+})
+
+describe('Beginn des Lerntags', () => {
+  // Kurz nach Mitternacht am 14.10. – mit Tagesbeginn 4 Uhr noch der Lerntag vom 13.
+  const NIGHT = new Date('2026-10-14T00:30:00').getTime()
+  const at = (iso: string) => new Date(iso).getTime()
+  const deck = { id: 'd1', newPerDay: 2, reviewPerDay: 9999 }
+  const learned = (cardId: string, due: number): CardReview => ({
+    cardId,
+    side: 0,
+    phase: 'review',
+    step: 0,
+    interval: 3,
+    ease: 2.5,
+    reps: 3,
+    lapses: 0,
+    due,
+    reviewedAt: due - 3 * DAY,
+    introducedAt: due - 10 * DAY,
+  })
+
+  it('verschiebt die Tagesgrenze auf die gewählte Stunde', () => {
+    expect(startOfDay(NIGHT)).toBe(at('2026-10-14T00:00:00'))
+    expect(startOfDay(NIGHT, 4)).toBe(at('2026-10-13T04:00:00'))
+    expect(endOfDay(NIGHT, 4)).toBe(at('2026-10-14T04:00:00') - 1)
+    expect(startOfDay(at('2026-10-14T04:00:00'), 4)).toBe(at('2026-10-14T04:00:00'))
+    expect(endOfDay(NOW)).toBe(at('2026-10-14T23:59:59.999'))
+    expect(studyDate(NIGHT)).toBe('2026-10-14')
+    expect(studyDate(NIGHT, 4)).toBe('2026-10-13')
+    expect(studyDate(NOW, 4)).toBe('2026-10-14')
+  })
+
+  it('zählt eine Nachtschicht zum Vortag: Tageslimit, heute gelernt und fällige Karten', () => {
+    const cards = Array.from({ length: 5 }, (_, i) => card(`c${i}`))
+    const reviews: CardReview[] = [
+      // Gestern um 23 Uhr zum ersten Mal gelernt
+      { cardId: 'c0', side: 0, ...schedule(null, 4, at('2026-10-13T23:00:00')) },
+      // Erst heute Vormittag fällig – kommt um 0:30 bei Tagesbeginn 4 Uhr noch nicht dran
+      learned('c1', at('2026-10-14T10:00:00')),
+    ]
+    const midnight = deckCounts(deck, cards, stateMap(reviews), NIGHT)
+    expect(midnight).toMatchObject({ introducedToday: 0, newToday: 2, review: 1, reviewedToday: 0 })
+    const late = deckCounts(deck, cards, stateMap(reviews), NIGHT, 4)
+    expect(late).toMatchObject({ introducedToday: 1, newToday: 1, review: 0, reviewedToday: 1, dueTomorrow: 1 })
+  })
+
+  it('holt einen Lernschritt nach Tagesbeginn nicht mehr in die laufende Sitzung', () => {
+    const c = card('c1')
+    const step = (due: number) => ({ ...schedule(null, 1, NIGHT), due })
+    const midnight = new LearnSession([deck], [c], new Map(), NIGHT)
+    midnight.answered({ card: c, side: 0, kind: 'new' }, step(at('2026-10-14T05:00:00')), NIGHT)
+    expect(midnight.remaining().learning).toBe(1)
+    const late = new LearnSession([deck], [c], new Map(), NIGHT, undefined, 4)
+    late.answered({ card: c, side: 0, kind: 'new' }, step(at('2026-10-14T05:00:00')), NIGHT)
+    expect(late.remaining().learning).toBe(0)
+    late.answered({ card: c, side: 0, kind: 'new' }, step(at('2026-10-14T03:00:00')), NIGHT)
+    expect(late.remaining().learning).toBe(1)
+  })
+
+  it('rechnet mit FSRS die vergangenen Tage ab dem Tagesbeginn', () => {
+    // Abends um 23 Uhr bewertet, um 2 Uhr nachts wiederholt: ab Mitternacht ein Tag, ab 4 Uhr derselbe Tag
+    const prev = { ...learned('c1', at('2026-10-14T00:00:00')), reviewedAt: at('2026-10-13T23:00:00'), stability: 3, difficulty: 5 }
+    const plan = (dayStartHour: number): Plan => ({ kind: 'fsrs', retention: 0.9, dayStartHour })
+    const later = at('2026-10-14T02:00:00')
+    const sameDay = schedule(prev, 3, later, plan(4))
+    const nextDay = schedule(prev, 3, later, plan(0))
+    expect(sameDay.stability).not.toBe(nextDay.stability)
+    expect(schedule(prev, 3, later, { kind: 'fsrs', retention: 0.9 }).stability).toBe(nextDay.stability)
   })
 })
 

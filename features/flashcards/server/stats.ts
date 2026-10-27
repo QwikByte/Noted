@@ -3,14 +3,16 @@ import { getDb } from '@/shared/server/db'
 import { badRequest } from '@/shared/server/http'
 import { DAY } from '../srs'
 import { aggregateLog, type LogRow } from '../stats'
+import { getDayStartHour } from './settings'
 import type { StudyStats } from '../types'
 
 /** Jahresüberblick: 53 Wochen und ein paar Tage Puffer für die Zeitzone */
 const HISTORY_DAYS = 380
 
-/** Zeitpunkt → Tag (YYYY-MM-DD) in der Zeitzone des Geräts; je Viertelstunde einmal gerechnet – Zonen weichen um
- *  Vielfache von 15 Minuten von UTC ab, innerhalb einer Viertelstunde ändert sich der Tag also nie */
-export function dayFormatter(timeZone: string): (t: number) => string {
+/** Zeitpunkt → Lerntag (YYYY-MM-DD) in der Zeitzone des Geräts; je Viertelstunde einmal gerechnet – Zonen weichen um
+ *  Vielfache von 15 Minuten von UTC ab, innerhalb einer Viertelstunde ändert sich der Tag also nie. Beginnt der Lerntag
+ *  später als um Mitternacht (`dayStartHour`), zählt die Zeit davor zum Vortag. */
+export function dayFormatter(timeZone: string, dayStartHour = 0): (t: number) => string {
   let fmt: Intl.DateTimeFormat
   try {
     fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -18,8 +20,9 @@ export function dayFormatter(timeZone: string): (t: number) => string {
     throw badRequest('Unbekannte Zeitzone.')
   }
   const cache = new Map<number, string>()
+  const shift = dayStartHour * 3_600_000
   return (t) => {
-    const slot = Math.floor(t / 900_000)
+    const slot = Math.floor((t - shift) / 900_000)
     let day = cache.get(slot)
     if (day === undefined) {
       const parts = Object.fromEntries(fmt.formatToParts(new Date(slot * 900_000)).map((p) => [p.type, p.value]))
@@ -30,9 +33,9 @@ export function dayFormatter(timeZone: string): (t: number) => string {
   }
 }
 
-/** Lernstatistik aus dem Bewertungsprotokoll – Tage in der Zeitzone des Geräts */
+/** Lernstatistik aus dem Bewertungsprotokoll – Lerntage in der Zeitzone des Geräts, ab dem Tagesbeginn des Kontos */
 export function getStudyStats(userId: number, timeZone: string, now = Date.now()): StudyStats {
-  const dayOf = dayFormatter(timeZone)
+  const dayOf = dayFormatter(timeZone, getDayStartHour(userId))
   const db = getDb()
   const rows = db
     .prepare(
@@ -52,7 +55,7 @@ export function getStudyStats(userId: number, timeZone: string, now = Date.now()
  * Ein Tag hat in keiner Zeitzone mehr als 26 Stunden; was früher war, kann nicht von heute sein.
  */
 export function againToday(userId: number, timeZone: string, now = Date.now()): { cardId: string; side: number }[] {
-  const dayOf = dayFormatter(timeZone)
+  const dayOf = dayFormatter(timeZone, getDayStartHour(userId))
   const today = dayOf(now)
   const rows = getDb()
     .prepare(

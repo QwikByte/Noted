@@ -7,6 +7,7 @@ import { DEFAULT_WEIGHTS, clipWeights } from '../fsrs'
 import { buildSequences, evaluationData } from '../fsrs-dataset'
 import { evaluateWeights, optimizeFsrs } from '../fsrs-optimizer'
 import { dayFormatter } from './stats'
+import { getDayStartHour } from './settings'
 import type { FsrsOptimizeResult, FsrsParams, ReviewLogEntry } from '../types'
 
 /** Höchstens so viele (die neuesten) Bewertungen fließen in eine Optimierung ein */
@@ -50,7 +51,7 @@ export function getFsrsParams(userId: number): FsrsParams | null {
 
 /**
  * Gewichte aus dem Bewertungsprotokoll schätzen – gespeichert nur, wenn sie die Wiederholungen besser vorhersagen
- * (RMSE) als die bisher gültigen. Tage zählen in der Zeitzone des Geräts.
+ * (RMSE) als die bisher gültigen. Tage zählen in der Zeitzone des Geräts, ab dem Tagesbeginn des Kontos.
  */
 export async function optimizeFsrsParams(userId: number, timeZone: string): Promise<FsrsOptimizeResult> {
   if (!rateLimit(`fsrs:${userId}`, 10, 60 * 60_000).ok) {
@@ -61,7 +62,7 @@ export async function optimizeFsrsParams(userId: number, timeZone: string): Prom
   }
   lock.__notedFsrsRunning = true
   try {
-    const day = dayFormatter(timeZone)
+    const day = dayFormatter(timeZone, getDayStartHour(userId))
     const dayOf = (t: number) => daysBetween('1970-01-01', day(t))
     const db = getDb()
     const cutoff = db
