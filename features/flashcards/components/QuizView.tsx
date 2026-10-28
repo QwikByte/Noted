@@ -1,7 +1,7 @@
 'use client'
 // Notiz abfragen: Überschrift für Überschrift aufdecken und selbst bewerten – ohne Einfluss auf den Wiederholungsplan
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, CheckCircle2, FileText, Layers, ListChecks, Loader2, RotateCcw, X } from 'lucide-react'
+import { Check, CheckCircle2, FileText, GraduationCap, Layers, ListChecks, Loader2, RotateCcw, X } from 'lucide-react'
 import { useApp } from '@/features/workspace/client/context'
 import { useDrafts, useNote } from '@/features/notes/client/queries'
 import type { NoteFormat } from '@/features/notes/types'
@@ -12,6 +12,8 @@ import { useReservedSpace } from '@/shared/ui/reserved-space'
 import { errorMessage } from '@/shared/client/api'
 import { makeExcerpt } from '@/shared/markdown/meta'
 import { canQuiz, quizSections, type QuizSection } from '../note-quiz'
+import { AiTutor } from '@/features/ai/components/AiTutor'
+import { useAiReady } from '@/features/ai/client/ai'
 
 type Quiz = { title: string; markdown: string; sections: QuizSection[] }
 
@@ -21,7 +23,8 @@ async function toMarkdown(content: string, format: NoteFormat, title: string): P
   return convertContent(content, format, 'markdown', title)
 }
 
-export function QuizView({ id }: { id: string }) {
+/** `ai`: Claude stellt die Fragen und beurteilt die Antworten (Tutor) – dann geht jedes Format, auch ohne Überschriften */
+export function QuizView({ id, ai }: { id: string; ai?: boolean }) {
   const app = useApp()
   const drafts = useDrafts()
   const draft = drafts.find((d) => d.id === id)
@@ -35,7 +38,7 @@ export function QuizView({ id }: { id: string }) {
   const [quiz, setQuiz] = useState<Quiz | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   useEffect(() => {
-    if (quiz || title === undefined || format === undefined || content === undefined || !canQuiz(format)) return
+    if (quiz || title === undefined || format === undefined || content === undefined || (!ai && !canQuiz(format))) return
     let cancelled = false
     toMarkdown(content, format, title).then(
       (markdown) => {
@@ -48,15 +51,16 @@ export function QuizView({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [quiz, title, format, content])
+  }, [quiz, title, format, content, ai])
 
   const toNote = () => app.go({ kind: 'note', id }, { replace: true })
 
+  if (quiz && ai) return <AiTutor noteId={id} quiz={quiz} onClose={toNote} />
   if (quiz && quiz.sections.length > 0) return <QuizSession noteId={id} quiz={quiz} onClose={toNote} />
 
   const message = quiz
     ? 'In dieser Notiz gibt es keine Überschrift mit Text darunter. Gliedere sie mit Überschriften – jede wird beim Abfragen zur Frage.'
-    : format && !canQuiz(format)
+    : format && !ai && !canQuiz(format)
       ? 'Einfacher Text hat keine Überschriften. Wandle die Notiz unter ⋮ → Format … in Markdown um, um sie abzufragen.'
       : failed
         ? `Die Notiz konnte nicht vorbereitet werden. ${failed}`
@@ -83,6 +87,7 @@ const trail = (s: QuizSection) => [...s.path, s.heading].map((h) => makeExcerpt(
 
 function QuizSession({ noteId, quiz, onClose }: { noteId: string; quiz: Quiz; onClose: () => void }) {
   const app = useApp()
+  const aiReady = useAiReady()
   const all = useMemo(() => quiz.sections.map((_, i) => i), [quiz])
   // Reihenfolge wie in der Notiz; „Nicht gewusste wiederholen“ fragt nur diese erneut ab
   const [order, setOrder] = useState(all)
@@ -210,6 +215,11 @@ function QuizSession({ noteId, quiz, onClose }: { noteId: string; quiz: Quiz; on
                 </>
               ) : null}
               <Button onClick={() => restart(all)}>Alle nochmal</Button>
+              {aiReady ? (
+                <Button onClick={() => app.go({ kind: 'quiz', id: noteId, ai: true }, { replace: true })}>
+                  <GraduationCap className="size-4" /> Mit KI abfragen
+                </Button>
+              ) : null}
               <Button onClick={onClose}>
                 <FileText className="size-4" /> Zur Notiz
               </Button>

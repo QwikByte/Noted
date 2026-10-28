@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { apiHeaders, makePdf } from './helpers'
 
 // KI mit Claude: Schlüssel hinterlegen, Karten aus Notizen und PDFs, Assistent in Notizen und im PDF, Titel und Tags,
-// Karten überarbeiten und aufteilen. Statt Anthropic antwortet ein Nachbau auf dem Port, den scripts/e2e-server.mjs
+// Lernen mit Bewertung und Erklärung, Problemkarten, Tutor, Probeklausur, Karten überarbeiten und aufteilen. Statt Anthropic antwortet ein Nachbau auf dem Port, den scripts/e2e-server.mjs
 // dem Server als ANTHROPIC_BASE_URL mitgibt. Räumt am Ende alles weg und meldet sich ab – app.spec.ts läuft zuerst
 // und erwartet ein leeres Konto mit einer Sitzung.
 
@@ -28,11 +28,52 @@ type Body = { system: string; messages: { content: Block[] }[]; output_config?: 
 /** Was der Nachbau zuletzt bekommen hat – zum Prüfen, was an Claude ging */
 const received: Body[] = []
 
-/** Antwort je nach Art der Anfrage: Karten, Titel und Tags (strukturiert) oder Text des Assistenten (gestreamt) */
+/**
+ * Bewertung: je Aufgabe nach ihrer Antwort – „falsch“ darin heißt falsch, „teil“ teilweise, sonst richtig (bei
+ * Aufgaben mit Punktzahl die vollen bzw. halben Punkte)
+ */
+function grades(prompt: string) {
+  const results = [...prompt.matchAll(/<aufgabe nr="(\d+)"(?: punkte="(\d+)")?>[\s\S]*?Antwort:\n([\s\S]*?)\n<\/aufgabe>/g)].map(([, nr, max, text]) => {
+    const verdict = /falsch/i.test(text) ? 'wrong' : /teil/i.test(text) ? 'partial' : 'correct'
+    const full = max ? Number(max) : 1
+    const points = verdict === 'correct' ? full : verdict === 'partial' ? full / 2 : 0
+    const feedback = { correct: 'Passt – gleiche Aussage.', partial: 'Da fehlt noch die Begründung.', wrong: 'Leider nicht.' }[verdict]
+    return { nr: Number(nr), verdict, points, feedback }
+  })
+  return JSON.stringify({ results })
+}
+
+const question = (q: string, a: string, points: number, topic: string) => ({ question: q, answer: a, points, topic })
+
+/** Antwort je nach Art der Anfrage: Karten, Titel und Tags, Bewertung, Fragen (strukturiert) oder Text (gestreamt) */
 function answer(body: Body): string[] {
   const props = body.output_config?.format?.schema.properties ?? {}
   const prompt = body.messages[0].content.map((b) => b.text ?? '').join('\n\n')
+  if ('results' in props) return [grades(prompt)]
+  if ('questions' in props) {
+    if (body.system.includes('Probeklausur')) {
+      return [
+        JSON.stringify({
+          questions: [
+            question('Erläutern Sie den ersten Hauptsatz.', 'Energieerhaltung: ΔU = Q + W (4 P.)', 4, 'Hauptsätze'),
+            question('Berechnen Sie $\\Delta U$ für $Q = 3$ J und $W = 2$ J.', '$\\Delta U = 5$ J (2 P.)', 2, 'Rechnen'),
+          ],
+        }),
+      ]
+    }
+    return [
+      JSON.stringify({
+        questions: [
+          question('Warum nimmt die Entropie nicht ab?', 'Weil Prozesse von selbst nur in Richtung größerer Unordnung laufen.', 1, 'Hauptsätze'),
+          question('Was besagt der erste Hauptsatz?', 'Energie bleibt erhalten.', 1, 'Hauptsätze'),
+        ],
+      }),
+    ]
+  }
   if ('cards' in props) {
+    if (body.system.includes('Problemkarte')) {
+      return [JSON.stringify({ cards: [card('Was besagt der erste Hauptsatz?', 'Energie bleibt erhalten.\n\nMerkhilfe: Nichts geht verloren.'), card('Wofür steht ΔU?', 'Änderung der inneren Energie.')] })]
+    }
     if (body.system.includes('Teile sie')) {
       return [JSON.stringify({ cards: [card('Was besagt der erste Hauptsatz?', 'Energie bleibt erhalten.'), card('Was ist innere Energie?', 'Energie der Teilchen.')] })]
     }
@@ -262,6 +303,187 @@ test('PDF: Seite erklären lassen, in die Notiz einfügen und Karten aus der Sei
   cleanup.decks.push(deck.id)
   const made = (data.cards as { deckId: string; back: string; noteId: string | null }[]).filter((c) => c.deckId === deck.id)
   expect(made).toMatchObject([{ back: 'Die Unordnung.\n\n[[Skript Entropie.pdf#page=1|Skript Entropie, S. 1]]', noteId }])
+})
+
+const DAY = 86_400_000
+/** 1×1-Pixel-PNG als „Foto“ einer handschriftlichen Lösung */
+const PHOTO = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+const lastPrompt = () => received.at(-1)!.messages[0].content.map((b) => b.text ?? '[Bild]').join('\n')
+
+test('Lernen: Claude prüft die eingetippte Antwort und erklärt die Karte, Problemkarten überarbeiten', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const noteId = await newNote(page, 'Hauptsätze', '# Hauptsätze\nEnergie bleibt erhalten, die Entropie nimmt nicht ab.')
+  cleanup.notes.push(noteId)
+  const deck = (await (await page.request.post('/api/decks', { headers, data: { name: 'Thermo tippen', typeAnswer: true } })).json()).deck
+  cleanup.decks.push(deck.id)
+  const [typedCard] = (
+    await (
+      await page.request.post(`/api/decks/${deck.id}/cards`, {
+        headers,
+        data: { cards: [{ type: 'basic', front: 'Was besagt der erste Hauptsatz?', back: 'Energie bleibt erhalten.', noteId }] },
+      })
+    ).json()
+  ).cards
+
+  // Nicht Zeichen für Zeichen richtig – Claude erkennt die gleiche Aussage und wählt „Gut“ vor
+  await page.goto(`/?s=deck:${deck.id}`)
+  const input = page.getByTestId('typed-answer')
+  await input.fill('Die Energie bleibt immer gleich')
+  await input.press('Enter')
+  await expect(page.getByTestId('typed-result')).toContainText('Nicht ganz')
+  const verdict = page.getByTestId('ai-verdict')
+  await expect(verdict).toContainText('Richtig')
+  await expect(verdict).toContainText('Passt – gleiche Aussage.')
+  await expect(page.getByTestId('rate-3')).toHaveClass(/ring-accent/)
+  expect(lastPrompt()).toContain('Musterlösung:\nEnergie bleibt erhalten.\n\nAntwort:\nDie Energie bleibt immer gleich')
+  await shot(page, '74-ai-typed-answer')
+
+  // Erklären: mit der Notiz als Hintergrund
+  await page.getByTestId('ai-explain-card').click()
+  const dialog = page.getByRole('dialog', { name: 'KI-Assistent' })
+  await expect(dialog.getByTestId('ai-result')).toContainText('ist ein Maß für die Unordnung.')
+  expect(lastPrompt()).toContain('Frage:\nWas besagt der erste Hauptsatz?')
+  expect(lastPrompt()).toContain('<kontext>\n# Hauptsätze\nEnergie bleibt erhalten')
+  await dialog.getByRole('button', { name: 'Verwerfen' }).click()
+  await page.getByTestId('rate-3').click()
+  await expect
+    .poll(async () => {
+      const { reviews } = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+      return (reviews as { cardId: string; step: number }[]).find((r) => r.cardId === typedCard.id)?.step
+    })
+    .toBe(1)
+
+  // Problemkarte: Claude schlägt zwei leichter merkbare Karten vor – die erste ersetzt sie, gelernt wird neu
+  const leeches = (await (await page.request.post('/api/decks', { headers, data: { name: 'Problemfälle mit Claude' } })).json()).deck
+  cleanup.decks.push(leeches.id)
+  const [hard] = (
+    await (
+      await page.request.post(`/api/decks/${leeches.id}/cards`, {
+        headers,
+        data: { cards: [{ type: 'basic', front: 'Erkläre alle Hauptsätze mit Formeln', back: 'Sehr viel Text …', noteId }] },
+      })
+    ).json()
+  ).cards
+  const now = Date.now()
+  await page.request.post('/api/reviews', {
+    headers,
+    data: {
+      reviews: [
+        { cardId: hard.id, side: 0, phase: 'review', step: 0, interval: 1, ease: 1.3, reps: 12, lapses: 7, due: now - 60_000, reviewedAt: now - DAY, introducedAt: now - 30 * DAY },
+      ],
+    },
+  })
+  await page.goto(`/?d=${leeches.id}`)
+  await page.getByRole('radiogroup', { name: 'Karten filtern' }).getByRole('radio', { name: /Problemkarten/ }).click()
+  await page.getByTestId('problem-hint').getByRole('button', { name: 'Mit KI überarbeiten …' }).click()
+  const problems = page.getByRole('dialog', { name: 'Problemkarten mit KI überarbeiten' })
+  await expect(problems.getByTestId('ai-problem-card')).toContainText('Merkhilfe: Nichts geht verloren.')
+  await expect(problems.getByTestId('ai-problem-card')).toContainText('Wofür steht ΔU?')
+  expect(received.at(-1)!.system).toContain('Problemkarte')
+  await shot(page, '75-ai-problem-cards')
+  await problems.getByTestId('ai-problem-apply-all').click()
+  await expect(page.getByText('1 Karte überarbeitet.')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(problems).toBeHidden()
+  const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const cards = (data.cards as { id: string; deckId: string; front: string; noteId: string | null; suspended: boolean }[]).filter(
+    (c) => c.deckId === leeches.id,
+  )
+  expect(cards.map((c) => [c.front, c.noteId])).toEqual([
+    ['Was besagt der erste Hauptsatz?', noteId],
+    ['Wofür steht ΔU?', noteId],
+  ])
+  expect((data.reviews as { cardId: string }[]).some((r) => r.cardId === hard.id)).toBe(false)
+})
+
+test('Tutor: Claude fragt eine Notiz ab und bewertet die Antworten', async ({ page }) => {
+  await login(page)
+  const noteId = await newNote(page, 'Wärmelehre Tutor', '# Hauptsätze\nEnergie bleibt erhalten, die Entropie nimmt nicht ab.')
+  cleanup.notes.push(noteId)
+  await page.goto(`/?n=${noteId}`)
+  await page.getByRole('button', { name: 'Weitere Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Mit KI abfragen' }).click()
+
+  const tutor = page.getByTestId('ai-tutor')
+  await expect(tutor.getByTestId('ai-tutor-card')).toContainText('Warum nimmt die Entropie nicht ab?')
+  expect(received.at(-1)!.system).toContain('Höchstens 8 Fragen')
+  await tutor.getByTestId('ai-tutor-answer').fill('Weiß ich nur teilweise: wegen der Unordnung')
+  await tutor.getByTestId('ai-tutor-answer').press('Control+Enter')
+  await expect(tutor.getByTestId('ai-verdict')).toContainText('Teilweise richtig')
+  await expect(tutor.getByTestId('ai-tutor-solution')).toContainText('größerer Unordnung')
+  // Der passende Abschnitt der Notiz geht als Zusammenhang mit
+  expect(lastPrompt()).toContain('<kontext>\nHauptsätze\nEnergie bleibt erhalten')
+  await shot(page, '76-ai-tutor')
+  await tutor.getByTestId('ai-tutor-next').click()
+
+  await expect(tutor.getByTestId('ai-tutor-card')).toContainText('Was besagt der erste Hauptsatz?')
+  await tutor.getByRole('button', { name: 'Weiß ich nicht' }).click()
+  await expect(tutor.getByTestId('ai-tutor-solution')).toContainText('Energie bleibt erhalten.')
+  await tutor.getByTestId('ai-tutor-next').click()
+
+  const done = tutor.getByTestId('ai-tutor-done')
+  await expect(done).toContainText('Richtig: 0 · Teilweise: 1 · Falsch: 1')
+  await done.getByRole('button', { name: 'Karteikarten aus den Lücken' }).click()
+  const fromNote = page.getByRole('dialog', { name: 'Karteikarten aus Notiz' })
+  await expect(fromNote).toBeVisible()
+  await fromNote.getByRole('button', { name: 'Abbrechen' }).click()
+})
+
+test('Probeklausur: erstellen, mit Text und Foto beantworten, korrigieren lassen und als Notiz speichern', async ({ page }) => {
+  await login(page)
+  const headers = await apiHeaders(page)
+  const deck = (await (await page.request.post('/api/decks', { headers, data: { name: 'Thermo-Klausur' } })).json()).deck
+  cleanup.decks.push(deck.id)
+  await page.request.post(`/api/decks/${deck.id}/cards`, {
+    headers,
+    data: { cards: [{ type: 'basic', front: 'Was besagt der erste Hauptsatz?', back: 'Energie bleibt erhalten.' }] },
+  })
+  await page.goto(`/?d=${deck.id}`)
+  await page.getByRole('button', { name: 'Stapel-Aktionen' }).click()
+  await page.getByRole('menuitem', { name: 'Probeklausur mit KI …' }).click()
+
+  const exam = page.getByTestId('mock-exam')
+  await exam.getByRole('radio', { name: '5 Aufgaben', exact: true }).click()
+  await exam.getByLabel('Wünsche an Claude (optional)').fill('mit Rechnung')
+  await exam.getByTestId('mock-exam-start').click()
+  const tasks = exam.getByTestId('mock-exam-task')
+  await expect(tasks).toHaveCount(2)
+  expect(received.at(-1)!.system).toContain('Genau 5 Aufgaben')
+  expect(lastPrompt()).toContain('<karte>\nWas besagt der erste Hauptsatz?\n→ Energie bleibt erhalten.\n</karte>')
+  await expect(exam).toContainText('6 Punkte')
+
+  await tasks.nth(0).getByLabel('Antwort auf Aufgabe 1').fill('Energie bleibt erhalten: ΔU = Q + W')
+  await tasks.nth(1).getByLabel('Antwort auf Aufgabe 2').fill('Nur teilweise gerechnet, siehe Foto')
+  await tasks.nth(1).getByTestId('mock-exam-photo-input').setInputFiles({ name: 'loesung.png', mimeType: 'image/png', buffer: PHOTO })
+  await expect(tasks.nth(1).getByRole('img', { name: 'Foto 1 zu Aufgabe 2' })).toBeVisible()
+  await shot(page, '77-ai-mock-exam')
+
+  // Antworten und Foto überstehen das Neuladen
+  await page.reload()
+  await expect(tasks.nth(0).getByLabel('Antwort auf Aufgabe 1')).toHaveValue('Energie bleibt erhalten: ΔU = Q + W')
+  await expect(tasks.nth(1).getByRole('img', { name: 'Foto 1 zu Aufgabe 2' })).toBeVisible()
+
+  await exam.getByTestId('mock-exam-submit').click()
+  await expect(exam.getByTestId('mock-exam-score')).toContainText('5 von 6 Punkten')
+  await expect(exam.getByTestId('mock-exam-score')).toContainText('83 %')
+  await expect(exam.getByTestId('mock-exam-result').nth(1)).toContainText('Teilweise richtig')
+  const grading = received.at(-1)!
+  expect(grading.messages[0].content.filter((b) => b.type === 'image')).toHaveLength(1)
+  expect(lastPrompt()).toContain('<aufgabe nr="1" punkte="4">')
+  await shot(page, '78-ai-mock-exam-result')
+
+  await exam.getByRole('button', { name: 'Als Notiz speichern' }).click()
+  await expect(page).toHaveURL(/\?n=/)
+  const savedId = new URL(page.url()).searchParams.get('n')!
+  cleanup.notes.push(savedId)
+  // Über den Server, nicht im Browser – solange die Notiz noch nicht synchronisiert ist, gibt es 404
+  const saved = async () => {
+    const res = await page.request.get(`/api/notes/${savedId}`)
+    return res.ok() ? ((await res.json()).note.content as string) : ''
+  }
+  await expect.poll(saved).toContain('# Probeklausur: Thermo-Klausur')
+  expect(await saved()).toContain('**Bewertung:** Teilweise richtig – Da fehlt noch die Begründung.')
 })
 
 test('Karte mit KI überarbeiten und aufteilen', async ({ page }) => {

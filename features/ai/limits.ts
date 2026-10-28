@@ -18,3 +18,13 @@ export const MAX_AI_IMAGES = 24
 export const MAX_AI_IMAGE_CHARS = 2_000_000
 /** Zeichen Text je PDF-Seite */
 export const MAX_AI_PAGE_TEXT = 20_000
+/** Antworten, die Claude auf einmal bewertet (Aufgaben einer Probeklausur) */
+export const MAX_AI_GRADE_ITEMS = 30
+/** Zeichen je Frage, Musterlösung und Antwort beim Bewerten */
+export const MAX_AI_ANSWER_CHARS = 20_000
+/** Fragen bzw. Aufgaben, die Claude auf einmal stellt */
+export const MAX_AI_QUESTIONS = 20
+/** Stapel einer Probeklausur */
+export const MAX_AI_EXAM_DECKS = 50
+/** Fotos je Aufgabe einer Probeklausur */
+export const MAX_AI_TASK_PHOTOS = 3

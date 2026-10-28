@@ -1,6 +1,6 @@
 'use client'
 // Abmelden: Sitzung beenden und alles entfernen, was das Konto auf dem Gerät hinterlassen hat
-// (Entwürfe, Lernfortschritte, Schmierzettel, Offline-Caches).
+// (Entwürfe, Lernfortschritte, Schmierzettel, Probeklausur, Offline-Caches).
 import { api, clearCachedData } from '@/shared/client/api'
 import { sync } from '@/features/notes/client/sync'
 import { reviewQueue } from '@/features/flashcards/client/flashcards'
@@ -9,6 +9,7 @@ import { pdfAnnotations } from '@/features/pdf/client/annotations'
 import { OFFLINE_KEY, OPENED_KEY } from '@/features/pdf/client/offline'
 import { scratchpad } from '@/features/scratchpad/client/scratchpad'
 import { vault } from '@/features/vault/client/vault'
+import { MOCK_EXAM_KEY } from '@/features/ai/client/mock-exam'
 
 export async function logout() {
   // Tresor zuerst sperren – auch in den anderen Tabs
@@ -25,8 +26,8 @@ export async function logout() {
   focusSessions.clearAll()
   pdfAnnotations.clearAll()
   scratchpad.clearAll()
-  // Zuletzt geöffnetes PDF und Lesepositionen gehören zum Konto
-  for (const key of ['noted:pdf', 'noted:pdfpos', OFFLINE_KEY, OPENED_KEY, 'noted:lastDeck', SUBJECT_KEY, GOAL_KEY]) {
+  // Zuletzt geöffnetes PDF, Lesepositionen und eine angefangene Probeklausur gehören zum Konto
+  for (const key of ['noted:pdf', 'noted:pdfpos', OFFLINE_KEY, OPENED_KEY, 'noted:lastDeck', SUBJECT_KEY, GOAL_KEY, MOCK_EXAM_KEY]) {
     localStorage.removeItem(key)
   }
   await clearCachedData()

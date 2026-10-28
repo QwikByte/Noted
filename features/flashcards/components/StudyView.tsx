@@ -10,12 +10,17 @@ import {
   Pause,
   Pencil,
   RotateCcw,
+  Sparkles,
   Undo2,
   X,
   XCircle,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/features/workspace/client/context'
+import { gradeAnswers, useAiReady } from '@/features/ai/client/ai'
+import { AiCardExplain } from '@/features/ai/components/AiCardExplain'
+import { AiGradeNote, type GradeCheck } from '@/features/ai/components/AiGradeNote'
+import type { GradeVerdict } from '@/features/ai/types'
 import { CardMarkdown } from './CardMarkdown'
 import { useNow } from '@/shared/client/now'
 import { Button } from '@/shared/ui/button'
@@ -149,8 +154,22 @@ function inScope(scope: Scope): ((card: Card) => boolean) | undefined {
 /** Bewertung in dieser Sitzung (für „Rückgängig“): die Karte, wie sie dran war, und der Stand davor und danach */
 type Rated = { item: StudyItem; previous: SrsState | null; next: SrsState }
 
-/** `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt · `typed`/`result`: eingetippte Antwort */
-type Answer = { key: string; selected: Set<number>; checked: boolean; order: number[]; typed: string; result: TypedResult | null }
+/**
+ * `key`: Kartenseite und Fassung der Karte, für die die Antwort gilt · `typed`/`result`: eingetippte Antwort ·
+ * `ai`: Urteil von Claude über eine eingetippte Antwort, die nicht Zeichen für Zeichen stimmt
+ */
+type Answer = {
+  key: string
+  selected: Set<number>
+  checked: boolean
+  order: number[]
+  typed: string
+  result: TypedResult | null
+  ai: GradeCheck | null
+}
+
+/** Vorausgewählte Bewertung nach dem Urteil von Claude – „teilweise“ heißt gewusst, aber mit Mühe */
+const VERDICT_RATING: Record<GradeVerdict, Rating> = { correct: 3, partial: 2, wrong: 1 }
 
 const take = (s: LearnSession | PracticeSession) => (s instanceof LearnSession ? s.next(Date.now()) : s.next())
 
@@ -164,6 +183,7 @@ const freshAnswer = (item: StudyItem | null, card: Card | null = item?.card ?? n
   order: card ? shuffle(card.options.map((_, i) => i)) : [],
   typed: '',
   result: null,
+  ai: null,
 })
 
 function StudySession({
@@ -187,6 +207,8 @@ function StudySession({
   const openContextMenu = useContextMenu()
   const { notes } = useNotes()
   const { title, back } = snapshot.scope
+  const aiReady = useAiReady()
+  const [explaining, setExplaining] = useState(false)
 
   const create = useCallback(
     (items?: StudyItem[]): LearnSession | PracticeSession =>
@@ -299,8 +321,12 @@ function StudySession({
     [card, isCloze, side, solution, occlusion, maskLabel],
   )
   const typing = !!card && card.type !== 'mc' && expected !== '' && !!deck?.typeAnswer
-  // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“
+  // Falsch eingetippt: „Nochmal“ bzw. „Nicht gewusst“ vorauswählen, sonst wie bisher „Gut“ bzw. „Gewusst“ – hat Claude
+  // die Antwort beurteilt, nach seinem Urteil
   const typedWrong = answer.result?.correct === false
+  const verdict = answer.ai?.status === 'done' ? answer.ai.result.verdict : null
+  const preferredRating: Rating = verdict ? VERDICT_RATING[verdict] : typedWrong ? 1 : 3
+  const knew = verdict ? verdict === 'correct' : !typedWrong
 
   const rate = useCallback(
     (rating: Rating) => {
@@ -407,11 +433,42 @@ function StudySession({
     setRevealed(true)
   }, [isMc, answer.selected.size])
 
-  /** Aufdecken – eine eingetippte Antwort wird dabei verglichen, eine leere nicht */
+  // Bewertung durch Claude abbrechen, sobald die Karte wechselt
+  const grading = useRef<AbortController | null>(null)
+  useEffect(() => () => grading.current?.abort(), [answer.key])
+
+  // Was Claude zum Beurteilen einer eingetippten Antwort bekommt: Frage und Musterlösung dieser Kartenseite
+  const gradeQuestion = occlusion ? `${card?.front ?? ''}\n\n(Gesucht ist die Beschriftung einer markierten Stelle im Bild.)` : question
+  const gradeExpected = occlusion ? maskLabel : isCloze && card ? clozeText(card.front, side) : solution
+  const gradeTitle = deck?.name ?? title
+
+  /**
+   * Aufdecken – eine eingetippte Antwort wird dabei verglichen, eine leere nicht. Stimmt sie nicht Zeichen für Zeichen,
+   * beurteilt Claude sie nach dem Sinn (wenn die KI eingerichtet ist und Verbindung besteht). Das Urteil gilt nur,
+   * solange dieselbe Karte dran ist.
+   */
   const reveal = useCallback(() => {
-    if (typing && answer.typed.trim()) setAnswer((a) => ({ ...a, result: compareAnswer(a.typed, expected) }))
+    const typed = answer.typed
+    if (typing && typed.trim()) {
+      const result = compareAnswer(typed, expected)
+      const ask = !result.correct && aiReady && navigator.onLine
+      setAnswer((a) => ({ ...a, result, ai: ask ? { status: 'running' } : null }))
+      if (ask) {
+        const key = answer.key
+        const controller = new AbortController()
+        grading.current = controller
+        const done = (ai: GradeCheck) => setAnswer((a) => (a.key === key ? { ...a, ai } : a))
+        const item = { question: gradeQuestion, expected: gradeExpected, answer: typed }
+        gradeAnswers({ title: gradeTitle, items: [item] }, controller.signal).then(
+          ([graded]) => done(graded ? { status: 'done', result: graded } : { status: 'error', message: 'Keine Bewertung erhalten.' }),
+          (err) => {
+            if (!controller.signal.aborted) done({ status: 'error', message: errorMessage(err) })
+          },
+        )
+      }
+    }
     setRevealed(true)
-  }, [typing, answer.typed, expected])
+  }, [typing, answer.typed, answer.key, expected, aiReady, gradeTitle, gradeQuestion, gradeExpected])
 
   // Werkzeugleiste und Mini-Timer bleiben über den Bewertungsknöpfen
   const bottomBar = useReservedSpace<HTMLDivElement>('--bottom-bar-height')
@@ -426,10 +483,11 @@ function StudySession({
       if (isMc && correct === false) return { label: 'Weiter', good: false, run: () => rate(1) }
       // Eine richtige Multiple-Choice-Antwort kennt kein „Nochmal“
       if (direction === 'left') return isMc ? null : { label: 'Nochmal', good: false, run: () => rate(1) }
-      return typedWrong ? { label: 'Nochmal', good: false, run: () => rate(1) } : { label: 'Gut', good: true, run: () => rate(3) }
+      const label = RATINGS.find((r) => r.rating === preferredRating)?.label ?? 'Gut'
+      return { label, good: preferredRating > 1, run: () => rate(preferredRating) }
     }
     if (isMc) return { label: 'Weiter', good: !!correct, run: () => practiceAnswer(!!correct) }
-    const ok = direction === 'right' && !typedWrong
+    const ok = direction === 'right' && knew
     return ok
       ? { label: 'Gewusst', good: true, run: () => practiceAnswer(true) }
       : { label: 'Nicht gewusst', good: false, run: () => practiceAnswer(false) }
@@ -471,13 +529,13 @@ function StudySession({
         if (isMc && correct === false) {
           if (primary || digit === 1) rate(1)
           else handled = false
-        } else if (primary) rate(typedWrong ? 1 : 3)
+        } else if (primary) rate(preferredRating)
         else if (digit && digit <= 4 && !(isMc && digit === 1)) rate(digit as Rating)
         else handled = false
       } else if (isMc) {
         if (primary) practiceAnswer(!!correct)
         else handled = false
-      } else if (primary) practiceAnswer(!typedWrong)
+      } else if (primary) practiceAnswer(knew)
       else if (digit === 1) practiceAnswer(false)
       else if (digit === 2) practiceAnswer(true)
       else handled = false
@@ -485,7 +543,7 @@ function StudySession({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [current, isMc, answer, revealed, mode, correct, typedWrong, toggleOption, check, reveal, rate, practiceAnswer, history, undo])
+  }, [current, isMc, answer, revealed, mode, correct, preferredRating, knew, toggleOption, check, reveal, rate, practiceAnswer, history, undo])
 
   const close = () => app.go(back, { replace: true })
   const remaining: Record<ItemKind, number> | null = session instanceof LearnSession ? session.remaining() : null
@@ -632,6 +690,11 @@ function StudySession({
                           Zur Notiz
                         </MenuItem>
                       ) : null}
+                      {revealed && aiReady ? (
+                        <MenuItem icon={<Sparkles />} onSelect={() => setExplaining(true)}>
+                          Mit KI erklären
+                        </MenuItem>
+                      ) : null}
                     </>,
                     { text: true, copy: true },
                   )
@@ -769,6 +832,7 @@ function StudySession({
                     {revealed ? (
                       <div className={cn(isMc && 'mt-5 border-t border-border pt-5')} data-testid="study-answer">
                         {answer.result ? <TypedDiff result={answer.result} /> : null}
+                        {answer.ai ? <AiGradeNote check={answer.ai} className="mb-4" /> : null}
                         {isMc ? (
                           <p className={cn('mb-3 flex items-center gap-2 font-semibold', correct ? 'text-success' : 'text-danger')}>
                             {correct ? <CheckCircle2 className="size-5" /> : <XCircle className="size-5" />}
@@ -776,14 +840,28 @@ function StudySession({
                           </p>
                         ) : null}
                         {solution.trim() ? <CardMarkdown text={solution} /> : null}
-                        {note ? (
-                          <button
-                            type="button"
-                            onClick={() => app.go({ kind: 'note', id: note.id })}
-                            className="mt-4 inline-flex max-w-full items-center gap-1.5 text-left text-sm text-muted hover:text-fg"
-                          >
-                            <FileText className="size-4 shrink-0" /> <span className="min-w-0 break-words">{note.title}</span>
-                          </button>
+                        {note || aiReady ? (
+                          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+                            {note ? (
+                              <button
+                                type="button"
+                                onClick={() => app.go({ kind: 'note', id: note.id })}
+                                className="inline-flex max-w-full items-center gap-1.5 text-left text-sm text-muted hover:text-fg"
+                              >
+                                <FileText className="size-4 shrink-0" /> <span className="min-w-0 break-words">{note.title}</span>
+                              </button>
+                            ) : null}
+                            {aiReady ? (
+                              <button
+                                type="button"
+                                onClick={() => setExplaining(true)}
+                                className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"
+                                data-testid="ai-explain-card"
+                              >
+                                <Sparkles className="size-4" /> Erklären
+                              </button>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
@@ -814,7 +892,7 @@ function StudySession({
                       label={r.label}
                       hint={formatInterval(intervals[r.rating])}
                       onClick={rate}
-                      preferred={answer.result ? r.rating === (typedWrong ? 1 : 3) : false}
+                      preferred={answer.result ? r.rating === preferredRating : false}
                     />
                   ))
                 )
@@ -825,10 +903,10 @@ function StudySession({
               ) : (
                 <>
                   {/* Farbe nur am Symbol: text-* im className kollidiert mit der Textfarbe der Button-Variante */}
-                  <Button size="lg" className={cn('flex-1', answer.result && typedWrong && PREFERRED)} onClick={() => practiceAnswer(false)}>
+                  <Button size="lg" className={cn('flex-1', answer.result && !knew && PREFERRED)} onClick={() => practiceAnswer(false)}>
                     <X className="size-4 text-danger" /> Nicht gewusst
                   </Button>
-                  <Button size="lg" className={cn('flex-1', answer.result && !typedWrong && PREFERRED)} onClick={() => practiceAnswer(true)}>
+                  <Button size="lg" className={cn('flex-1', answer.result && knew && PREFERRED)} onClick={() => practiceAnswer(true)}>
                     <Check className="size-4 text-success" /> Gewusst
                   </Button>
                 </>
@@ -837,6 +915,21 @@ function StudySession({
           </div>
         </>
       )}
+      {explaining && card ? (
+        <AiCardExplain
+          title={deck?.name ?? title}
+          question={
+            isMc
+              ? `${card.front}\n\n${card.options.map((o) => `- [${o.correct ? 'x' : ' '}] ${o.text}`).join('\n')}`
+              : occlusion
+                ? [card.front, maskLabel && `Gesuchte Beschriftung: ${maskLabel}`].filter(Boolean).join('\n\n')
+                : question
+          }
+          answer={solution}
+          noteId={card.noteId}
+          onClose={() => setExplaining(false)}
+        />
+      ) : null}
     </div>
   )
 }

@@ -149,8 +149,9 @@ export function AiSettings() {
       )}
       <p className="mt-5 text-xs text-muted">
         Nur wenn du eine KI-Aktion startest, geht ihr Inhalt an Anthropic – der Text der Notiz bzw. die PDF-Seiten oder
-        Markierungen als Text und Bild. Notizen aus dem Tresor nie. Der Schlüssel liegt verschlüsselt auf diesem Server
-        und wird nicht wieder angezeigt.
+        Markierungen als Text und Bild. Von selbst nur beim Lernen: eine eingetippte Antwort, die nicht genau stimmt, samt
+        Frage und Lösung der Karte. Notizen aus dem Tresor nie. Der Schlüssel liegt verschlüsselt auf diesem Server und
+        wird nicht wieder angezeigt.
       </p>
       <ConfirmModal
         open={confirmRemove}

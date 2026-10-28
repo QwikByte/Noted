@@ -3,13 +3,18 @@
 import { z } from 'zod'
 import { MAX_CARD_TEXT, MAX_OPTION_TEXT, MAX_OPTIONS } from '@/features/flashcards/limits'
 import {
+  MAX_AI_ANSWER_CHARS,
+  MAX_AI_EXAM_DECKS,
   MAX_AI_EXISTING,
+  MAX_AI_GRADE_ITEMS,
   MAX_AI_IMAGE_CHARS,
   MAX_AI_IMAGES,
   MAX_AI_MARKS,
   MAX_AI_NOTE_CHARS,
   MAX_AI_PAGE_TEXT,
   MAX_AI_PDF_PAGES,
+  MAX_AI_QUESTIONS,
+  MAX_AI_TASK_PHOTOS,
   MAX_AI_WISHES,
 } from './limits'
 
@@ -46,7 +51,7 @@ const source = z.discriminatedUnion('kind', [
       .array(z.object({ page, quote: text(MAX_CARD_TEXT), comment: text(MAX_CARD_TEXT), image: image.optional() }))
       .max(MAX_AI_MARKS, `Höchstens ${MAX_AI_MARKS} Markierungen auf einmal.`),
   }),
-  z.object({ kind: z.literal('card'), mode: z.enum(['improve', 'split']), card: cardDraft }),
+  z.object({ kind: z.literal('card'), mode: z.enum(['improve', 'split', 'leech']), card: cardDraft }),
 ])
 
 const imageCount = (n: number) => n <= MAX_AI_IMAGES
@@ -78,6 +83,41 @@ export const metaRequestSchema = z.object({
   noteId: z.string().min(1).max(100),
   title: z.string().max(1000),
   content: text(MAX_AI_NOTE_CHARS),
+})
+
+const answerText = z.string().max(MAX_AI_ANSWER_CHARS, 'Eine Antwort ist zu lang.')
+
+const gradeItem = z.object({
+  question: answerText,
+  expected: answerText,
+  answer: answerText,
+  images: z.array(image).max(MAX_AI_TASK_PHOTOS, `Höchstens ${MAX_AI_TASK_PHOTOS} Fotos je Aufgabe.`).optional(),
+  points: z.number().int().min(1).max(100).optional(),
+})
+
+const itemChars = (i: z.infer<typeof gradeItem>) => i.question.length + i.expected.length + i.answer.length
+
+export const gradeRequestSchema = z
+  .object({
+    items: z.array(gradeItem).min(1).max(MAX_AI_GRADE_ITEMS, `Höchstens ${MAX_AI_GRADE_ITEMS} Aufgaben auf einmal.`),
+    title: z.string().max(1000),
+    context: text(MAX_AI_NOTE_CHARS).optional(),
+    noteId: z.string().min(1).max(100).optional(),
+  })
+  .refine(({ items }) => imageCount(items.reduce((n, i) => n + (i.images?.length ?? 0), 0)), `Höchstens ${MAX_AI_IMAGES} Fotos auf einmal.`)
+  .refine(({ items, context }) => items.reduce((n, i) => n + itemChars(i), context?.length ?? 0) <= MAX_AI_NOTE_CHARS, TOO_LONG)
+
+export const questionsRequestSchema = z.object({
+  source: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('note'), noteId: z.string().min(1).max(100), title: z.string().max(1000), content: text(MAX_AI_NOTE_CHARS) }),
+    z.object({
+      kind: z.literal('decks'),
+      title: z.string().max(1000),
+      deckIds: z.array(z.string().min(1).max(100)).min(1).max(MAX_AI_EXAM_DECKS),
+    }),
+  ]),
+  count: z.number().int().min(1).max(MAX_AI_QUESTIONS),
+  wishes: z.string().max(MAX_AI_WISHES, 'Die Wünsche sind zu lang.').optional(),
 })
 
 /** Größte Anfrage in Bytes: alle Bilder plus Text */

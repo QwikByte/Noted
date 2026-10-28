@@ -32,6 +32,15 @@ describe('Adressen der Ansichten', () => {
     expect(viewFromParams(new URLSearchParams('s=all&m=practice&filter=unbekannt'))).toMatchObject({ filter: undefined })
   })
 
+  it('Abfrage mit KI und Probeklausur', () => {
+    expect(viewToUrl({ kind: 'quiz', id: 'n1', ai: true })).toBe('/?quiz=n1&ai=1')
+    expect(roundTrip({ kind: 'quiz', id: 'n1', ai: true })).toEqual({ kind: 'quiz', id: 'n1', ai: true })
+    expect(roundTrip({ kind: 'quiz', id: 'n1' })).toEqual({ kind: 'quiz', id: 'n1', ai: undefined })
+    expect(viewToUrl({ kind: 'mock-exam', scope: 'exam:e1' })).toBe('/?mock=exam%3Ae1')
+    expect(roundTrip({ kind: 'mock-exam', scope: 'deck:d-1' })).toEqual({ kind: 'mock-exam', scope: 'deck:d-1' })
+    expect(viewFromParams(new URLSearchParams('mock=note:n1'))).toEqual({ kind: 'home' })
+  })
+
   it('nimmt den Suchbegriff des Kartenbrowsers mit – nicht als Notizsuche', () => {
     expect(viewToUrl({ kind: 'browse' })).toBe('/?v=browse')
     expect(viewToUrl({ kind: 'browse', q: 'Taylor & Reihe' })).toBe('/?v=browse&cq=Taylor%20%26%20Reihe')

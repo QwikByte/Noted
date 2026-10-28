@@ -6,6 +6,10 @@ import * as settingsRoute from '@/app/api/ai/settings/route'
 import * as cardsRoute from '@/app/api/ai/cards/route'
 import * as assistRoute from '@/app/api/ai/assist/route'
 import * as metaRoute from '@/app/api/ai/meta/route'
+import * as gradeRoute from '@/app/api/ai/grade/route'
+import * as questionsRoute from '@/app/api/ai/questions/route'
+import * as decks from '@/app/api/decks/route'
+import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import * as notes from '@/app/api/notes/route'
 import * as users from '@/app/api/admin/users/route'
 import * as password from '@/app/api/account/password/route'
@@ -336,6 +340,115 @@ describe('Titel und Tags', () => {
       body: { noteId: vaultNote(), title: 'x', content: 'Geheim' },
     })
     expect([r.status, r.data.error]).toEqual([400, 'vault'])
+  })
+})
+
+const grade = (body: unknown, cookie = token) => call(gradeRoute.POST, '/api/ai/grade', { cookie, body })
+const questions = (body: unknown, cookie = token) => call(questionsRoute.POST, '/api/ai/questions', { cookie, body })
+const json = (value: unknown) => stream(textBlock(0, JSON.stringify(value)))
+
+describe('Antworten bewerten', () => {
+  it('bewertet eine eingetippte Antwort schnell und schickt unbeantwortete Aufgaben nicht mit', async () => {
+    messagesReply = () => json({ results: [{ nr: 1, verdict: 'partial', points: 0.5, feedback: 'Die Einheit fehlt.' }] })
+    const r = await grade({
+      title: 'Thermo',
+      items: [
+        { question: 'Wie groß ist ΔU?', expected: '5 J', answer: '5' },
+        { question: 'Leer', expected: 'x', answer: ' ' },
+      ],
+    })
+    expect(r.status).toBe(200)
+    expect(r.data.results).toEqual([
+      { verdict: 'partial', points: 0.5, feedback: 'Die Einheit fehlt.' },
+      { verdict: 'wrong', points: 0, feedback: 'Keine Antwort.' },
+    ])
+    expect(received.at(-1)?.body?.output_config.effort).toBe('low')
+    expect(lastPrompt()).toContain('<aufgabe nr="1">')
+    expect(lastPrompt()).not.toContain('nr="2"')
+
+    received.length = 0
+    const none = await grade({ title: 'x', items: [{ question: 'A', expected: 'a', answer: '' }] })
+    expect(none.data.results).toEqual([{ verdict: 'wrong', points: 0, feedback: 'Keine Antwort.' }])
+    expect(received).toEqual([])
+  })
+
+  it('korrigiert eine Probeklausur mit Fotos und Punkten sorgfältiger', async () => {
+    messagesReply = () =>
+      json({
+        results: [
+          { nr: 1, verdict: 'correct', points: 3, feedback: 'Gut.' },
+          { nr: 2, verdict: 'partial', points: 7.4, feedback: 'Rechenfehler in b).' },
+        ],
+      })
+    const r = await grade({
+      title: 'Klausur Thermo',
+      items: [
+        { question: 'Definiere Entropie.', expected: '…', answer: 'Maß für Unordnung', points: 3 },
+        { question: 'Rechne.', expected: 'a) 2 P. b) 4 P.', answer: '', images: [IMAGE, IMAGE], points: 6 },
+      ],
+    })
+    expect(r.data.results.map((x: { points: number }) => x.points)).toEqual([3, 6])
+    expect(received.at(-1)?.body?.output_config.effort).toBe('medium')
+    expect(lastContent().filter((b) => b.type === 'image')).toHaveLength(2)
+    expect(lastPrompt()).toContain('<aufgabe nr="2" punkte="6">')
+  })
+
+  it('lehnt Tresor-Notizen und zu viele Fotos ab, ohne Claude zu fragen', async () => {
+    const vault = await grade({ title: 'x', noteId: vaultNote(), context: 'Geheim', items: [{ question: 'A', expected: 'a', answer: 'b' }] })
+    expect([vault.status, vault.data.error]).toEqual([400, 'vault'])
+    const items = Array.from({ length: 9 }, () => ({ question: 'A', expected: 'a', answer: '', images: [IMAGE, IMAGE, IMAGE] }))
+    expect((await grade({ title: 'x', items })).data.message).toContain('Höchstens 24 Fotos')
+    expect(received).toEqual([])
+  })
+})
+
+describe('Fragen stellen', () => {
+  it('Tutor: Verständnisfragen zu einer Notiz', async () => {
+    const id = await newNote('# Entropie\nEntropie nimmt zu.', 'Wärme')
+    messagesReply = () => json({ questions: [{ question: 'Warum nimmt die Entropie zu?', answer: 'Weil …', points: 5, topic: 'Entropie' }] })
+    const r = await questions({ source: { kind: 'note', noteId: id, title: 'Wärme', content: '# Entropie\nEntropie nimmt zu.' }, count: 5 })
+    expect(r.status).toBe(200)
+    expect(r.data).toEqual({ questions: [{ question: 'Warum nimmt die Entropie zu?', answer: 'Weil …', points: 1, topic: 'Entropie' }], truncated: false })
+    expect(received.at(-1)?.body?.system).toContain('Höchstens 5 Fragen')
+    const vault = await questions({ source: { kind: 'note', noteId: vaultNote(), title: 'x', content: 'Geheim' }, count: 5 })
+    expect(vault.data.error).toBe('vault')
+  })
+
+  it('Probeklausur: Karten der Stapel und ihre Notizen lädt der Server selbst', async () => {
+    const noteId = await newNote('# Hauptsätze\nEnergie bleibt erhalten.', 'Hauptsätze')
+    const deck = await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'Thermo-Klausur' } })
+    const deckId = deck.data.deck.id as string
+    await call(deckCards.POST, '/', {
+      cookie: token,
+      params: { id: deckId },
+      body: { cards: [{ type: 'basic', front: 'Was besagt der erste Hauptsatz?', back: 'Energieerhaltung', noteId }] },
+    })
+    messagesReply = () => json({ questions: [{ question: 'Erläutern Sie den ersten Hauptsatz.', answer: '2 P. für …', points: 4, topic: 'Hauptsätze' }] })
+    const r = await questions({ source: { kind: 'decks', title: 'Klausur Thermo', deckIds: [deckId] }, count: 10, wishes: 'mit Rechnung' })
+    expect(r.status).toBe(200)
+    expect(r.data.questions[0]).toMatchObject({ points: 4 })
+    expect(lastPrompt()).toContain('<karte>\nWas besagt der erste Hauptsatz?\n→ Energieerhaltung\n</karte>')
+    expect(lastPrompt()).toContain('<notiz titel="Hauptsätze">\n# Hauptsätze\nEnergie bleibt erhalten.\n</notiz>')
+    expect(lastPrompt()).toContain('Wünsche der Person: mit Rechnung')
+    expect(received.at(-1)?.body?.system).toContain('Genau 10 Aufgaben')
+
+    // Fremde Stapel gibt es für andere Konten nicht, leere Stapel taugen nicht
+    received.length = 0
+    await save({ apiKey: GOOD_KEY, model: 'claude-sonnet-5-5' }, other)
+    received.length = 0
+    const foreign = await questions({ source: { kind: 'decks', title: 'x', deckIds: [deckId] }, count: 5 }, other)
+    expect(foreign.status).toBe(404)
+    const empty = await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'Leer' } })
+    const none = await questions({ source: { kind: 'decks', title: 'x', deckIds: [empty.data.deck.id] }, count: 5 })
+    expect(none.data.message).toContain('noch keine Karten')
+    expect(received).toEqual([])
+  })
+
+  it('Problemkarten: bis zu vier leichter merkbare Karten', async () => {
+    messagesReply = () => success(['A', 'B', 'C', 'D', 'E'].map((f) => basic(f)))
+    const r = await cards({ source: { kind: 'card', mode: 'leech', card: { type: 'basic', front: 'Alles über Entropie', back: 'Viel', options: [] } } })
+    expect(r.data.cards).toHaveLength(4)
+    expect(received.at(-1)?.body?.system).toContain('Problemkarte')
   })
 })
 

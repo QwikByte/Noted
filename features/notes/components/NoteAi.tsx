@@ -2,7 +2,8 @@
 // KI in der Notizansicht: Assistent für die Markierung oder die ganze Notiz und Vorschläge für Titel und Tags. Liefert
 // Menüeinträge und Dialoge; die Notizansicht reicht herein, wie sie den Inhalt ändert.
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Tags } from 'lucide-react'
+import { GraduationCap, Sparkles, Tags } from 'lucide-react'
+import { useApp } from '@/features/workspace/client/context'
 import { MenuItem } from '@/shared/ui/menu'
 import { useToast } from '@/shared/ui/toast'
 import { splitFrontmatter } from '@/shared/markdown/meta'
@@ -47,6 +48,7 @@ export function useNoteAi({
   replaceContent: (next: string) => void
   onTitleChange: (title: string) => void
 }) {
+  const app = useApp()
   const toast = useToast()
   const ready = useAiReady()
   // Tresor-Notizen gehen nie an Claude; Mindmap und Canvas haben keinen Fließtext zum Umschreiben
@@ -108,9 +110,14 @@ export function useNoteAi({
         </MenuItem>
       ) : null}
       {canMeta ? (
-        <MenuItem icon={<Tags />} onSelect={() => setMetaOpen(true)}>
-          Titel und Tags vorschlagen …
-        </MenuItem>
+        <>
+          <MenuItem icon={<Tags />} onSelect={() => setMetaOpen(true)}>
+            Titel und Tags vorschlagen …
+          </MenuItem>
+          <MenuItem icon={<GraduationCap />} onSelect={() => app.go({ kind: 'quiz', id: noteId, ai: true })}>
+            Mit KI abfragen
+          </MenuItem>
+        </>
       ) : null}
     </>
   )
