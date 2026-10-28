@@ -86,7 +86,7 @@ export function AiSettings() {
     <Section
       id="ki"
       title="KI (Claude)"
-      description="Claude von Anthropic schlägt dir Karteikarten aus deinen Notizen vor. Dafür hinterlegst du einen eigenen API-Schlüssel – die Kosten rechnet Anthropic direkt mit dir ab."
+      description="Claude von Anthropic hilft dir beim Schreiben und Lernen, etwa mit Karteikarten aus deinen Notizen oder im Chat über deine Unterlagen. Dafür hinterlegst du einen eigenen API-Schlüssel – die Kosten rechnet Anthropic direkt mit dir ab."
     >
       {isLoading ? null : !settings ? (
         <p className="text-sm text-muted">Die Einstellungen konnten nicht geladen werden.</p>
@@ -150,8 +150,8 @@ export function AiSettings() {
       <p className="mt-5 text-xs text-muted">
         Nur wenn du eine KI-Aktion startest, geht ihr Inhalt an Anthropic – der Text der Notiz bzw. die PDF-Seiten oder
         Markierungen als Text und Bild. Von selbst nur beim Lernen: eine eingetippte Antwort, die nicht genau stimmt, samt
-        Frage und Lösung der Karte. Notizen aus dem Tresor nie. Der Schlüssel liegt verschlüsselt auf diesem Server und
-        wird nicht wieder angezeigt.
+        Frage und Lösung der Karte. Im KI-Chat nur, was Claude im Gespräch liest – der Chat zeigt es an. Notizen aus dem
+        Tresor nie. Der Schlüssel liegt verschlüsselt auf diesem Server und wird nicht wieder angezeigt.
       </p>
       <ConfirmModal
         open={confirmRemove}

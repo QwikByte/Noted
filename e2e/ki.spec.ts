@@ -3,7 +3,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { apiHeaders, makePdf } from './helpers'
 
 // KI mit Claude: Schlüssel hinterlegen, Karten aus Notizen und PDFs, Assistent in Notizen und im PDF, Titel und Tags,
-// Lernen mit Bewertung und Erklärung, Problemkarten, Tutor, Probeklausur, Karten überarbeiten und aufteilen. Statt Anthropic antwortet ein Nachbau auf dem Port, den scripts/e2e-server.mjs
+// Lernen mit Bewertung und Erklärung, Problemkarten, Tutor, Probeklausur, KI-Chat, Karten überarbeiten und aufteilen.
+// Statt Anthropic antwortet ein Nachbau auf dem Port, den scripts/e2e-server.mjs
 // dem Server als ANTHROPIC_BASE_URL mitgibt. Räumt am Ende alles weg und meldet sich ab – app.spec.ts läuft zuerst
 // und erwartet ein leeres Konto mit einer Sitzung.
 
@@ -22,8 +23,13 @@ const NOTE_CARDS = [
   card('In einem abgeschlossenen System nimmt die ==Entropie== nicht ab.', '', 0, 'cloze'),
 ]
 
-type Block = { type: string; text?: string }
-type Body = { system: string; messages: { content: Block[] }[]; output_config?: { format?: { schema: { properties: object } } } }
+type Block = { type: string; text?: string; tool_use_id?: string; name?: string }
+type Body = {
+  system: string
+  messages: { role: string; content: Block[] }[]
+  tools?: { name: string }[]
+  output_config?: { format?: { schema: { properties: object } } }
+}
 
 /** Was der Nachbau zuletzt bekommen hat – zum Prüfen, was an Claude ging */
 const received: Body[] = []
@@ -86,6 +92,50 @@ function answer(body: Body): string[] {
   return prompt.includes('Ausgewählter Abschnitt') ? ['Tippfehler im ', 'Satz.'] : ['# Wärme\n\n', 'Kurzer Absatz.']
 }
 
+type Stream = { blocks: Record<string, unknown>[][]; stop: string }
+
+const textEvents = (index: number, deltas: string[]) => [
+  { type: 'content_block_start', index, content_block: { type: 'text', text: '' } },
+  ...deltas.map((text) => ({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } })),
+  { type: 'content_block_stop', index },
+]
+const toolEvents = (index: number, id: string, name: string, input: unknown) => [
+  { type: 'content_block_start', index, content_block: { type: 'tool_use', id, name, input: {} } },
+  { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } },
+  { type: 'content_block_stop', index },
+]
+
+const isChat = (body: Body) => body.system.startsWith('Du bist der KI-Assistent in Noted')
+
+/**
+ * KI-Chat: je nach Frage (der letzte Text einer Nachricht mit <app-kontext>) und den Werkzeugergebnissen des Schritts –
+ * Karten: Notiz lesen, Karten vorschlagen, antworten; Termin: Termin vorschlagen, antworten; sonst gleich antworten
+ */
+function chatAnswer(body: Body): Stream {
+  const question = [...body.messages].reverse().find((m) => m.content.some((b) => b.text?.startsWith('<app-kontext>')))
+  const text = question?.content.at(-1)?.text ?? ''
+  const done = new Set(body.messages[body.messages.length - 1].content.map((b) => b.tool_use_id).filter(Boolean))
+  if (text.includes('Karten')) {
+    if (done.has('c2')) return { blocks: [textEvents(0, ['Hier sind zwei Karten aus ', '[[Chat-Notiz]].'])], stop: 'end_turn' }
+    if (done.has('c1')) {
+      const cards = [card('Was misst die Entropie?', 'Die Unordnung.'), card('Nimmt die Entropie ab?', 'Nein, nie.')]
+      return { blocks: [toolEvents(0, 'c2', 'propose_cards', { cards, deck: 'Chat-Karten', note: 'Chat-Notiz' })], stop: 'tool_use' }
+    }
+    return { blocks: [toolEvents(0, 'c1', 'read_note', { note: 'Chat-Notiz' })], stop: 'tool_use' }
+  }
+  if (text.includes('Termin')) {
+    if (done.has('e1')) return { blocks: [textEvents(0, ['Ist vorgemerkt.'])], stop: 'end_turn' }
+    return { blocks: [toolEvents(0, 'e1', 'propose_event', { title: 'Lerngruppe Thermo', start: `${CHAT_DAY}T18:00`, location: 'Bib' })], stop: 'tool_use' }
+  }
+  return { blocks: [textEvents(0, ['Hallo!'])], stop: 'end_turn' }
+}
+
+/** Ein Tag in der kommenden Woche (Ortszeit) – für den vorgeschlagenen Termin */
+const CHAT_DAY = (() => {
+  const d = new Date(Date.now() + 3 * 86_400_000)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+})()
+
 const anthropic = http.createServer((req, res) => {
   let raw = ''
   req.on('data', (chunk) => (raw += chunk))
@@ -97,12 +147,11 @@ const anthropic = http.createServer((req, res) => {
     const body = JSON.parse(raw) as Body
     received.push(body)
     const message = { id: 'msg_e2e', type: 'message', role: 'assistant', model: 'claude-sonnet-5-5', content: [] }
+    const reply: Stream = isChat(body) ? chatAnswer(body) : { blocks: [textEvents(0, answer(body))], stop: 'end_turn' }
     const events = [
       { type: 'message_start', message: { ...message, stop_reason: null, usage: { input_tokens: 50, output_tokens: 1 } } },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-      ...answer(body).map((text) => ({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })),
-      { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 40 } },
+      ...reply.blocks.flat(),
+      { type: 'message_delta', delta: { stop_reason: reply.stop, stop_sequence: null }, usage: { output_tokens: 40 } },
       { type: 'message_stop' },
     ]
     res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -151,7 +200,7 @@ async function openCardsFromNote(page: Page, noteId: string) {
 }
 
 /** Alles, was die Tests angelegt haben – am Ende gelöscht */
-const cleanup: { notes: string[]; decks: string[]; attachments: string[] } = { notes: [], decks: [], attachments: [] }
+const cleanup: { notes: string[]; decks: string[]; attachments: string[]; events: string[] } = { notes: [], decks: [], attachments: [], events: [] }
 
 test('Schlüssel hinterlegen und Karten aus einer Notiz vorschlagen lassen', async ({ page }) => {
   await login(page)
@@ -486,6 +535,78 @@ test('Probeklausur: erstellen, mit Text und Foto beantworten, korrigieren lassen
   expect(await saved()).toContain('**Bewertung:** Teilweise richtig – Da fehlt noch die Begründung.')
 })
 
+test('KI-Chat: liest Notizen, schlägt Karten und Termine vor – im Fenster und im Vollbild', async ({ page }) => {
+  await login(page)
+  const noteId = await newNote(page, 'Chat-Notiz', '# Entropie\nDie Entropie misst die Unordnung und nimmt nie ab.')
+  cleanup.notes.push(noteId)
+  await page.goto(`/?n=${noteId}`)
+  await expect(page.getByTestId('note-title')).toHaveValue('Chat-Notiz')
+  const before = received.length
+
+  // Alt+K öffnet den Chat in der Werkzeugleiste – die offene Notiz ist als Bezug dabei
+  await page.keyboard.press('Alt+KeyK')
+  const win = page.getByTestId('window-chat')
+  const chat = win.getByTestId('ai-chat')
+  await expect(chat.getByText('Notiz „Chat-Notiz“')).toBeVisible()
+  const input = chat.getByLabel('Nachricht an Claude')
+  await expect(input).toBeFocused()
+  await input.fill('Mach mir Karten zur Notiz')
+  await input.press('Enter')
+
+  let answer = chat.getByTestId('ai-chat-answer').last()
+  await expect(answer).toContainText('Hier sind zwei Karten aus')
+  await expect(answer.getByTestId('ai-chat-tool').first()).toContainText('Liest „Chat-Notiz“')
+  await expect(answer.getByRole('link', { name: 'Chat-Notiz' })).toBeVisible()
+  const cards = answer.getByTestId('chat-proposal')
+  await expect(cards).toContainText('Was misst die Entropie?')
+  await expect(cards.getByLabel('Name des neuen Stapels')).toHaveValue('Chat-Karten')
+  const firstChat = received.slice(before).find(isChat)!
+  // Websuche ist voreingestellt an; der Bezug geht als Angabe der App mit
+  expect(firstChat.tools?.map((t) => t.name)).toContain('web_search')
+  expect(firstChat.messages[0].content[0].text).toContain('Gerade geöffnet: Notiz „Chat-Notiz“')
+  await shot(page, '79-ai-chat')
+  await cards.getByRole('button', { name: '2 Karten erstellen' }).click()
+  await expect(cards).toContainText('2 Karten in „Chat-Karten“ erstellt.')
+  const data = await page.evaluate(() => fetch('/api/flashcards').then((r) => r.json()))
+  const deck = (data.decks as { id: string; name: string }[]).find((d) => d.name === 'Chat-Karten')!
+  cleanup.decks.push(deck.id)
+  const made = (data.cards as { deckId: string; front: string; noteId: string | null }[]).filter((c) => c.deckId === deck.id)
+  expect(made.map((c) => [c.front, c.noteId])).toEqual([
+    ['Was misst die Entropie?', noteId],
+    ['Nimmt die Entropie ab?', noteId],
+  ])
+
+  // Vollbild; die zweite Frage bekommt den Verlauf mit
+  await win.getByRole('button', { name: 'Vollbild' }).click()
+  await expect(win).toHaveAttribute('data-maximized', 'true')
+  await input.fill('Trag mir einen Termin für die Lerngruppe ein')
+  await input.press('Enter')
+  answer = chat.getByTestId('ai-chat-answer').last()
+  const event = answer.getByTestId('chat-proposal')
+  await expect(event).toContainText('Lerngruppe Thermo')
+  await expect(answer).toContainText('Ist vorgemerkt.')
+  await shot(page, '80-ai-chat-full')
+  expect(received.filter(isChat).at(-1)!.messages.length).toBeGreaterThan(6)
+  await event.getByRole('button', { name: 'Eintragen' }).click()
+  await expect(event).toContainText('Im Kalender eingetragen.')
+  const { events } = await (await page.request.get('/api/calendar')).json()
+  const created = (events as { id: string; title: string; start: string; location: string }[]).find((e) => e.title === 'Lerngruppe Thermo')!
+  cleanup.events.push(created.id)
+  expect(created).toMatchObject({ start: `${CHAT_DAY}T18:00`, location: 'Bib' })
+
+  // Antwort als Notiz – der Chat bleibt offen
+  await win.getByRole('button', { name: 'Vollbild' }).click()
+  await expect(win).not.toHaveAttribute('data-maximized')
+  await answer.getByRole('button', { name: 'Als Notiz' }).click()
+  await expect(page.getByTestId('note-title')).toHaveValue('KI-Chat – Trag mir einen Termin für die Lerngruppe ein')
+  cleanup.notes.push(new URL(page.url()).searchParams.get('n')!)
+  await expect(chat.getByTestId('ai-chat-turn')).toHaveCount(2)
+
+  // Neuer Chat: nichts gespeichert, alles weg
+  await win.getByRole('button', { name: 'Neuer Chat' }).click()
+  await expect(chat.getByTestId('ai-chat-turn')).toHaveCount(0)
+})
+
 test('Karte mit KI überarbeiten und aufteilen', async ({ page }) => {
   await login(page)
   const headers = await apiHeaders(page)
@@ -529,6 +650,7 @@ test('Karte mit KI überarbeiten und aufteilen', async ({ page }) => {
   for (const id of cleanup.decks) await page.request.delete(`/api/decks/${id}`, { headers })
   for (const id of cleanup.notes) await page.request.delete(`/api/notes/${id}?permanent=1`, { headers })
   for (const id of cleanup.attachments) await page.request.delete(`/api/attachments/${id}`, { headers })
+  for (const id of cleanup.events) await page.request.delete(`/api/calendar/${id}`, { headers })
   await page.request.delete('/api/ai/settings', { headers })
   await page.request.post('/api/auth/logout', { headers })
 })

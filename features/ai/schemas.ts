@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { MAX_CARD_TEXT, MAX_OPTION_TEXT, MAX_OPTIONS } from '@/features/flashcards/limits'
 import {
   MAX_AI_ANSWER_CHARS,
+  MAX_AI_CHAT_HISTORY,
+  MAX_AI_CHAT_IMAGES,
+  MAX_AI_CHAT_TEXT,
   MAX_AI_EXAM_DECKS,
   MAX_AI_EXISTING,
   MAX_AI_GRADE_ITEMS,
@@ -52,6 +55,7 @@ const source = z.discriminatedUnion('kind', [
       .max(MAX_AI_MARKS, `Höchstens ${MAX_AI_MARKS} Markierungen auf einmal.`),
   }),
   z.object({ kind: z.literal('card'), mode: z.enum(['improve', 'split', 'leech']), card: cardDraft }),
+  z.object({ kind: z.literal('text'), title: z.string().max(1000), content: text(MAX_AI_NOTE_CHARS) }),
 ])
 
 const imageCount = (n: number) => n <= MAX_AI_IMAGES
@@ -118,6 +122,48 @@ export const questionsRequestSchema = z.object({
   ]),
   count: z.number().int().min(1).max(MAX_AI_QUESTIONS),
   wishes: z.string().max(MAX_AI_WISHES, 'Die Wünsche sind zu lang.').optional(),
+})
+
+// Verlauf des Chats: Er geht unverändert an Anthropic zurück (sonst verfielen Claudes Gedankengänge), deshalb wird er
+// nur geprüft, nicht umgebaut. Erlaubt sind die Blockarten, die der Chat selbst erzeugt – Bilder nur eingebettet, damit
+// keine Adresse von außen nachgeladen wird.
+const embeddedImage = z.looseObject({
+  type: z.literal('image'),
+  source: z.looseObject({ type: z.literal('base64'), media_type: z.string(), data: z.string() }),
+})
+const historyBlock = z.union([
+  embeddedImage,
+  z.looseObject({
+    type: z.literal('tool_result'),
+    tool_use_id: z.string(),
+    content: z.union([z.string(), z.array(z.union([embeddedImage, z.looseObject({ type: z.literal('text'), text: z.string() })]))]).optional(),
+  }),
+  z.looseObject({
+    type: z.enum(['text', 'thinking', 'redacted_thinking', 'tool_use', 'server_tool_use', 'web_search_tool_result', 'fallback']),
+  }),
+])
+const historyMessage = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.union([z.string(), z.array(historyBlock).max(1000)]),
+})
+
+const chatRef = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('note'), id: z.string().min(1).max(100), title: z.string().max(1000) }),
+  z.object({ kind: z.literal('pdf'), file: z.string().min(1).max(1000), page: page.nullable() }),
+])
+
+export const chatRequestSchema = z.object({
+  history: z
+    .array(z.unknown())
+    .max(MAX_AI_CHAT_HISTORY, 'Der Chat ist zu lang – beginne einen neuen.')
+    .refine((list) => list.every((m) => historyMessage.safeParse(m).success), 'Der Verlauf des Chats ist beschädigt – beginne einen neuen.'),
+  question: z.object({
+    text: z.string().max(MAX_AI_CHAT_TEXT, 'Die Frage ist zu lang.'),
+    images: z.array(image).max(MAX_AI_CHAT_IMAGES, `Höchstens ${MAX_AI_CHAT_IMAGES} Bilder je Frage.`),
+    refs: z.array(chatRef).max(4),
+  }),
+  now: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), time: z.string().regex(/^\d{2}:\d{2}$/) }),
+  web: z.boolean(),
 })
 
 /** Größte Anfrage in Bytes: alle Bilder plus Text */

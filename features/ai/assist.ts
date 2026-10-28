@@ -94,14 +94,14 @@ export function assistPrompt(req: AssistRequest): Prompt {
  * Gestreamte Antwort lesen: vollständige Zeilen als Ereignisse, der unvollständige Rest bleibt für den nächsten Teil.
  * Kaputte Zeilen werden übersprungen.
  */
-export function readAssistEvents(buffer: string): { events: AssistEvent[]; rest: string } {
+export function readAssistEvents<T = AssistEvent>(buffer: string): { events: T[]; rest: string } {
   const lines = buffer.split('\n')
   const rest = lines.pop() ?? ''
-  const events: AssistEvent[] = []
+  const events: T[] = []
   for (const line of lines) {
     if (!line.trim()) continue
     try {
-      events.push(JSON.parse(line) as AssistEvent)
+      events.push(JSON.parse(line) as T)
     } catch {
       // Unvollständige oder fremde Zeile – nichts, was sich anzeigen ließe
     }

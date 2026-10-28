@@ -17,6 +17,7 @@ export async function suggestCards(userId: number, request: CardsRequest, signal
     checkNoteForAi(userId, source.noteId)
     if (!source.content.trim()) throw badRequest('Die Notiz ist leer.')
   }
+  if (source.kind === 'text' && !source.content.trim()) throw badRequest('Der Text ist leer.')
   if (source.kind === 'pdf' && !source.pages.length && !source.marks.length) {
     throw badRequest('Wähle Seiten oder Markierungen aus.')
   }

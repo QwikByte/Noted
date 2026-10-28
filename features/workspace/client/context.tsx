@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useSyncExternalStore } from 'react'
 import type { View } from './nav'
 import type { Card, CardOption, CardType, Occlusion } from '@/features/flashcards/types'
 import type { Folder, NoteFormat, NoteSummary } from '@/features/notes/types'
@@ -65,4 +65,27 @@ export function useApp(): AppActions {
   const ctx = useContext(AppContext)
   if (!ctx) throw new Error('useApp außerhalb von NotesApp')
   return ctx
+}
+
+// Brücke für Fenster außerhalb von NotesApp (Werkzeugleiste): Solange NotesApp läuft, stehen ihnen dieselben Aktionen
+// zur Verfügung – auf eigenen Seiten wie den Einstellungen nicht
+let bridged: AppActions | null = null
+const bridgeListeners = new Set<() => void>()
+
+/** NotesApp meldet seine Aktionen an bzw. ab (null) */
+export function bridgeApp(actions: AppActions | null) {
+  bridged = actions
+  bridgeListeners.forEach((l) => l())
+}
+
+/** Aktionen von NotesApp, falls es gerade läuft */
+export function useBridgedApp(): AppActions | null {
+  return useSyncExternalStore(
+    (listener) => {
+      bridgeListeners.add(listener)
+      return () => bridgeListeners.delete(listener)
+    },
+    () => bridged,
+    () => null,
+  )
 }

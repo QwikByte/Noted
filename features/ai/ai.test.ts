@@ -9,6 +9,13 @@ import * as metaRoute from '@/app/api/ai/meta/route'
 import * as gradeRoute from '@/app/api/ai/grade/route'
 import * as questionsRoute from '@/app/api/ai/questions/route'
 import * as decks from '@/app/api/decks/route'
+import * as chatRoute from '@/app/api/ai/chat/route'
+import * as calendar from '@/app/api/calendar/route'
+import * as attachments from '@/app/api/attachments/route'
+import { indexPending } from '@/features/attachments/server/index'
+import { localDate } from '@/features/calendar/dates'
+import { makePdf } from '@/tests/pdf'
+import { CHAT_SYSTEM } from './chat'
 import * as deckCards from '@/app/api/decks/[id]/cards/route'
 import * as notes from '@/app/api/notes/route'
 import * as users from '@/app/api/admin/users/route'
@@ -449,6 +456,213 @@ describe('Fragen stellen', () => {
     const r = await cards({ source: { kind: 'card', mode: 'leech', card: { type: 'basic', front: 'Alles über Entropie', back: 'Viel', options: [] } } })
     expect(r.data.cards).toHaveLength(4)
     expect(received.at(-1)?.body?.system).toContain('Problemkarte')
+  })
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Json = Record<string, any>
+
+const toolUse = (index: number, id: string, name: string, input: unknown) => [
+  { type: 'content_block_start', index, content_block: { type: 'tool_use', id, name, input: {} } },
+  { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } },
+  { type: 'content_block_stop', index },
+]
+
+/** Werkzeugergebnisse in der letzten Nachricht einer Anfrage an Claude */
+const lastResults = (body: Json): Json[] => {
+  const content = body.messages.at(-1).content
+  return Array.isArray(content) ? content.filter((b: Json) => b.type === 'tool_result') : []
+}
+
+const today = localDate(new Date())
+const chatBody = (text: string, extra: Json = {}) => ({
+  history: [],
+  question: { text, images: [], refs: [] },
+  now: { date: today, time: '14:05' },
+  web: false,
+  ...extra,
+})
+
+async function chatCall(body: unknown, cookie = token) {
+  const r = await call(chatRoute.POST, '/api/ai/chat', { cookie, body })
+  const type = r.res.headers.get('content-type') ?? ''
+  const events: Json[] = type.includes('ndjson') ? readAssistEvents<Json>((await r.res.text()) + '\n').events : []
+  return { ...r, events, text: events.filter((e) => 'text' in e).map((e) => e.text).join('') }
+}
+
+const messageRequests = () => received.filter((r) => r.path === '/v1/messages')
+
+describe('KI-Chat', () => {
+  it('liest Notizen über Werkzeuge, antwortet mit Quelle und liefert den Verlauf zum Weiterführen', async () => {
+    const id = await newNote('# Entropie\nDie Entropie nimmt in abgeschlossenen Systemen nie ab.', 'Entropie-Chat')
+    messagesReply = (body) => {
+      const results = lastResults(body)
+      if (!results.length) return stream(toolUse(0, 'tu1', 'search_notes', { query: 'Entropie' }), 'tool_use')
+      if (results[0].tool_use_id === 'tu1') return stream(toolUse(0, 'tu2', 'read_note', { note: 'Entropie-Chat' }), 'tool_use')
+      return stream(textBlock(0, 'Laut [[Entropie-Chat]] ', 'nimmt sie nie ab.'))
+    }
+    const r = await chatCall(chatBody('Was weiß ich über Entropie?', { question: { text: 'Was weiß ich über Entropie?', images: [], refs: [{ kind: 'note', id, title: 'falscher Titel' }] } }))
+    expect(r.status).toBe(200)
+    expect(r.events.filter((e) => 'step' in e)).toHaveLength(3)
+    expect(r.events.filter((e) => 'tool' in e).map((e) => e.tool.label)).toEqual(['Durchsucht Notizen nach „Entropie“', 'Liest „Entropie-Chat“'])
+    expect(r.events.find((e) => e.toolDone?.id === 'tu2')?.toolDone).toEqual({ id: 'tu2', label: 'Liest „Entropie-Chat“' })
+    expect(r.text).toBe('Laut [[Entropie-Chat]] nimmt sie nie ab.')
+    expect(r.events.at(-1)).toEqual({ done: true, truncated: false })
+    const added = r.events.find((e) => 'messages' in e)!.messages as Json[]
+    expect(added.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+
+    const last = messageRequests().at(-1)!
+    expect(last.body?.system).toBe(CHAT_SYSTEM)
+    expect(last.body?.tools.map((t: Json) => t.name)).not.toContain('web_search')
+    expect(last.body?.thinking).toEqual({ type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } })
+    expect(last.body?.cache_control).toEqual({ type: 'ephemeral' })
+    expect(last.beta).toContain('thinking-binding-controls-2026-08-01')
+    // Bezug mit dem Titel vom Server, Datum in der Frage statt in der Anweisung
+    expect(last.body?.messages[0].content[0].text).toContain('Gerade geöffnet: Notiz „Entropie-Chat“')
+    expect(last.body?.messages[0].content[0].text).toContain(`Heute: `)
+    expect(JSON.stringify(last.body?.messages[4].content)).toContain('nimmt in abgeschlossenen Systemen nie ab')
+
+    // Weiterführen: Der Verlauf geht Byte für Byte so zurück, wie er kam
+    received.length = 0
+    messagesReply = () => stream(textBlock(0, 'Gern.'))
+    const next = await chatCall(chatBody('Danke', { history: added }))
+    expect(next.text).toBe('Gern.')
+    expect(messageRequests()[0].body?.messages.slice(0, 6)).toEqual(added)
+  })
+
+  it('zeigt Vorschläge zum Bestätigen und meldet fehlerhafte an Claude zurück', async () => {
+    messagesReply = (body) =>
+      lastResults(body).length
+        ? stream(textBlock(0, 'Erledigt.'))
+        : stream(
+            [
+              ...toolUse(0, 'p1', 'propose_cards', {
+                cards: [
+                  { type: 'basic', front: 'Was ist Entropie?', back: 'Unordnung' },
+                  { type: 'basic', front: 'Leer', back: '' },
+                ],
+                deck: 'Thermo',
+              }),
+              ...toolUse(1, 'p2', 'propose_event', { title: 'Lerngruppe', start: 'irgendwann' }),
+            ],
+            'tool_use',
+          )
+    const r = await chatCall(chatBody('Mach Karten und einen Termin'))
+    expect(r.events.find((e) => 'proposal' in e)?.proposal).toEqual({
+      id: 'p1',
+      proposal: { kind: 'cards', deck: 'Thermo', noteId: null, cards: [{ type: 'basic', front: 'Was ist Entropie?', back: 'Unordnung', options: [], page: null }] },
+    })
+    expect(r.events.find((e) => e.toolDone?.id === 'p2')?.toolDone.error).toContain('gültiges Datum')
+    const results = lastResults(messageRequests().at(-1)!.body!)
+    expect(results.map((x) => [x.tool_use_id, !!x.is_error])).toEqual([
+      ['p1', false],
+      ['p2', true],
+    ])
+    expect(results[0].content).toContain('Vorschlag')
+  })
+
+  it('fragt eine Runde mit unlesbarer Werkzeugeingabe neu an – auch die erste', async () => {
+    let attempts = 0
+    messagesReply = (body) => {
+      if (lastResults(body).length) return stream(textBlock(0, 'Gefunden.'))
+      if (attempts++ > 0) return stream(toolUse(0, 'j2', 'search_notes', { query: 'Entropie' }), 'tool_use')
+      return stream(
+        [
+          { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'j1', name: 'search_notes', input: {} } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"query" "Entropie"}' } },
+          { type: 'content_block_stop', index: 0 },
+        ],
+        'tool_use',
+      )
+    }
+    const r = await chatCall(chatBody('Such mal'))
+    expect(r.events.filter((e) => 'reset' in e)).toHaveLength(1)
+    expect(r.text).toBe('Gefunden.')
+    expect(messageRequests()).toHaveLength(3)
+    // Der verworfene Versuch landet nicht im Verlauf
+    expect(JSON.stringify(r.events.find((e) => 'messages' in e)?.messages)).not.toContain('j1')
+  })
+
+  it('kennt Lernstand, Kalender und Karteikarten', async () => {
+    const deck = await call(decks.POST, '/api/decks', { cookie: token, body: { name: 'Chat-Stapel' } })
+    const deckId = deck.data.deck.id as string
+    await call(deckCards.POST, '/', { cookie: token, params: { id: deckId }, body: { cards: [{ type: 'basic', front: 'Was ist Enthalpie?', back: 'H = U + pV' }] } })
+    const examDay = localDate(new Date(Date.now() + 10 * 86_400_000))
+    const ev = await call(calendar.POST, '/api/calendar', {
+      cookie: token,
+      body: { title: 'Thermo-Klausur', location: 'HS 1', notes: '', color: null, allDay: false, start: `${examDay}T10:00`, end: `${examDay}T12:00`, repeat: null, exdates: [], exam: { deckIds: [deckId] } },
+    })
+    expect(ev.status).toBe(201)
+    messagesReply = (body) =>
+      lastResults(body).length
+        ? stream(textBlock(0, 'Lern Enthalpie.'))
+        : stream(
+            [
+              ...toolUse(0, 's1', 'study_overview', {}),
+              ...toolUse(1, 's2', 'list_events', { from: examDay, to: examDay }),
+              ...toolUse(2, 's3', 'search_cards', { query: 'Enthalpie' }),
+            ],
+            'tool_use',
+          )
+    const r = await chatCall(chatBody('Was soll ich lernen?'))
+    expect(r.text).toBe('Lern Enthalpie.')
+    const [overview, events, cards] = lastResults(messageRequests().at(-1)!.body!).map((x) => x.content as string)
+    expect(overview).toMatch(/- Chat-Stapel: 1 Karten, heute fällig 1/)
+    expect(overview).toContain('Klausur „Thermo-Klausur“')
+    expect(events).toContain('10:00–12:00 Thermo-Klausur (HS 1, Klausur)')
+    expect(cards).toContain('[Chat-Stapel] Was ist Enthalpie? → H = U + pV (basic, neu)')
+  })
+
+  it('liest PDF-Seiten aus der Volltextsuche', async () => {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(makePdf([['Einleitung'], ['Carnot-Prozess', 'Wirkungsgrad']]))], 'Skript Chat.pdf'))
+    expect((await call(attachments.POST, '/', { cookie: token, form })).status).toBe(201)
+    await indexPending()
+    messagesReply = (body) =>
+      lastResults(body).length ? stream(textBlock(0, 'Siehe S. 2.')) : stream(toolUse(0, 'f1', 'read_file', { file: 'Skript Chat.pdf', pages: '2' }), 'tool_use')
+    const r = await chatCall(chatBody('Was steht zum Carnot-Prozess im Skript?'))
+    expect(r.events.find((e) => e.toolDone?.id === 'f1')?.toolDone.label).toBe('Liest „Skript Chat.pdf“ (S. 2)')
+    const content = lastResults(messageRequests().at(-1)!.body!)[0].content as string
+    expect(content).toContain('[[Skript Chat.pdf#page=2|S. 2]]')
+    expect(content).toContain('Carnot-Prozess')
+    expect(content).not.toContain('Einleitung')
+  })
+
+  it('schaltet die Websuche selbst aus, wenn sie für den Zugang abgeschaltet ist', async () => {
+    messagesReply = () => stream(textBlock(0, 'Mit Netz.'))
+    await chatCall(chatBody('Neuigkeiten?', { web: true }))
+    expect(messageRequests().at(-1)!.body?.tools.at(-1)).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 })
+
+    received.length = 0
+    messagesReply = (body) =>
+      body.tools.some((t: Json) => t.name === 'web_search')
+        ? apiError(400, 'invalid_request_error', 'web search is not enabled for this organization')
+        : stream(textBlock(0, 'Ohne Netz.'))
+    const r = await chatCall(chatBody('Neuigkeiten?', { web: true }))
+    expect(r.status).toBe(200)
+    expect(r.events[0]).toEqual({ notice: expect.stringContaining('Websuche') })
+    expect(r.text).toBe('Ohne Netz.')
+    expect(r.events.find((e) => 'messages' in e)?.web).toBe(false)
+    expect(messageRequests()).toHaveLength(2)
+  })
+
+  it('kommt nicht an Tresor-Notizen und lehnt beschädigte Verläufe ab', async () => {
+    const vault = vaultNote()
+    messagesReply = (body) =>
+      lastResults(body).length ? stream(textBlock(0, 'Nichts gefunden.')) : stream(toolUse(0, 'v1', 'read_note', { note: vault }), 'tool_use')
+    const r = await chatCall(chatBody('Was steht da?', { question: { text: 'Was steht da?', images: [], refs: [{ kind: 'note', id: vault, title: 'Geheim' }] } }))
+    const firstQuestion = messageRequests()[0].body?.messages[0].content[0].text as string
+    expect(firstQuestion).not.toContain('Geheim')
+    expect(firstQuestion).not.toContain('Gerade geöffnet')
+    expect(r.events.find((e) => e.toolDone?.id === 'v1')?.toolDone.error).toContain('Keine Notiz')
+
+    received.length = 0
+    const bad = await chatCall(
+      chatBody('Hallo', { history: [{ role: 'user', content: [{ type: 'image', source: { type: 'url', url: 'http://intern/x.png' } }] }] }),
+    )
+    expect(bad.status).toBe(400)
+    expect(bad.data.message).toContain('Verlauf')
+    expect(received).toEqual([])
   })
 })
 

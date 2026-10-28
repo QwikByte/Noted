@@ -79,6 +79,22 @@ export async function structured(
   return message.content.findLast((b) => b.type === 'text')?.text
 }
 
+const encoder = new TextEncoder()
+
+/** Ein Ereignis als Zeile eines gestreamten JSON-Stroms (eine Zeile je Ereignis) */
+export const ndjsonLine = (event: unknown) => encoder.encode(JSON.stringify(event) + '\n')
+
+/** Unterwegs aufgetretener Fehler als Ereignis – SDK-Fehler mit ihrer verständlichen Meldung */
+export function errorEvent(err: unknown): { error: string; code: string } {
+  try {
+    const e = err instanceof ApiError ? err : claudeError(err)
+    return { error: e.message, code: e.code }
+  } catch (unknown) {
+    console.error('[noted] Antwort von Claude abgebrochen', unknown)
+    return { error: 'Die Antwort ist unterwegs abgebrochen. Versuch es noch einmal.', code: 'internal' }
+  }
+}
+
 /** Antwort, die nicht ins verlangte Format passt – kommt praktisch nur bei Störungen vor */
 export function invalidAnswer(what: string): ApiError {
   console.error('[noted] Unerwartete Antwort von Claude', what)

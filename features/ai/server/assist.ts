@@ -1,27 +1,15 @@
 import 'server-only'
-import { ApiError, badRequest } from '@/shared/server/http'
+import { badRequest } from '@/shared/server/http'
 import { assistPrompt } from '../assist'
 import type { AssistEvent, AssistRequest } from '../types'
-import { claudeClient, claudeError, contentBlocks, fallbackParams, refusedError } from './claude'
+import { claudeClient, claudeError, contentBlocks, errorEvent, fallbackParams, ndjsonLine, refusedError } from './claude'
 import { checkNoteForAi } from './note-access'
 import { requireAiCredentials } from './settings'
 
 /** Auch eine ganze, überarbeitete Notiz passt hinein (gestreamt, daher ohne Zeitlimit der Verbindung) */
 const MAX_TOKENS = 64_000
 
-const encoder = new TextEncoder()
-const line = (event: AssistEvent) => encoder.encode(JSON.stringify(event) + '\n')
-
-/** Unterwegs aufgetretener Fehler als Zeile – SDK-Fehler mit ihrer verständlichen Meldung */
-function errorEvent(err: unknown): AssistEvent {
-  try {
-    const e = err instanceof ApiError ? err : claudeError(err)
-    return { error: e.message, code: e.code }
-  } catch (unknown) {
-    console.error('[noted] Assistent abgebrochen', unknown)
-    return { error: 'Die Antwort ist unterwegs abgebrochen. Versuch es noch einmal.', code: 'internal' }
-  }
-}
+const line = (event: AssistEvent) => ndjsonLine(event)
 
 /**
  * Assistent: Claude ändert einen Text oder beantwortet eine Frage dazu. Die Antwort kommt als Strom von JSON-Zeilen

@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useId, useRef } from 'react'
-import { X } from 'lucide-react'
+import { Maximize2, Minimize2, X } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
+import { cn } from '@/shared/ui/cn'
 import { useFloating } from '../client/use-floating'
 import type { Point } from '../floating'
 
@@ -19,6 +20,9 @@ export function FloatingWindow({
   actions,
   initial = DEFAULT_POSITION,
   focusKey = 0,
+  wide,
+  maximized,
+  onToggleMaximize,
   onClose,
   children,
 }: {
@@ -30,6 +34,11 @@ export function FloatingWindow({
   initial?: Point
   /** Fokuswunsch: jeder neue Wert ≠ 0 setzt den Fokus ins Fenster */
   focusKey?: number
+  /** Breiteres Fenster (z. B. für den KI-Chat) */
+  wide?: boolean
+  /** Vollbild: füllt die ganze freie Fläche und lässt sich nicht verschieben – mit `onToggleMaximize` umschaltbar */
+  maximized?: boolean
+  onToggleMaximize?: () => void
   onClose: () => void
   children: React.ReactNode
 }) {
@@ -59,13 +68,21 @@ export function FloatingWindow({
   }
 
   return (
-    <div data-floating className="pointer-events-auto absolute w-72 max-w-full" style={style}>
+    <div
+      data-floating
+      className={cn('pointer-events-auto absolute max-w-full', maximized ? 'inset-0' : wide ? 'w-[26rem]' : 'w-72')}
+      style={maximized ? undefined : style}
+    >
       <section
         ref={sectionRef}
         role="dialog"
         aria-labelledby={titleId}
         data-testid={`window-${id}`}
-        className="animate-pop-in overflow-hidden rounded-xl border border-border bg-elevated shadow-pop"
+        data-maximized={maximized || undefined}
+        className={cn(
+          'group/window animate-pop-in overflow-hidden rounded-xl border border-border bg-elevated shadow-pop',
+          maximized && 'flex h-full flex-col',
+        )}
         onKeyDown={(e) => {
           if (e.key === 'Escape') close()
         }}
@@ -75,13 +92,29 @@ export function FloatingWindow({
         }}
       >
         <header
-          className="flex h-10 cursor-grab touch-none items-center gap-0.5 border-b border-border pr-1 pl-3 select-none active:cursor-grabbing"
-          {...dragHandlers}
+          className={cn(
+            'flex h-10 shrink-0 items-center gap-0.5 border-b border-border pr-1 pl-3 select-none',
+            !maximized && 'cursor-grab touch-none active:cursor-grabbing',
+          )}
+          {...(maximized ? {} : dragHandlers)}
         >
           <h2 id={titleId} className="flex-1 truncate text-sm font-semibold">
             {title}
           </h2>
           {actions}
+          {onToggleMaximize ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              data-no-drag
+              onClick={onToggleMaximize}
+              aria-pressed={!!maximized}
+              aria-label="Vollbild"
+              title={maximized ? 'Verkleinern' : 'Vollbild'}
+            >
+              {maximized ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+            </Button>
+          ) : null}
           <Button variant="ghost" size="icon-sm" data-no-drag onClick={close} aria-label="Schließen" title="Schließen">
             <X className="size-4" />
           </Button>
