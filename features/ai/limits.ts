@@ -28,3 +28,9 @@ export const MAX_AI_QUESTIONS = 20
 export const MAX_AI_EXAM_DECKS = 50
 /** Fotos je Aufgabe einer Probeklausur */
 export const MAX_AI_TASK_PHOTOS = 3
+/** Zeichen einer Frage im Chat */
+export const MAX_AI_CHAT_TEXT = 20_000
+/** Bilder je Frage im Chat */
+export const MAX_AI_CHAT_IMAGES = 4
+/** Einträge im Verlauf eines Chats */
+export const MAX_AI_CHAT_HISTORY = 400

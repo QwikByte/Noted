@@ -138,6 +138,18 @@ export function searchIndexInfo(userId: number): Map<string, SearchIndexInfo> {
   return map
 }
 
+/** Gelesener Text einer Datei je Seite (Textdateien: Seite 1) – `pages`: nur diese Seiten, sonst alle */
+export function attachmentPageTexts(userId: number, attachmentId: string, pages?: number[]): { page: number; text: string }[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT f.page, f.content FROM attachments_fts f JOIN attachments a ON a.id = f.attachment_id
+       WHERE f.attachment_id = ? AND f.user_id = ? AND a.user_id = ? ORDER BY f.page`,
+    )
+    .all(attachmentId, userId, userId) as { page: number; content: string }[]
+  const wanted = pages ? new Set(pages) : null
+  return rows.filter((r) => !wanted || wanted.has(r.page)).map((r) => ({ page: r.page, text: r.content }))
+}
+
 /** Volltextsuche in den Anhängen – ein Treffer je Seite, Markierung im Ausschnitt wie bei Notizen */
 export function searchAttachments(userId: number, query: string, limit = 20): FileSearchResult[] {
   const match = buildFtsQuery(parseSearch(query))

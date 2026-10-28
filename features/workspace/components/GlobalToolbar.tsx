@@ -3,12 +3,15 @@
 // öffnet als kleines, verschiebbares Fenster. Läuft ein Werkzeug bei geschlossenem Fenster weiter (Timer), steht es
 // klein unten links neben der Navigation.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { ChevronLeft, ChevronRight, StickyNote, Timer, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Sparkles, StickyNote, Timer, type LucideIcon } from 'lucide-react'
 import { usePref } from '@/shared/client/prefs'
 import { cn } from '@/shared/ui/cn'
 import { FocusMiniTimer, FocusTimer, FocusTimerSettingsToggle } from '@/features/focus/components/FocusTimer'
 import { useFocusAlerts } from '@/features/focus/client/alerts'
 import { Scratchpad } from '@/features/scratchpad/components/Scratchpad'
+import { AiChat, AiChatActions } from '@/features/ai/components/AiChat'
+import { useAiReady } from '@/features/ai/client/ai'
+import { AppContext, useBridgedApp } from '../client/context'
 import { FloatingWindow } from './FloatingWindow'
 import type { Point } from '../floating'
 
@@ -27,6 +30,10 @@ type Tool = {
   focusOnOpen?: boolean
   /** Tastenkürzel Alt + Taste – `code` wie KeyboardEvent.code, damit es auch mit der Wahltaste unter macOS geht */
   shortcut?: { code: string; label: string }
+  /** Breiteres Fenster, das sich auf Vollbild umschalten lässt */
+  large?: boolean
+  /** Nur mit eingerichteter KI – und nur in der App selbst (braucht ihre Aktionen, z. B. Notiz anlegen) */
+  ai?: boolean
 }
 
 const TOOLS: Tool[] = [
@@ -39,6 +46,18 @@ const TOOLS: Tool[] = [
     position: { x: 1, y: 1 },
     focusOnOpen: true,
     shortcut: { code: 'KeyJ', label: 'Alt+J' },
+  },
+  {
+    id: 'chat',
+    label: 'KI-Chat',
+    icon: Sparkles,
+    Window: AiChat,
+    Actions: AiChatActions,
+    position: { x: 1, y: 0 },
+    focusOnOpen: true,
+    shortcut: { code: 'KeyK', label: 'Alt+K' },
+    large: true,
+    ai: true,
   },
 ]
 
@@ -70,9 +89,16 @@ export function GlobalToolbar() {
 function Toolbar() {
   const [expanded, setExpanded] = usePref<'0' | '1'>('noted:toolbar:expanded', '0')
   const [openPref, setOpenPref] = usePref<string>('noted:toolbar:windows', '')
-  const open = openPref.split(',').filter((id) => TOOLS.some((t) => t.id === id))
+  const [maxPref, setMaxPref] = usePref<string>('noted:toolbar:maximized', '')
+  const aiReady = useAiReady()
+  const app = useBridgedApp()
+  const tools = TOOLS.filter((t) => !t.ai || (aiReady && app))
+  const open = openPref.split(',').filter((id) => tools.some((t) => t.id === id))
   const setOpen = (id: string, on: boolean) =>
     setOpenPref((on ? [...open.filter((o) => o !== id), id] : open.filter((o) => o !== id)).join(','))
+  const maximized = maxPref.split(',').filter(Boolean)
+  const toggleMaximized = (id: string) =>
+    setMaxPref((maximized.includes(id) ? maximized.filter((m) => m !== id) : [...maximized, id]).join(','))
   useFocusAlerts()
   // Fokuswunsch je Fenster: ein Zähler, nicht gespeichert – nach dem Neuladen bleibt der Fokus, wo er ist
   const [focusWishes, setFocusWishes] = useState<Record<string, number>>({})
@@ -84,13 +110,15 @@ function Toolbar() {
   // Tastenkürzel auf allen Seiten, auch bei eingeklappter Leiste. In der Capture-Phase, damit es auch in Canvas-Karten
   // und Mindmap-Knoten greift, die keydown nicht weiterreichen – aber nicht hinter einem modalen Dialog
   const openToolRef = useRef(openTool)
+  const toolsRef = useRef(tools)
   useEffect(() => {
     openToolRef.current = openTool
+    toolsRef.current = tools
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat || e.isComposing) return
-      const tool = TOOLS.find((t) => t.shortcut?.code === e.code)
+      const tool = toolsRef.current.find((t) => t.shortcut?.code === e.code)
       if (!tool || document.querySelector('dialog:modal')) return
       e.preventDefault()
       openToolRef.current(tool)
@@ -102,7 +130,7 @@ function Toolbar() {
   return (
     <>
       <div className={cn('pointer-events-none fixed flex items-center gap-2', LAYER)} style={{ left: MINI_LEFT, bottom: BOTTOM }}>
-        {TOOLS.map((t) => (t.Mini && !open.includes(t.id) ? <t.Mini key={t.id} onOpen={() => openTool(t)} /> : null))}
+        {tools.map((t) => (t.Mini && !open.includes(t.id) ? <t.Mini key={t.id} onOpen={() => openTool(t)} /> : null))}
       </div>
 
       <div
@@ -117,7 +145,7 @@ function Toolbar() {
             className="flex animate-slide-in-right flex-col items-center gap-0.5 rounded-l-xl border border-r-0 border-border bg-elevated p-1 shadow-pop"
             onMouseDown={keepFocus}
           >
-            {TOOLS.map((t) => (
+            {tools.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -167,19 +195,26 @@ function Toolbar() {
         )}
         style={{ bottom: BOTTOM, right: WINDOWS_RIGHT }}
       >
-        {TOOLS.filter((t) => open.includes(t.id)).map((t) => (
-          <FloatingWindow
-            key={t.id}
-            id={t.id}
-            title={t.label}
-            actions={t.Actions ? <t.Actions /> : null}
-            initial={t.position}
-            focusKey={focusWishes[t.id] ?? 0}
-            onClose={() => setOpen(t.id, false)}
-          >
-            <t.Window />
-          </FloatingWindow>
-        ))}
+        {tools
+          .filter((t) => open.includes(t.id))
+          .map((t) => (
+            <FloatingWindow
+              key={t.id}
+              id={t.id}
+              title={t.label}
+              actions={t.Actions ? <t.Actions /> : null}
+              initial={t.position}
+              focusKey={focusWishes[t.id] ?? 0}
+              wide={t.large}
+              maximized={t.large && maximized.includes(t.id)}
+              onToggleMaximize={t.large ? () => toggleMaximized(t.id) : undefined}
+              onClose={() => setOpen(t.id, false)}
+            >
+              <AppContext.Provider value={app}>
+                <t.Window />
+              </AppContext.Provider>
+            </FloatingWindow>
+          ))}
       </div>
     </>
   )

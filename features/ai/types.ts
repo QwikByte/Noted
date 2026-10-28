@@ -1,5 +1,6 @@
 // Typen für die KI-Anbindung (API-Verträge zwischen Server und Browser)
 import type { CardOption } from '@/features/flashcards/types'
+import type { EventInput } from '@/features/calendar/types'
 import type { AiModel } from './models'
 
 /** `configured`: Ein Schlüssel ist hinterlegt – `keyHint`: seine letzten Zeichen (der Schlüssel selbst bleibt auf dem Server) */
@@ -35,6 +36,8 @@ export type CardSource =
   | { kind: 'note'; noteId: string; title: string; content: string }
   | { kind: 'pdf'; file: string; pages: PdfPageInput[]; marks: PdfMarkInput[] }
   | { kind: 'card'; mode: CardMode; card: CardDraft }
+  /** Freier Text, z. B. eine Antwort aus dem KI-Chat */
+  | { kind: 'text'; title: string; content: string }
 
 /** `leech`: eine Problemkarte (oft vergessen) leichter merkbar machen – überarbeiten oder in wenige Karten teilen */
 export type CardMode = 'improve' | 'split' | 'leech'
@@ -105,3 +108,44 @@ export type QuestionsSource =
   | { kind: 'decks'; title: string; deckIds: string[] }
 
 export type QuestionsRequest = { source: QuestionsSource; count: number; wishes?: string }
+
+/** Was gerade offen ist und der Chat als Bezug mitbekommt – nur Titel bzw. Name, Inhalte liest Claude bei Bedarf */
+export type ChatRef = { kind: 'note'; id: string; title: string } | { kind: 'pdf'; file: string; page: number | null }
+
+/** Neue Frage im Chat: Text, Bilder (z. B. ein Tafelfoto) und Bezug */
+export type ChatQuestion = { text: string; images: AiImage[]; refs: ChatRef[] }
+
+/**
+ * Anfrage an den Chat. `history`: der bisherige Verlauf genau so, wie ihn der Server zurückgegeben hat (der Browser
+ * hängt nur an – sonst verfielen Claudes Gedankengänge und der Zwischenspeicher bei Anthropic). `now`: Datum und
+ * Uhrzeit des Geräts. `web`: Websuche erlauben.
+ */
+export type ChatRequest = {
+  history: unknown[]
+  question: ChatQuestion
+  now: { date: string; time: string }
+  web: boolean
+}
+
+/** Vorschlag von Claude im Chat – angelegt wird erst, wenn die Person bestätigt */
+export type ChatProposal =
+  | { kind: 'note'; title: string; content: string }
+  | { kind: 'cards'; cards: SuggestedCard[]; deck: string | null; noteId: string | null }
+  | { kind: 'event'; event: EventInput }
+
+/**
+ * Eine Zeile der gestreamten Chat-Antwort. `step`: Beginn eines Schritts (vor jeder Anfrage an Claude) – `reset` gilt
+ * nur für den Text seit dem letzten Schritt. `tool`/`toolDone`: Claude benutzt ein Werkzeug. `messages`: am Ende die
+ * neuen Einträge für den Verlauf (Frage samt Antwort). `web`: ob die Websuche verfügbar war.
+ */
+export type ChatEvent =
+  | { step: true }
+  | { text: string }
+  | { reset: true }
+  | { tool: { id: string; label: string } }
+  | { toolDone: { id: string; label?: string; error?: string } }
+  | { proposal: { id: string; proposal: ChatProposal } }
+  | { notice: string }
+  | { messages: unknown[]; web: boolean }
+  | { done: true; truncated: boolean }
+  | { error: string; code: string }

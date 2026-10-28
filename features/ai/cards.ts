@@ -144,7 +144,7 @@ export function cardsPrompt({ source, existing, wishes }: CardsRequest): Prompt 
       parts: [textPart(`<karte>\n${cardText(source.card)}\n</karte>`), ...wishesPart(wishes)],
     }
   }
-  if (source.kind === 'note') {
+  if (source.kind === 'note' || source.kind === 'text') {
     const body = (splitFrontmatter(source.content)?.body ?? source.content).trim()
     return {
       system: NOTE_SYSTEM,
@@ -198,11 +198,17 @@ function normalizeCard(c: RawCard, pages: ReadonlySet<number>): SuggestedCard | 
   return back ? { type: c.type, front, back, options: [], page } : null
 }
 
+/** Eine von Claude vorgeschlagene Karte prüfen (z. B. aus dem Chat) – null, wenn sie sich so nicht anlegen ließe */
+export function cleanSuggestedCard(raw: unknown): SuggestedCard | null {
+  const parsed = RAW_CARD.safeParse(raw)
+  return parsed.success ? normalizeCard(parsed.data, new Set()) : null
+}
+
 /** Wie viele Karten aus einer Antwort höchstens übernommen werden und auf welche Seiten sie sich beziehen dürfen */
 export function cardsLimits(request: CardsRequest): { max: number; pages: Set<number> } {
   const { source } = request
   if (source.kind === 'card') return { max: CARD_MAX[source.mode], pages: new Set() }
-  if (source.kind === 'note') return { max: MAX_AI_CARDS, pages: new Set() }
+  if (source.kind === 'note' || source.kind === 'text') return { max: MAX_AI_CARDS, pages: new Set() }
   return { max: MAX_AI_CARDS, pages: new Set([...source.pages, ...source.marks].map((p) => p.page)) }
 }
 

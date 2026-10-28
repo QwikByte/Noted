@@ -1568,15 +1568,17 @@ test('PDF-Anmerkungen: Text markieren, nach Zoom und Neuladen wiederfinden und a
   await expect(mark).toHaveCount(1)
   await expect.poll(async () => (await saved()).length).toBe(1)
 
-  // Die Markierung liegt auf dem Text – auch nach dem Vergrößern
+  // Die Markierung liegt auf dem Text – auch nach dem Vergrößern. Text-Layer und Markierungen werden neu gezeichnet;
+  // fehlt eines dabei kurz, misst expect.poll noch einmal
   const covers = async () => {
-    const [t, m] = [(await span.boundingBox())!, (await mark.boundingBox())!]
+    const [t, m] = [await span.boundingBox(), await mark.boundingBox()]
+    if (!t || !m) return false
     return Math.abs(t.y - m.y) < t.height / 2 && Math.abs(t.x - m.x) < t.height && Math.abs(t.width - m.width) < t.height
   }
   await expect.poll(covers).toBe(true)
   await panel.getByRole('button', { name: 'Weitere PDF-Aktionen' }).click()
   await page.getByRole('menuitem', { name: 'Vergrößern' }).click()
-  await expect.poll(async () => (await span.boundingBox())!.width).toBeGreaterThan(box.width * 1.05)
+  await expect.poll(async () => (await span.boundingBox())?.width ?? 0).toBeGreaterThan(box.width * 1.05)
   await expect.poll(covers).toBe(true)
 
   // Nach dem Neuladen ist sie wieder da; ein Klick darauf öffnet Kommentar und Farbe
@@ -1675,12 +1677,18 @@ test('PDF: Bereich in einem Scan markieren, als Bild einfügen und als Karteikar
   await expect(area).toHaveCount(1)
   await expect(page1.locator('.pdf-area-draft')).toHaveCount(0)
   await expect(panel.getByTestId('pdf-area-hint')).toHaveCount(0)
-  // Der Bereich liegt, wo er aufgezogen wurde – relativ zur Seite, damit auch nach dem Neuladen vergleichbar
+  // Der Bereich liegt, wo er aufgezogen wurde – relativ zur Seite, damit auch nach dem Neuladen vergleichbar. Die Ebene
+  // wird bei jeder Änderung neu gezeichnet; fehlt das Element dabei kurz, gibt es noch kein Maß (null)
   const relative = async () => {
-    const [pg, a] = [(await page1.boundingBox())!, (await area.boundingBox())!]
-    return [a.x - pg.x, a.y - pg.y, a.width, a.height].map(Math.round)
+    const [pg, a] = [await page1.boundingBox(), await area.boundingBox()]
+    return pg && a ? [a.x - pg.x, a.y - pg.y, a.width, a.height].map(Math.round) : null
   }
-  const drawn = await relative()
+  let drawn: number[] = []
+  await expect(async () => {
+    const r = await relative()
+    expect(r).not.toBeNull()
+    drawn = r!
+  }).toPass()
   expect(drawn.map((v, i) => Math.abs(v - [40, 50, 200, 120][i]) <= 3)).toEqual([true, true, true, true])
   await expect.poll(saved).toEqual([expect.objectContaining({ kind: 'area', page: 1, quote: '' })])
   const bar = panel.getByTestId('pdf-annotation')

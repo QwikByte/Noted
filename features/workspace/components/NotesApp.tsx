@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Menu as MenuIcon, Plus, Search } from 'lucide-react'
 import {
   AppContext,
+  bridgeApp,
   type AppActions,
   type CardEditorInit,
   type CardsFromNoteInit,
@@ -340,6 +341,11 @@ export default function NotesApp() {
     }),
     [view, navigate, createNote, trashNotes, pinNotes, resolveTitle, setPdfPref],
   )
+  // Auch für die Fenster der Werkzeugleiste (KI-Chat), die außerhalb liegen
+  useEffect(() => {
+    bridgeApp(actions)
+    return () => bridgeApp(null)
+  }, [actions])
 
   // Tastenkürzel
   useEffect(() => {
